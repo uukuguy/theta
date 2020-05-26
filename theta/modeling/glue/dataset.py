@@ -119,16 +119,16 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     outputs = tokenizer.batch_encode_plus(texts,
                                           max_length=max_seq_length,
                                           add_special_tokens=True,
-                                          return_tensors='pt',
+                                          return_tensors=None,
                                           pad_to_max_length=True,
                                           return_attention_mask=True,
                                           return_token_type_ids=True)
     all_input_ids, all_attention_mask, all_token_type_ids = outputs[
         'input_ids'], outputs['attention_mask'], outputs['token_type_ids']
 
-    all_labels = torch.tensor(
-        [label2id[e.label] if e.label else 0 for e in examples],
-        dtype=torch.long)
+    all_lens = [len(input_ids) for input_ids in all_input_ids]
+
+    all_labels = [label2id[e.label] if e.label else 0 for e in examples]
 
     all_features = [
         InputFeatures(input_ids=input_ids,
@@ -139,10 +139,16 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
             all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     ]
     return (all_features, {
-        'input_ids': all_input_ids,
-        'attention_mask': all_attention_mask,
-        'token_type_ids': all_token_type_ids,
-        'labels': all_labels,
+        'input_ids':
+        torch.tensor(all_input_ids, dtype=torch.long),
+        'attention_mask':
+        torch.tensor(all_attention_mask, dtype=torch.long),
+        'token_type_ids':
+        torch.tensor(all_token_type_ids, dtype=torch.long),
+        'lens':
+        torch.tensor(all_lens, dtype=torch.long),
+        'labels':
+        torch.tensor(all_labels, dtype=torch.long),
     })
 
 
@@ -155,6 +161,7 @@ def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
         outputs['input_ids'],
         outputs['attention_mask'],
         outputs['token_type_ids'],
+        outputs['lens'],
         outputs['labels'],
     )
 
