@@ -88,15 +88,20 @@ def load_examples(args,
 
     examples = []
 
-    for guid, text_a, text_b, label in data_generator(args, examples_file):
-        for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
-                                                      seg_len, seg_backoff):
-            #  seg_text = seg_text[0]
-            examples.append(
-                InputExample(guid=guid,
-                             text_a=seg_text_a,
-                             text_b=seg_text_b,
-                             label=label))
+    for guid, text_a, text_b, label in data_generator(args,
+                                                      examples_file,
+                                                      seg_len=seg_len,
+                                                      seg_backoff=seg_backoff):
+        #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
+        #                                                seg_len, seg_backoff):
+        #      #  seg_text = seg_text[0]
+        #      examples.append(
+        #          InputExample(guid=guid,
+        #                       text_a=seg_text_a,
+        #                       text_b=seg_text_b,
+        #                       label=label))
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
     logger.info(f"Loaded {len(examples)} examples from {examples_file}.")
 
     return examples
@@ -114,9 +119,13 @@ def init_labels(args, labels):
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
-    texts = [e.text_a for e in examples]
+    texts_a = [e.text_a for e in examples]
+    texts_b = None
+    if len(examples) > 0 and examples[0].text_b:
+        texts_b = [e.text_b for e in examples]
 
-    outputs = tokenizer.batch_encode_plus(texts,
+    outputs = tokenizer.batch_encode_plus(texts_a,
+                                          text_pair=texts_b,
                                           max_length=max_seq_length,
                                           add_special_tokens=True,
                                           return_tensors=None,

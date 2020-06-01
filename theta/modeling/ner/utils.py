@@ -5,10 +5,10 @@ import csv, json
 from loguru import logger
 from collections import Counter
 import torch
-from transformers import BertTokenizerFast
+from transformers import BertTokenizer
 
 
-class CNerTokenizer(BertTokenizerFast):
+class CNerTokenizer(BertTokenizer):
     def __init__(self, vocab_file, do_lower_case=False):
         super().__init__(vocab_file=str(vocab_file),
                          do_lower_case=do_lower_case)

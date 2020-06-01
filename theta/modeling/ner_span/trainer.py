@@ -179,7 +179,7 @@ def load_pretrained_model(args):
     setattr(config, 'soft_label', args.soft_label)
     setattr(config, 'loss_type', args.loss_type)
     logger.info(f"model_path: {args.model_path}")
-    #  logger.info(f"config:{config}")
+    logger.info(f"config:{config}")
     model = model_class.from_pretrained(
         args.model_path,
         from_tf=bool(".ckpt" in args.model_path),
@@ -224,7 +224,18 @@ def bert_extract_item(start_logits, end_logits):
     return S
 
 
+def load_model(args):
+    model = load_pretrained_model(args)
+    model.to(args.device)
+    return model
+
+
 def build_default_model(args):
+    """
+    自定义模型
+    规格要求返回模型(model)、优化器(optimizer)、调度器(scheduler)三元组。
+    """
+
     # -------- model --------
     model = load_pretrained_model(args)
     model.to(args.device)

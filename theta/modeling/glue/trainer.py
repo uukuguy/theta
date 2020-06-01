@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss
 from transformers import BertConfig, BertTokenizerFast
 from transformers.modeling_bert import BertPreTrainedModel, BertModel
+from sklearn.metrics import classification_report
 
 from ..trainer import Trainer, get_default_optimizer_parameters
 from ...losses import FocalLoss
@@ -20,9 +21,12 @@ def logits_to_preds(logits):
     preds = np.argmax(logits, axis=1)
     probs = softmax(logits)
     # 调整类别0的判断阈值
-    preds = np.array([
-        0 if x == 1 and prob[1] < 0.60 else x for prob, x in zip(probs, preds)
-    ])
+    #  preds = np.array([
+    #      0 if x == 1 and prob[1] < 0.60 else x for prob, x in zip(probs, preds)
+    #  ])
+    #  preds = np.array([
+    #      1 if x == 0 and prob[1] < 0.90 else x for prob, x in zip(probs, preds)
+    #  ])
 
     return preds
 
@@ -229,24 +233,6 @@ class BertForSequenceClassification(BertPreTrainedModel):
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
-
-class ClassReport(object):
-    def __init__(self, target_names=None, labels=None):
-        self.target_names = target_names
-        self.labels = labels
-
-    def __call__(self, output, target):
-        _, y_pred = torch.max(output.data, 1)
-        y_pred = y_pred.cpu().numpy()
-        y_true = target.cpu().numpy()
-        #  print(y_pred, y_true, self.labels, self.target_names)
-        classify_report = classification_report(y_true,
-                                                y_pred,
-                                                labels=self.labels,
-                                                target_names=self.target_names)
-        print('\n\nclassify_report:\n', classify_report)
-
-
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizerFast),
     #  'albert':
@@ -302,6 +288,11 @@ def load_model(args):
 
 
 def build_default_model(args):
+    """
+    自定义模型
+    规格要求返回模型(model)、优化器(optimizer)、调度器(scheduler)三元组。
+    """
+
     # -------- model --------
     model = load_pretrained_model(args)
     model.to(args.device)
@@ -340,6 +331,33 @@ def collate_fn(batch):
     return all_input_ids, all_attention_mask, all_token_type_ids, all_labels
 
 
+class ClassReporter(object):
+    def __init__(self, target_names=None, labels=None):
+        logger.debug(f"target_names: {target_names}")
+        logger.debug(f"labels: {labels}")
+        self.target_names = target_names
+        self.labels = labels
+
+    def __call__(self, output, target):
+        #  _, y_pred = torch.max(output.data, 1)
+        #  y_pred = y_pred.cpu().numpy()
+        #  y_true = target.cpu().numpy()
+
+        #  y_pred = output.cpu().numpy()
+        #  y_true = target.cpu().numpy()
+
+        y_pred = output
+        y_true = target
+
+        #  print(y_pred, y_true, self.labels, self.target_names)
+        classify_report = classification_report(y_true,
+                                                y_pred,
+                                                labels=self.labels,
+                                                target_names=self.target_names)
+        logger.info(f"classify_report:\n{classify_report}")
+        return classify_report
+
+
 class GlueTrainer(Trainer):
     def __init__(self, args, build_model=None, tokenizer=None):
         super(GlueTrainer, self).__init__(args)
@@ -360,6 +378,10 @@ class GlueTrainer(Trainer):
         self.logits = None
         self.preds = None
         self.probs = None
+
+        self.class_reporter = ClassReporter(
+            target_names=[x for x in self.label2id.keys()],
+            labels=[x for x in self.label2id.values()])
 
     #  def generate_dataloader(self, args, dataset, batch_size, keep_order=True):
     #
@@ -429,9 +451,13 @@ class GlueTrainer(Trainer):
         return (eval_loss, ), self.results
 
     def on_eval_end(self, args, eval_dataset):
-        #  self.preds = np.argmax(self.preds, axis=1)
+        self.preds = np.argmax(self.logits, axis=1)
         # for regessions
         #  self.preds = np.squeeze(self.preds)
+
+        logger.debug(f"self.preds: {self.preds}")
+        logger.debug(f"self.out_label_ids: {self.out_label_ids}")
+        self.class_reporter(self.preds, self.out_label_ids)
 
         logger.info(f"  Num examples = {len(eval_dataset)}")
         logger.info(f"  Batch size = {args.eval_batch_size}")
@@ -471,5 +497,5 @@ class GlueTrainer(Trainer):
         #  ])
         self.pred_results = logits_to_preds(self.logits)
 
-        logger.debug(self.pred_results)
-        logger.debug(self.probs)
+        logger.debug(f"pred_results: {self.pred_results}")
+        logger.debug(f"probs: {self.probs}")

@@ -72,7 +72,7 @@ def init_labels(args, labels):
     args.label2id = {label: i for i, label in enumerate(labels)}
     args.num_labels = len(args.label2id)
 
-    loggre.info(f"args.label2id: {args.label2id}")
+    logger.info(f"args.label2id: {args.label2id}")
     logger.info(f"args.id2label: {args.id2label}")
     logger.info(f"args.num_labels: {args.num_labels}")
 
@@ -207,13 +207,13 @@ def seg_generator(iterables, seg_len, seg_backoff=0):
     if seg_len <= 0:
         yield iterables
     else:
-        # 确保iterables列表中每一项的条目数相同
-        assert sum([len(x)
-                    for x in iterables]) == len(iterables[0]) * len(iterables)
+        #  # 确保iterables列表中每一项的条目数相同
+        #  assert sum([len(x)
+        #              for x in iterables]) == len(iterables[0]) * len(iterables)
         s0 = 0
         while s0 < len(iterables[0]):
             s1 = s0 + seg_len
-            segs = [x[s0:s1] for x in iterables]
+            segs = [x[s0:s1] if x else None for x in iterables]
             yield segs
             s0 += seg_len - seg_backoff
 

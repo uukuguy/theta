@@ -114,7 +114,17 @@ class Trainer:
         model_to_save.save_pretrained(model_path)
 
         tokenizer.save_vocabulary(Path(model_path).as_posix() + '/')
-        torch.save(args, os.path.join(model_path, "training_args.bin"))
+
+        #  torch.save(args, os.path.join(model_path, "training_args.bin"))
+        json.dump(
+            {
+                k: v
+                for k, v in args.__dict__.items() if v is None
+                or type(v) in [bool, str, int, float, dict, list, tuple]
+            },
+            open(os.path.join(model_path, "training_args.json"), 'w'),
+            ensure_ascii=False, indent=2)
+
         torch.save(optimizer.state_dict(),
                    os.path.join(model_path, "optimizer.pt"))
         torch.save(scheduler.state_dict(),

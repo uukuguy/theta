@@ -12,9 +12,9 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 import sys
 sys.path.append('../../')
 
-from theta.utils import init_theta, seg_generator
+from theta.utils import init_theta, seg_generator, split_train_eval_examples
 #  from theta.modeling.trainer import get_default_optimizer_parameters
-from theta.modeling.ner import init_labels, load_model, InputExample, examples_to_dataset, load_examples_from_bios_file, NerTrainer
+from theta.modeling.ner_span import init_labels, load_model, InputExample, load_examples, NerTrainer
 
 ner_labels = []
 seg_len = 510
@@ -206,130 +206,205 @@ def get_submission_file(args):
     return f"{args.output_dir}/event_element_submission.json"
 
 
-#  def seg_generator(iterables, seg_len, seg_backoff=0):
-#      if seg_len <= 0:
-#          yield iterables
-#      else:
-#          # 确保iterables列表中每一项的条目数相同
-#          assert sum([len(x)
-#                      for x in iterables]) == len(iterables[0]) * len(iterables)
-#          n_segs = len(iterables[0]) // seg_len
-#          for i in range(n_segs + 1):
-#              s0 = seg_len * i
-#              s1 = seg_len * (i + 1) if i < n_segs - 1 else len(iterables[0])
-#              if s0 < s1:
-#                  segs = [x[s0:s1] for x in iterables]
-#                  yield segs
-#      #  raise StopIteration
-
-
-def load_train_eval_examples(train_base_file):
-    label2id = {}
-    id2label = {}
-    train_base_examples = []
+def train_data_generator(args, train_file):
     with open(train_base_file, 'r') as fr:
         lines = fr.readlines()
         for line in tqdm(lines, desc=f"train & eval"):
             d = json.loads(line)
             guid = d['doc_id']
             text = d['content']
-            words = [w for w in text]
-            labels = ['O'] * len(words)
-            for e in d['events']:
-                event_type = e['event_type']
-                #  if event_type not in ['破产清算']:  # ['股东减持', '股东增持']:
-                #      continue
-                for k, v in e.items():
-                    if not v:
-                        continue
 
-                    if k not in ['event_id', 'event_type']:
-                        label = '_'.join((event_type, k))
-                        if label not in label2id:
-                            n = len(label2id) + 1
-                            label2id[label] = n
-                            id2label[n] = label
-                            ner_labels.append(label)
-                        n = label2id[label]
-                        i0 = text.find(v)
-                        while i0 >= 0:
-                            #  if i0 >= 0:
-                            if len(v) == 1:
-                                #  if labels[i0] == 'O':
-                                #      labels[i0] = f"S-{label}"
-                                pass
-                            else:
-                                labels[i0] = f"B-{label}"
-                                for j0 in range(1, len(v)):
-                                    labels[i0 + j0] = f"I-{label}"
-                            i0 = text.find(v, i0 + 1)
+            for seg_text in seg_generator((text, ), seg_len, seg_backoff):
+                seg_text = seg_text[0]
 
-            for seg_words, seg_labels in seg_generator((words, labels),
-                                                       seg_len, seg_backoff):
-                train_base_examples.append(
-                    InputExample(guid=guid,
-                                 text_a=seg_words,
-                                 labels=seg_labels))
+                seg_words = [w for w in seg_text]
+                seg_labels = []
+                for e in d['events']:
+                    event_type = e['event_type']
+                    #  if event_type not in ['破产清算']:  # ['股东减持', '股东增持']:
+                    #      continue
+                    for k, v in e.items():
+                        if not v:
+                            continue
 
-            #  if seg_len > 0:
-            #      n_segs = len(text) // seg_len
-            #      for i in range(n_segs + 1):
-            #          s0 = seg_len * i
-            #          s1 = seg_len * (i + 1) if i < n_segs - 1 else len(text)
-            #          if s0 < s1:
-            #              seg_text = text[s0:s1]
-            #              seg_words = words[s0:s1]
-            #              seg_labels = labels[s0:s1]
-            #
-            #              train_base_examples.append(
-            #                  InputExample(guid=guid,
-            #                               text_a=seg_words,
-            #                               labels=seg_labels))
-            #  else:
-            #      train_base_examples.append(
-            #          InputExample(guid=guid, text_a=words, labels=labels))
-    #  train_base_examples = train_base_examples[:100]
+                        if k not in ['event_id', 'event_type']:
+                            label = '_'.join((event_type, k))
 
-    random.shuffle(train_base_examples)
-    train_rate = 0.9
+                            if label not in ner_labels:
+                                ner_labels.append(label)
 
-    num_eval_examples = int(len(train_base_examples) * (1 - train_rate))
-    num_train_samples = len(train_base_examples) - num_eval_examples
+                            i0 = seg_text.find(v)
+                            while i0 >= 0:
+                                #  if i0 >= 0:
+                                if len(v) == 1:
+                                    #  if labels[i0] == 'O':
+                                    #      labels[i0] = f"S-{label}"
+                                    pass
+                                else:
+                                    assert i0 < seg_len and i0 + len(
+                                        v) - 1 < seg_len
+                                    seg_labels.append(
+                                        (label, i0, i0 + len(v) - 1))
+                                break
+                                #  i0 = seg_text.find(v, i0 + len(v))
 
-    if fold == 0:
-        eval_examples = train_base_examples[num_train_samples:]
-        train_examples = train_base_examples[:num_train_samples]
-    else:
-        s = num_eval_examples * (fold - 1)
-        e = num_eval_examples * fold
-        eval_examples = train_base_examples[s:e]
-        train_examples = train_base_examples[:s] + train_base_examples[e:]
+                yield guid, seg_words, None, seg_labels
+
+
+def load_train_val_examples(args, seg_len=0, seg_backoff=0):
+    train_base_examples = load_examples(args,
+                                        train_data_generator,
+                                        train_base_file,
+                                        seg_len=seg_len,
+                                        seg_backoff=seg_backoff)
+
+    train_examples, val_examples = split_train_eval_examples(
+        train_base_examples,
+        train_rate=args.train_rate,
+        fold=fold,
+        shuffle=True,
+        random_state=args.seed)
+
     logger.info(
-        f"Loaded {len(train_examples)} train examples, {len(eval_examples)} eval examples."
+        f"Loaded {len(train_examples)} train examples, {len(val_examples)} val examples."
     )
-    return train_examples, eval_examples
+    return train_examples, val_examples
 
 
-def load_test_examples(test_base_file):
-    with open(test_base_file, 'r') as fr:
+#  def load_train_eval_examples(train_base_file):
+#      label2id = {}
+#      id2label = {}
+#      train_base_examples = []
+#      with open(train_base_file, 'r') as fr:
+#          lines = fr.readlines()
+#          for line in tqdm(lines, desc=f"train & eval"):
+#              d = json.loads(line)
+#              guid = d['doc_id']
+#              text = d['content']
+#              words = [w for w in text]
+#              labels = ['O'] * len(words)
+#              for e in d['events']:
+#                  event_type = e['event_type']
+#                  #  if event_type not in ['破产清算']:  # ['股东减持', '股东增持']:
+#                  #      continue
+#                  for k, v in e.items():
+#                      if not v:
+#                          continue
+#
+#                      if k not in ['event_id', 'event_type']:
+#                          label = '_'.join((event_type, k))
+#                          if label not in label2id:
+#                              n = len(label2id) + 1
+#                              label2id[label] = n
+#                              id2label[n] = label
+#                              ner_labels.append(label)
+#                          n = label2id[label]
+#                          i0 = text.find(v)
+#                          while i0 >= 0:
+#                              #  if i0 >= 0:
+#                              if len(v) == 1:
+#                                  #  if labels[i0] == 'O':
+#                                  #      labels[i0] = f"S-{label}"
+#                                  pass
+#                              else:
+#                                  labels[i0] = f"B-{label}"
+#                                  for j0 in range(1, len(v)):
+#                                      labels[i0 + j0] = f"I-{label}"
+#                              i0 = text.find(v, i0 + 1)
+#
+#              for seg_words, seg_labels in seg_generator((words, labels),
+#                                                         seg_len, seg_backoff):
+#                  train_base_examples.append(
+#                      InputExample(guid=guid,
+#                                   text_a=seg_words,
+#                                   labels=seg_labels))
+#
+#              #  if seg_len > 0:
+#              #      n_segs = len(text) // seg_len
+#              #      for i in range(n_segs + 1):
+#              #          s0 = seg_len * i
+#              #          s1 = seg_len * (i + 1) if i < n_segs - 1 else len(text)
+#              #          if s0 < s1:
+#              #              seg_text = text[s0:s1]
+#              #              seg_words = words[s0:s1]
+#              #              seg_labels = labels[s0:s1]
+#              #
+#              #              train_base_examples.append(
+#              #                  InputExample(guid=guid,
+#              #                               text_a=seg_words,
+#              #                               labels=seg_labels))
+#              #  else:
+#              #      train_base_examples.append(
+#              #          InputExample(guid=guid, text_a=words, labels=labels))
+#      #  train_base_examples = train_base_examples[:100]
+#
+#      random.shuffle(train_base_examples)
+#      train_rate = 0.9
+#
+#      num_eval_examples = int(len(train_base_examples) * (1 - train_rate))
+#      num_train_samples = len(train_base_examples) - num_eval_examples
+#
+#      if fold == 0:
+#          eval_examples = train_base_examples[num_train_samples:]
+#          train_examples = train_base_examples[:num_train_samples]
+#      else:
+#          s = num_eval_examples * (fold - 1)
+#          e = num_eval_examples * fold
+#          eval_examples = train_base_examples[s:e]
+#          train_examples = train_base_examples[:s] + train_base_examples[e:]
+#      logger.info(
+#          f"Loaded {len(train_examples)} train examples, {len(eval_examples)} eval examples."
+#      )
+#      return train_examples, eval_examples
 
-        test_examples = []
+
+def test_data_generator(args, test_file):
+    with open(test_file, 'r') as fr:
+
         lines = fr.readlines()
         for line in tqdm(lines, desc=f"test"):
-            d = json.loads(line)
+            d = json.loads(line.strip())
             guid = d['doc_id']
-            words = [w for w in d['content']]
+            text = d['content']
 
-            for seg_words, in seg_generator((words, ), seg_len, seg_backoff):
-                test_examples.append(
-                    InputExample(guid=guid, text_a=seg_words, labels=None))
+            yield guid, text, None, None
+
+
+def load_test_examples(test_file, seg_len=0, seg_backoff=0):
+
+    test_examples = []
+    for guid, text in test_data_generator(test_file):
+        #  text = clean_text(text)
+
+        words = [w for w in text]
+        for seg_words, in seg_generator((words, ), seg_len, seg_backoff):
+            test_examples.append(
+                InputExample(guid=guid, text_a=seg_words, labels=None))
 
     logger.info(f"Loaded {len(test_examples)} test examples.")
     return test_examples
 
 
-train_examples, eval_examples = load_train_eval_examples(train_base_file)
-test_examples = load_test_examples(test_base_file)
+#  def load_test_examples(test_base_file):
+#      with open(test_base_file, 'r') as fr:
+#
+#          test_examples = []
+#          lines = fr.readlines()
+#          for line in tqdm(lines, desc=f"test"):
+#              d = json.loads(line)
+#              guid = d['doc_id']
+#              words = [w for w in d['content']]
+#
+#              for seg_words, in seg_generator((words, ), seg_len, seg_backoff):
+#                  test_examples.append(
+#                      InputExample(guid=guid, text_a=seg_words, labels=None))
+#
+#      logger.info(f"Loaded {len(test_examples)} test examples.")
+#      return test_examples
+#
+
+#  train_examples, eval_examples = load_train_eval_examples(train_base_file)
+#  test_examples = load_test_examples(test_base_file)
 
 logger.info(f"ner_labels: {ner_labels}")
 # -------------------- Model --------------------
@@ -954,7 +1029,6 @@ def merge_multi(args):
 
 def main(args):
     init_theta(args)
-    init_labels(args, ner_labels)
 
     if args.do_eda:
         eda(args)
@@ -976,6 +1050,10 @@ def main(args):
         fix_results_file(args)
         return
 
+    train_examples, val_examples = load_train_val_examples(
+        args, seg_len=seg_len, seg_backoff=seg_backoff)
+    init_labels(args, ner_labels)
+
     trainer = Trainer(args)
     tokenizer = trainer.tokenizer
 
@@ -991,15 +1069,15 @@ def main(args):
     if args.do_train:
         #  train_examples = load_examples_from_bios_file(args.train_file)
         #  eval_examples = load_examples_from_bios_file(args.eval_file)
-        #  train_examples, eval_examples = load_train_eval_examples(
-        #      train_base_file)
+        #  train_examples, val_examples = load_train_val_examples(train_base_file)
 
         #  train_dataset = do_examples_to_dataset(
         #      examples=train_examples, max_seq_length=args.train_max_seq_length)
         #  eval_dataset = do_examples_to_dataset(
         #      examples=eval_examples, max_seq_length=args.eval_max_seq_length)
+        # for ner_labels
 
-        trainer.train(args, train_examples, eval_examples)
+        trainer.train(args, train_examples, val_examples)
 
     # --------------- predict phase ---------------
     if args.do_eval:
@@ -1009,13 +1087,17 @@ def main(args):
         #  eval_dataset = do_examples_to_dataset(
         #      examples=eval_examples, max_seq_length=args.eval_max_seq_length)
 
+        #  train_examples, val_examples = load_train_val_examples(train_base_file)
         model = load_model(args)
-        trainer.evaluate(args, model, eval_examples)
+        trainer.evaluate(args, model, val_examples)
 
     # --------------- predict phase ---------------
     if args.do_predict:
         #  test_examples = load_examples_from_bios_file(args.test_file)
-        #  test_examples = load_test_examples(test_base_file)
+        # for ner_labels
+        test_examples = load_test_examples(test_base_file,
+                                           seg_len=seg_len,
+                                           seg_backoff=seg_backoff)
         #  test_dataset = do_examples_to_dataset(
         #      examples=test_examples, max_seq_length=args.eval_max_seq_length)
 
@@ -1057,6 +1139,6 @@ def add_special_args(parser):
 
 
 if __name__ == '__main__':
-    from theta.modeling.ner.args import get_args
+    from theta.modeling.ner_span.args import get_args
     args = get_args([add_special_args])
     main(args)

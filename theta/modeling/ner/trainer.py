@@ -248,8 +248,8 @@ class BertCrfForNer(BertPreTrainedModel):
             #                                       lengths=input_lens)
 
             # CRFPP
-            crf_loss = self.crf.neg_log_likelihood_loss(
-                logits, attention_mask, labels)
+            #  crf_loss = self.crf.neg_log_likelihood_loss(
+            #      logits, attention_mask, labels)
 
             # new local crf
             #  crf_loss = self.crf(logits, labels)
@@ -262,7 +262,7 @@ class BertCrfForNer(BertPreTrainedModel):
             #  crf_loss = 0.0
 
             #  loss = clf_loss + crf_loss
-            loss = crf_loss
+            loss = clf_loss
             outputs = (loss, ) + outputs
         return outputs  # (loss), scores
 
@@ -401,7 +401,7 @@ def collate_fn(batch):
     batch should be a list of (sequence, target, length) tuples...
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
-    all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_labels, all_lens = map(
+    all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens = map(
         torch.stack, zip(*batch))
     max_len = max(all_lens).item()
     all_input_ids = all_input_ids[:, :max_len]
@@ -411,7 +411,18 @@ def collate_fn(batch):
     return all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens
 
 
+def load_model(args):
+    model = load_pretrained_model(args)
+    model.to(args.device)
+    return model
+
+
 def build_default_model(args):
+    """
+    自定义模型
+    规格要求返回模型(model)、优化器(optimizer)、调度器(scheduler)三元组。
+    """
+
     # -------- model --------
     model = load_pretrained_model(args)
     model.to(args.device)
@@ -513,8 +524,13 @@ class NerTrainer(Trainer):
 
         # --------------------------------------
         # NCRFPP CRF
-        scores, tags = model.crf._viterbi_decode(logits,
-                                                 inputs["attention_mask"])
+
+        if args.n_gpu > 1:
+            scores, tags = model.module.crf._viterbi_decode(
+                logits, inputs["attention_mask"])
+        else:
+            scores, tags = model.crf._viterbi_decode(logits,
+                                                     inputs["attention_mask"])
         tags = tags.cpu().numpy().tolist()
 
         # --------------------------------------

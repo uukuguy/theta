@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data import RandomSampler, SequentialSampler
 from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
+from ...utils import seg_generator
 
 
 class InputExample(object):
@@ -74,14 +75,16 @@ def load_examples(args,
 
     examples = []
 
-    for guid, text_a, text_b, labels in data_generator(args, examples_file):
+    for guid, text_a, text_b, labels in data_generator(
+            args, examples_file, seg_len=seg_len, seg_backoff=seg_backoff):
         assert text_a is not None
-        for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
-                                                      seg_len, seg_backoff):
-            seg_words_a = [w for w in seg_text_a]
-
-            examples.append(
-                InputExample(guid=guid, text_a=seg_words_a, labels=labels))
+        #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
+        #                                                seg_len, seg_backoff):
+        #      seg_words_a = [w for w in seg_text_a]
+        #
+        #      examples.append(
+        #          InputExample(guid=guid, text_a=seg_words_a, labels=labels))
+        examples.append(InputExample(guid=guid, text_a=text_a, labels=labels))
     logger.info(f"Loaded {len(examples)} examples.")
 
     return examples
@@ -100,7 +103,8 @@ def init_labels(args, labels):
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
-    texts = [''.join(e.text_a) for e in examples]
+    #  texts = [''.join(e.text_a) for e in examples]
+    texts = [e.text_a[:max_seq_length-2] for e in examples]
 
     #  outputs = tokenizer.batch_encode_plus(texts,
     #                                        max_length=max_seq_length,
