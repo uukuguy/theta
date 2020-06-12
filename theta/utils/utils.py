@@ -200,7 +200,7 @@ def create_logger(log_dir: str, logger_name: str):
 
 def seg_generator(iterables, seg_len, seg_backoff=0):
     if seg_len <= 0:
-        yield iterables
+        yield iterables, 0
     else:
         #  # 确保iterables列表中每一项的条目数相同
         #  assert sum([len(x)
@@ -258,6 +258,8 @@ def split_train_eval_examples(examples: [list, np.array],
 
     e = num_examples - num_eval_examples * fold
     s = num_examples - num_eval_examples * (fold + 1)
+    if s < 0:
+        s = 0
     eval_examples = examples[s:e]
     train_examples = concatenate_list(examples[:s], examples[e:])
 

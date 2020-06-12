@@ -243,6 +243,7 @@ class Trainer:
         # https://github.com/lonePatient/BERT-SDA
         enable_kd = args.enable_kd
         if enable_kd:
+            logger.warning("Enable knowledge distillation.")
             from torch.nn import MSELoss
             kd_loss_fct = MSELoss()
             kd_model = copy.deepcopy(model)

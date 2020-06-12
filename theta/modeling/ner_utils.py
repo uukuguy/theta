@@ -158,7 +158,8 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
         for x in json_data['entities']:
             if x not in reviews[guid]['entities']:
                 reviews[guid]['entities'].append(x)
-        reviews[guid]['entities'] = sorted(reviews[guid]['entities'], key = lambda x: x['start'])
+        reviews[guid]['entities'] = sorted(reviews[guid]['entities'],
+                                           key=lambda x: x['start'])
 
     return reviews, category_mentions
 
@@ -424,7 +425,7 @@ def load_ner_labeled_examples(lines,
             seg_len=seg_len,
             seg_backoff=seg_backoff,
             num_augements=num_augements,
-            allow_overla=yallow_overlap):
+            allow_overlap=allow_overlap):
         assert text_a is not None
         examples.append(
             InputExample(guid=guid,
@@ -438,12 +439,9 @@ def load_ner_labeled_examples(lines,
 
 def show_ner_datainfo(ner_labels, train_data_generator, train_file,
                       test_data_generator, test_file):
-    train_lengths = [
-        len(text_a)
-        for guid, text_a, _, labels in train_data_generator(train_file)
-    ]
-
-    for _, _, _, labels in train_data_generator(train_file):
+    train_lengths = []
+    for guid, text_a, _, labels in train_data_generator(train_file):
+        train_lengths.append(len(text_a))
         for entity in labels:
             c = entity.category
             if c not in ner_labels:
