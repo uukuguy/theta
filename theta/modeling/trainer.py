@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, json
+import os, json, copy
 from pathlib import Path
 from loguru import logger
 
@@ -60,7 +60,6 @@ class Trainer:
 
         self.args = args
         self.collate_fn = None
-
 
     #  def build_model(self, args):
     #      raise NotImplementedError
@@ -127,7 +126,8 @@ class Trainer:
                 or type(v) in [bool, str, int, float, dict, list, tuple]
             },
             open(os.path.join(model_path, "training_args.json"), 'w'),
-            ensure_ascii=False, indent=2)
+            ensure_ascii=False,
+            indent=2)
 
         torch.save(optimizer.state_dict(),
                    os.path.join(model_path, "optimizer.pt"))
@@ -222,11 +222,11 @@ class Trainer:
                 len(train_dataloader) // args.gradient_accumulation_steps)
 
             logger.info(
-                "  Continuing training from checkpoint, will skip to saved global_step"
+                "  Continuing training from checkpoint, will skip to saved trained_steps"
             )
             logger.info("  Continuing training from epoch %d", epochs_trained)
             logger.info("  Continuing training from global step %d",
-                        global_step)
+                        trained_steps)
             logger.info("  Will skip the first %d steps in the first epoch",
                         steps_trained_in_current_epoch)
 
@@ -238,6 +238,15 @@ class Trainer:
         #  best_type = 'min'
 
         model.zero_grad()
+
+        # https://arxiv.org/abs/2002.10345
+        # https://github.com/lonePatient/BERT-SDA
+        enable_kd = args.enable_kd
+        if enable_kd:
+            from torch.nn import MSELoss
+            kd_loss_fct = MSELoss()
+            kd_model = copy.deepcopy(model)
+            kd_model.eval()
 
         #  train_iterator = trange(
         #      epochs_trained,
@@ -271,6 +280,15 @@ class Trainer:
                 #  logger.debug(f"outputs: {outputs}")
                 # -------- loss --------
                 loss = outputs[0]
+
+                if enable_kd:
+                    inputs = self.batch_to_inputs(args, batch)
+                    inputs['labels'] = None
+                    with torch.no_grad():
+                        kd_logits = kd_model(**inputs)[0]
+                    kd_loss = kd_loss_fct(outputs[1], kd_logits)
+                    loss += args.kd_coeff * kd_loss
+
                 #  logger.debug(f"loss: {loss}")
                 if args.n_gpu > 1:
                     loss = loss.mean()
@@ -296,10 +314,24 @@ class Trainer:
                     else:
                         torch.nn.utils.clip_grad_norm_(model.parameters(),
                                                        args.max_grad_norm)
-                optimizer.step()
-                scheduler.step()
-                model.zero_grad()
-                trained_steps += 1
+                    optimizer.step()
+                    scheduler.step()
+                    model.zero_grad()
+                    trained_steps += 1
+
+                    if enable_kd:
+                        decay = min(args.kd_decay,
+                                    (1 + trained_steps) / (10 + trained_steps))
+                        one_minus_decay = 1.0 - decay
+                        with torch.no_grad():
+                            parameters = [
+                                p for p in model.parameters()
+                                if p.requires_grad
+                            ]
+                            for s_param, param in zip(kd_model.parameters(),
+                                                      parameters):
+                                s_param.sub_(one_minus_decay *
+                                             (s_param - param))
 
                 # -------- Save models --------
                 if is_master_process(

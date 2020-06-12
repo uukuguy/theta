@@ -209,6 +209,17 @@ def add_common_args(parser):
                         help="train sample rate.")
 
     # ------------------------------
+    # Knowledge distillation
+    parser.add_argument("--enable_kd",
+                        action='store_true',
+                        help="Whether to do knowledge distillation (KD).")
+    parser.add_argument("--kd_coeff",
+                        type=float,
+                        default=1.0,
+                        help="KD loss coefficient.")
+    parser.add_argument("--kd_decay", type=float, default=0.995, help="The exponential decay of KD.")
+
+    # ------------------------------
     parser.add_argument("--server_ip",
                         type=str,
                         default="",
@@ -287,9 +298,7 @@ def add_common_args(parser):
     )
     parser.add_argument("--focalloss_gamma", type=float, default=2.0)
     parser.add_argument("--focalloss_alpha", type=float, default=None)
-    parser.add_argument(
-        "--allow_overlap",
-        action="store_true", help="")
+    parser.add_argument("--allow_overlap", action="store_true", help="")
 
     return parser
 

@@ -104,7 +104,8 @@ def get_list_size(samples: [list, np.array]):
 
 def shuffle_list(samples: [list, np.array],
                  random_state=None) -> [list, np.array]:
-    np.random.seed(random_state)
+    if random_state:
+        np.random.seed(random_state)
 
     num_samples = get_list_size(samples)
     indices = np.random.randint(0, num_samples, num_samples)
@@ -245,18 +246,28 @@ def split_train_eval_examples(examples: [list, np.array],
                               fold=0,
                               shuffle=False,
                               random_state=None) -> [list, np.array]:
+    examples = list(examples)
     if shuffle:
-        examples = shuffle_list(examples, random_state=random_state)
+        #      #  examples = shuffle_list(examples, random_state=random_state)
+        random.shuffle(examples)
+
     num_examples = get_list_size(examples)
 
-    num_eval_examples = int(num_examples * (1 - train_rate))
+    num_train_examples = int(num_examples * train_rate)
+    num_eval_examples = num_examples - num_train_examples
 
-    assert fold <= num_examples // num_eval_examples
-
-    s = num_eval_examples * fold
-    e = num_eval_examples * (fold + 1)
+    e = num_examples - num_eval_examples * fold
+    s = num_examples - num_eval_examples * (fold + 1)
     eval_examples = examples[s:e]
     train_examples = concatenate_list(examples[:s], examples[e:])
+
+    #  num_eval_examples = int(num_examples * (1 - train_rate))
+    #  assert fold <= num_examples // num_eval_examples
+    #
+    #  s = num_eval_examples * fold
+    #  e = num_eval_examples * (fold + 1)
+    #  eval_examples = examples[s:e]
+    #  train_examples = concatenate_list(examples[:s], examples[e:])
 
     return train_examples, eval_examples
 
