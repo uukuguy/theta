@@ -12,37 +12,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data import RandomSampler, SequentialSampler
 from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_master_process, is_multi_processes
 from ...utils import seg_generator
-
-
-#  @dataclass(frozen=False)
-class InputExample:
-    """
-    A single training/test example for simple sequence classification.
-
-    Args:
-        guid: Unique id for the example.
-        text_a: string. The untokenized text of the first sequence. For single
-            sequence tasks, only this sequence must be specified.
-        text_b: (Optional) string. The untokenized text of the second sequence.
-            Only must be specified for sequence pair tasks.
-        label: (Optional) string. The label of the example. This should be
-            specified for train and dev examples, but not for test examples.
-    """
-
-    #  guid: str
-    #  text_a: str
-    #  text_b: Optional[str] = None
-    #  label: Optional[str] = None
-    def __init__(self, guid, text_a, text_b=None, label=None):
-        self.guid = guid
-        self.text_a = text_a
-        self.text_b = text_b
-        self.label = label
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(dataclasses.asdict(self), indent=2,
-                          sort_keys=True) + "\n"
+from ..glue_utils import InputExample
 
 
 class InputFeatures(object):
@@ -80,49 +50,42 @@ class InputFeatures(object):
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
-def load_examples(args,
-                  data_generator,
-                  examples_file,
-                  seg_len=0,
-                  seg_backoff=0):
-
-    examples = []
-
-    for guid, text_a, text_b, label in data_generator(args,
-                                                      examples_file,
-                                                      seg_len=seg_len,
-                                                      seg_backoff=seg_backoff):
-        #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
-        #                                                seg_len, seg_backoff):
-        #      #  seg_text = seg_text[0]
-        #      examples.append(
-        #          InputExample(guid=guid,
-        #                       text_a=seg_text_a,
-        #                       text_b=seg_text_b,
-        #                       label=label))
-        examples.append(
-            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-    logger.info(f"Loaded {len(examples)} examples from {examples_file}.")
-
-    return examples
-
-
-def init_labels(args, labels):
-    args.id2label = {i: label for i, label in enumerate(labels)}
-    args.label2id = {label: i for i, label in enumerate(labels)}
-    args.num_labels = len(args.label2id)
-
-    logger.info(f"args.label2id: {args.label2id}")
-    logger.info(f"args.id2label: {args.id2label}")
-    logger.info(f"args.num_labels: {args.num_labels}")
+#  def load_examples(args,
+#                    data_generator,
+#                    examples_file,
+#                    seg_len=0,
+#                    seg_backoff=0):
+#
+#      examples = []
+#
+#      for guid, text_a, text_b, label in data_generator(args,
+#                                                        examples_file,
+#                                                        seg_len=seg_len,
+#                                                        seg_backoff=seg_backoff):
+#          #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
+#          #                                                seg_len, seg_backoff):
+#          #      #  seg_text = seg_text[0]
+#          #      examples.append(
+#          #          InputExample(guid=guid,
+#          #                       text_a=seg_text_a,
+#          #                       text_b=seg_text_b,
+#          #                       label=label))
+#          examples.append(
+#              InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+#      logger.info(f"Loaded {len(examples)} examples from {examples_file}.")
+#
+#      return examples
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     texts_a = [e.text_a for e in examples]
-    texts_b = None
-    if len(examples) > 0 and examples[0].text_b:
-        texts_b = [e.text_b for e in examples]
+    texts_b = [e.text_b for e in examples]
+    if not any(texts_b):
+        texts_b = None
+    #  texts_b = None
+    #  if len(examples) > 0 and examples[0].text_b:
+    #      texts_b = [e.text_b for e in examples]
 
     outputs = tokenizer.batch_encode_plus(texts_a,
                                           text_pair=texts_b,
@@ -137,7 +100,20 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     all_lens = [len(input_ids) for input_ids in all_input_ids]
 
-    all_labels = [label2id[e.label] if e.label else 0 for e in examples]
+    #  all_labels = [label2id[e.label] if e.label else 0 for e in examples]
+
+    all_labels = []
+    for e in examples:
+        if isinstance(e.label, list):
+            targets = [0] * len(label2id)
+            for x in e.label:
+                targets[label2id[x]] = 1
+            all_labels.append(targets)
+        else:
+            if e.label:
+                all_labels.append(label2id[e.label])
+            else:
+                all_labels.append(0)
 
     all_features = [
         InputFeatures(input_ids=input_ids,

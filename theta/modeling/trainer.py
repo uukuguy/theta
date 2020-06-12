@@ -7,6 +7,7 @@ from loguru import logger
 
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from ..utils import init_theta
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -55,8 +56,11 @@ def generate_dataloader(args,
 
 class Trainer:
     def __init__(self, args):
+        init_theta(args)
+
         self.args = args
         self.collate_fn = None
+
 
     #  def build_model(self, args):
     #      raise NotImplementedError
@@ -352,7 +356,7 @@ class Trainer:
                                 f"Best {best_index}: {eval_value:.4f} ({eval_value - best_value:.6f})"
                             )
                             best_value = eval_value
-                            bestmodel_path = output_dir / "best"
+                            bestmodel_path = output_dir / f"best_fold{args.fold}"
                             self.save_model(args, model, tokenizer, optimizer,
                                             scheduler, bestmodel_path)
 
@@ -441,7 +445,7 @@ class Trainer:
 
     def predict(self, args, model, test_examples):
 
-        pred_output_dir = Path(args.pred_output_dir)
+        pred_output_dir = Path(args.output_dir)
         if is_multi_processes(args) and not pred_output_dir.exists():
             os.makedirs(pred_output_dir)
 

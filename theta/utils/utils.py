@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, random
+import os, random, json
 import numpy as np
+from tqdm import tqdm
 from loguru import logger
+import math
 import torch
 from sklearn.metrics import f1_score
 from .multiprocesses import is_single_process
@@ -23,6 +25,10 @@ def load_pytorch_model(model, model_path):
 def softmax(x):
     e_x = np.exp(x - np.max(x, axis=1).reshape(-1, 1))
     return e_x / e_x.sum(axis=1).reshape(-1, 1)
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
 
 def simple_accuracy(preds, labels):
@@ -67,21 +73,9 @@ def init_cuda(args):
     args.device = device
 
 
-def init_labels(args, labels):
-    args.id2label = {i: label for i, label in enumerate(labels)}
-    args.label2id = {label: i for i, label in enumerate(labels)}
-    args.num_labels = len(args.label2id)
-
-    logger.info(f"args.label2id: {args.label2id}")
-    logger.info(f"args.id2label: {args.id2label}")
-    logger.info(f"args.num_labels: {args.num_labels}")
-
-
-def init_theta(args, labels=None):
+def init_theta(args):
     init_random(args.seed)
     init_cuda(args)
-    if labels:
-        init_labels(args, labels)
 
 
 # DataFrame直接初始化出InputExample列表
@@ -210,11 +204,12 @@ def seg_generator(iterables, seg_len, seg_backoff=0):
         #  # 确保iterables列表中每一项的条目数相同
         #  assert sum([len(x)
         #              for x in iterables]) == len(iterables[0]) * len(iterables)
+        assert iterables[0] is not None
         s0 = 0
         while s0 < len(iterables[0]):
             s1 = s0 + seg_len
             segs = [x[s0:s1] if x else None for x in iterables]
-            yield segs
+            yield segs, s0
             s0 += seg_len - seg_backoff
 
 
@@ -301,3 +296,25 @@ def get_pred_results_file(args):
 
 def get_submission_file(args):
     return f"{args.output_dir}/{args.dataset_name}_submission.json"
+
+
+def load_json_file(json_file):
+    rd = open(json_file, 'r')
+    lines = rd.readlines()
+    rd.close()
+    json_data = []
+    for line in tqdm(lines):
+        line = line.strip()
+        line_data = json.loads(line)
+        json_data.append(line_data)
+    print(f"Total: {len(json_data)}")
+    print(json_data[:5])
+    return json_data
+
+
+def show_statistical_distribution(data_list):
+    logger.info(f"***** Statistical Distribution *****")
+    logger.info(f"mean: {np.mean(data_list):.4f}")
+    logger.info(f"std: {np.mean(data_list):.4f}")
+    logger.info(f"max: {np.max(data_list):.4f}")
+    logger.info(f"min: {np.min(data_list)}:.4f")

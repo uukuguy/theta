@@ -28,6 +28,9 @@ class BertSpanForNer(BertPreTrainedModel):
         self.soft_label = config.soft_label
         self.num_labels = config.num_labels
         self.loss_type = config.loss_type
+        self.focalloss_gamma = config.focalloss_gamma
+        self.focalloss_alpha = config.focalloss_alpha
+
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.start_fc = PoolerStartLogits(config.hidden_size, self.num_labels)
@@ -75,11 +78,14 @@ class BertSpanForNer(BertPreTrainedModel):
         ) + outputs[2:]
 
         if start_positions is not None and end_positions is not None:
-            assert self.loss_type in ['lsr', 'focal', 'ce']
-            if self.loss_type == 'lsr':
+            assert self.loss_type in [
+                'LabelSmoothingCrossEntropy', 'FocalLoss', 'CrossEntropyLoss'
+            ]
+            if self.loss_type == 'LabelSmoothingCrossEntropy':
                 loss_fct = LabelSmoothingCrossEntropy()
-            elif self.loss_type == 'focal':
-                loss_fct = FocalLoss()
+            elif self.loss_type == 'FocalLoss':
+                loss_fct = FocalLoss(gamma=self.focalloss_gamma,
+                                     alpha=self.focalloss_alpha)
             else:
                 loss_fct = CrossEntropyLoss()
             start_logits = start_logits.view(-1, self.num_labels)
@@ -178,6 +184,8 @@ def load_pretrained_model(args):
     )
     setattr(config, 'soft_label', args.soft_label)
     setattr(config, 'loss_type', args.loss_type)
+    setattr(config, 'focalloss_gamma', args.focalloss_gamma)
+    setattr(config, 'focalloss_alpha', args.focalloss_alpha)
     logger.info(f"model_path: {args.model_path}")
     logger.info(f"config:{config}")
     model = model_class.from_pretrained(
@@ -259,9 +267,22 @@ def build_default_model(args):
     return model, optimizer, scheduler
 
 
+def init_labels(args, labels):
+
+    args.ner_labels = ['[unused1]'] + labels
+    args.id2label = {i: label for i, label in enumerate(args.ner_labels)}
+    args.label2id = {label: i for i, label in enumerate(args.ner_labels)}
+    args.num_labels = len(args.label2id)
+
+    logger.info(f"args.label2id: {args.label2id}")
+    logger.info(f"args.id2label: {args.id2label}")
+    logger.info(f"args.num_labels: {args.num_labels}")
+
+
 class NerTrainer(Trainer):
-    def __init__(self, args, build_model=None, tokenizer=None):
+    def __init__(self, args, ner_labels, build_model=None, tokenizer=None):
         super(NerTrainer, self).__init__(args)
+        init_labels(args, ner_labels)
         if tokenizer:
             self.tokenizer = tokenizer
         else:

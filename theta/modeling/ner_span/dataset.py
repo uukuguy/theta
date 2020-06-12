@@ -11,26 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data import RandomSampler, SequentialSampler
 from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
 from ...utils import seg_generator
-
-
-class InputExample(object):
-    """A single training/test example for token classification."""
-    def __init__(self, guid, text_a, labels):
-        self.guid = guid
-        self.text_a = text_a
-        self.labels = labels
-
-    def __repr__(self):
-        return str(self.to_json_string())
-
-    def to_dict(self):
-        """Serializes this instance to a Python dictionary."""
-        output = copy.deepcopy(self.__dict__)
-        return output
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+from ..ner_utils import InputExample
 
 
 class InputFeature(object):
@@ -67,44 +48,33 @@ class InputFeature(object):
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
-def load_examples(args,
-                  data_generator,
-                  examples_file,
-                  seg_len=0,
-                  seg_backoff=0):
-
-    examples = []
-
-    for guid, text_a, text_b, labels in data_generator(
-            args, examples_file, seg_len=seg_len, seg_backoff=seg_backoff):
-        assert text_a is not None
-        #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
-        #                                                seg_len, seg_backoff):
-        #      seg_words_a = [w for w in seg_text_a]
-        #
-        #      examples.append(
-        #          InputExample(guid=guid, text_a=seg_words_a, labels=labels))
-        examples.append(InputExample(guid=guid, text_a=text_a, labels=labels))
-    logger.info(f"Loaded {len(examples)} examples.")
-
-    return examples
-
-
-def init_labels(args, labels):
-    args.ner_labels = labels
-    args.id2label = {i + 1: label for i, label in enumerate(labels)}
-    args.label2id = {label: i + 1 for i, label in enumerate(labels)}
-    args.num_labels = len(args.label2id)
-
-    logger.info(f"args.label2id: {args.label2id}")
-    logger.info(f"args.id2label: {args.id2label}")
-    logger.info(f"args.num_labels: {args.num_labels}")
+#  def load_examples(args,
+#                    data_generator,
+#                    examples_file,
+#                    seg_len=0,
+#                    seg_backoff=0):
+#
+#      examples = []
+#
+#      for guid, text_a, text_b, labels in data_generator(
+#              args, examples_file, seg_len=seg_len, seg_backoff=seg_backoff):
+#          assert text_a is not None
+#          #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
+#          #                                                seg_len, seg_backoff):
+#          #      seg_words_a = [w for w in seg_text_a]
+#          #
+#          #      examples.append(
+#          #          InputExample(guid=guid, text_a=seg_words_a, labels=labels))
+#          examples.append(InputExample(guid=guid, text_a=text_a, labels=labels))
+#      logger.info(f"Loaded {len(examples)} examples.")
+#
+#      return examples
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     #  texts = [''.join(e.text_a) for e in examples]
-    texts = [e.text_a[:max_seq_length-2] for e in examples]
+    texts = [e.text_a[:max_seq_length - 2] for e in examples]
 
     #  outputs = tokenizer.batch_encode_plus(texts,
     #                                        max_length=max_seq_length,
@@ -137,8 +107,8 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     def encode_subjects(subjects, num_tokens):
         #  logger.warning(f"num_tokens: {num_tokens}")
-        start_ids = [0] * num_tokens
-        end_ids = [0] * num_tokens
+        start_ids = [label2id['[unused1]']] * num_tokens
+        end_ids = [label2id['[unused1]']] * num_tokens
         subjects_id = []
         if subjects:
             for subject in subjects:
@@ -177,6 +147,19 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     #  all_input_lens = torch.tensor(
     #      [len(input_ids) for input_ids in all_input_ids], dtype=torch.long)
+
+    logger.debug(f"all_input_ids.shape: {np.array(all_input_ids).shape}")
+    logger.debug(
+        f"all_attention_mask.shape: {np.array(all_attention_mask).shape}")
+    logger.debug(
+        f"all_token_type_ids.shape: {np.array(all_token_type_ids).shape}")
+    logger.debug(f"all_start_ids.shape: {np.array(all_start_ids).shape}")
+    logger.debug(f"all_end_ids.shape: {np.array(all_end_ids).shape}")
+    logger.debug(f"all_subjects_ids.shape: {np.array(all_subjects_ids).shape}")
+    logger.debug(f"all_input_lens.shape: {np.array(all_input_lens).shape}")
+    assert np.array(all_input_ids).shape[1] == max_seq_length
+    assert np.array(all_attention_mask).shape[1] == max_seq_length
+    assert np.array(all_token_type_ids).shape[1] == max_seq_length
 
     all_features = [
         InputFeature(input_ids=input_ids,

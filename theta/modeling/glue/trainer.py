@@ -6,14 +6,14 @@ from tqdm import tqdm
 from loguru import logger
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers import BertConfig, BertTokenizerFast
 from transformers.modeling_bert import BertPreTrainedModel, BertModel
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 
 from ..trainer import Trainer, get_default_optimizer_parameters
 from ...losses import FocalLoss
-from ...utils import softmax, acc_and_f1
+from ...utils import softmax, sigmoid, acc_and_f1
 from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes
 
 
@@ -133,10 +133,19 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 #                  labels.view(-1))
 
                 #  logger.debug(f"preds: {type(preds)}, {preds}")
+
+                assert self.loss_type in [
+                    'FocalLoss', 'CrossEntropyLoss', 'BCEWithLogitsLoss'
+                ]
                 if self.loss_type == 'FocalLoss':
                     loss = FocalLoss(gamma=self.focalloss_gamma,
                                      alpha=self.focalloss_alpha)(logits.view(
                                          -1, self.num_labels), labels.view(-1))
+                elif self.loss_type == 'BCEWithLogitsLoss':
+                    loss_fct = BCEWithLogitsLoss()
+                    #  logger.debug(f"logits: {logits.shape}, {logits}")
+                    #  logger.debug(f"labels: {labels.shape}, {labels}")
+                    loss = loss_fct(logits, labels.float())
                 else:
                     loss_fct = CrossEntropyLoss()
                     loss = loss_fct(logits.view(-1, self.num_labels),
@@ -350,17 +359,33 @@ class ClassReporter(object):
         y_true = target
 
         #  print(y_pred, y_true, self.labels, self.target_names)
+        #  if len(y_true.shape) == 1:
         classify_report = classification_report(y_true,
                                                 y_pred,
                                                 labels=self.labels,
                                                 target_names=self.target_names)
         logger.info(f"classify_report:\n{classify_report}")
+        #  else:
+        #      for i, label in enumerate(self.labels):
+        #          auc = roc_auc_score(y_score=y_pred[:, i], y_true=y_true[:, i])
+        #          print(f"{label} - auc: {auc:.4f}")
+
         return classify_report
 
 
+def init_labels(args, labels):
+    args.id2label = {i: label for i, label in enumerate(labels)}
+    args.label2id = {label: i for i, label in enumerate(labels)}
+    args.num_labels = len(args.label2id)
+
+    logger.info(f"args.label2id: {args.label2id}")
+    logger.info(f"args.id2label: {args.id2label}")
+    logger.info(f"args.num_labels: {args.num_labels}")
+
 class GlueTrainer(Trainer):
-    def __init__(self, args, build_model=None, tokenizer=None):
+    def __init__(self, args, glue_labels, build_model=None, tokenizer=None):
         super(GlueTrainer, self).__init__(args)
+        init_labels(args, glue_labels)
 
         if tokenizer:
             self.tokenizer = tokenizer
@@ -444,19 +469,34 @@ class GlueTrainer(Trainer):
         #      for prob, x in zip(self.probs, self.preds)
         #  ])
         self.preds = logits_to_preds(self.logits)
+        #  logger.debug(f"self.preds: {self.preds.shape}, {self.preds}")
+        #  logger.debug(
+        #      f"self.out_label_ids: {self.out_label_ids.shape}, {self.out_label_ids}, {np.argmax(self.out_label_ids, axis=1)}"
+        #  )
 
-        result = acc_and_f1(self.preds, self.out_label_ids)
+        if len(self.out_label_ids.shape) == 1:
+            result = acc_and_f1(self.preds, self.out_label_ids)
+        else:
+            result = acc_and_f1(self.preds,
+                                np.argmax(self.out_label_ids, axis=1))
+
         self.results.update(result)
 
         return (eval_loss, ), self.results
 
     def on_eval_end(self, args, eval_dataset):
-        self.preds = np.argmax(self.logits, axis=1)
+        if len(self.out_label_ids.shape) == 1:
+            self.preds = np.argmax(self.logits, axis=1)
+        else:
+            self.preds = np.array([x > 0.5
+                                   for x in sigmoid(self.logits)]).astype(int)
         # for regessions
         #  self.preds = np.squeeze(self.preds)
 
-        logger.debug(f"self.preds: {self.preds}")
-        logger.debug(f"self.out_label_ids: {self.out_label_ids}")
+        #  logger.debug(f"self.preds: {self.preds.shape}, {self.preds}")
+        #  logger.debug(
+        #      f"self.out_label_ids: {self.out_label_ids.shape}, {self.out_label_ids}"
+        #  )
         self.class_reporter(self.preds, self.out_label_ids)
 
         logger.info(f"  Num examples = {len(eval_dataset)}")

@@ -18,7 +18,7 @@ from theta.modeling.ner_span import init_labels, load_model, InputExample, load_
 
 ner_labels = []
 seg_len = 510
-seg_backoff = 32
+seg_backoff = 64
 fold = 2
 
 # -------------------- Data --------------------
@@ -206,7 +206,7 @@ def get_submission_file(args):
     return f"{args.output_dir}/event_element_submission.json"
 
 
-def train_data_generator(args, train_file):
+def train_data_generator(args, train_base_file, seg_len=0, seg_backoff=0):
     with open(train_base_file, 'r') as fr:
         lines = fr.readlines()
         for line in tqdm(lines, desc=f"train & eval"):
@@ -217,7 +217,6 @@ def train_data_generator(args, train_file):
             for seg_text in seg_generator((text, ), seg_len, seg_backoff):
                 seg_text = seg_text[0]
 
-                seg_words = [w for w in seg_text]
                 seg_labels = []
                 for e in d['events']:
                     event_type = e['event_type']
@@ -245,10 +244,10 @@ def train_data_generator(args, train_file):
                                         v) - 1 < seg_len
                                     seg_labels.append(
                                         (label, i0, i0 + len(v) - 1))
-                                break
-                                #  i0 = seg_text.find(v, i0 + len(v))
+                                #  break
+                                i0 = seg_text.find(v, i0 + len(v))
 
-                yield guid, seg_words, None, seg_labels
+                yield guid, seg_text, None, seg_labels
 
 
 def load_train_val_examples(args, seg_len=0, seg_backoff=0):
@@ -358,7 +357,7 @@ def load_train_val_examples(args, seg_len=0, seg_backoff=0):
 #      return train_examples, eval_examples
 
 
-def test_data_generator(args, test_file):
+def test_data_generator(args, test_file, seg_len=0, seg_backoff=0):
     with open(test_file, 'r') as fr:
 
         lines = fr.readlines()
@@ -370,16 +369,18 @@ def test_data_generator(args, test_file):
             yield guid, text, None, None
 
 
-def load_test_examples(test_file, seg_len=0, seg_backoff=0):
+def load_test_examples(args, test_file, seg_len=0, seg_backoff=0):
 
     test_examples = []
-    for guid, text in test_data_generator(test_file):
+    for guid, text, _, _ in test_data_generator(args,
+                                                test_file,
+                                                seg_len=seg_len,
+                                                seg_backoff=seg_backoff):
         #  text = clean_text(text)
 
-        words = [w for w in text]
-        for seg_words, in seg_generator((words, ), seg_len, seg_backoff):
+        for seg_text, in seg_generator((text, ), seg_len, seg_backoff):
             test_examples.append(
-                InputExample(guid=guid, text_a=seg_words, labels=None))
+                InputExample(guid=guid, text_a=seg_text, labels=None))
 
     logger.info(f"Loaded {len(test_examples)} test examples.")
     return test_examples
@@ -1095,7 +1096,8 @@ def main(args):
     if args.do_predict:
         #  test_examples = load_examples_from_bios_file(args.test_file)
         # for ner_labels
-        test_examples = load_test_examples(test_base_file,
+        test_examples = load_test_examples(args,
+                                           test_base_file,
                                            seg_len=seg_len,
                                            seg_backoff=seg_backoff)
         #  test_dataset = do_examples_to_dataset(

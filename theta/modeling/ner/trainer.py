@@ -11,7 +11,7 @@ import torch.nn.functional as F
 #  from ..models.crf_0 import CRF as CRF0
 #  from ..models.crf import CRF
 
-from ..models.ncrfpp_crf import CRF as CRFPP
+#  from ..models.ncrfpp_crf import CRF as CRFPP
 
 #  from ..models.sltk_crf import CRF as CRFSLTK
 
@@ -35,9 +35,9 @@ CRF_TYPE = "old_crf"
 CRF_TYPE = "new_crf"
 CRF_TYPE = "lstm_crf"
 CRF_TYPE = "TorchCRF"
-CRF_TYPE = "torchcrf"
-CRF_TYPE = "NCRFPP"
-CRF_TYPE = "CRFSLTK"
+CRF_TYPE = "pytorch-crf"
+CRF_TYPE = "ncrfpp"
+CRF_TYPE = "crfsltk"
 
 
 class CRFLayer:
@@ -162,6 +162,9 @@ class BertCrfForNer(BertPreTrainedModel):
         #  self.num_labels = len(label2id)
 
         self.num_labels = config.num_labels
+        self.crf_type = config.crf_type
+        self.no_crf_loss = config.no_crf_loss
+
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, self.num_labels)
@@ -171,6 +174,32 @@ class BertCrfForNer(BertPreTrainedModel):
         stop_tag_idx = label2id["[SEP]"]
 
         tagset_size = len(label2id)
+
+        # CRFPP
+        if self.crf_type == 'ncrfpp':
+            from ..models.ncrfpp_crf import CRF as CRFPP
+            self.crf = CRFPP(tagset_size, start_tag_idx, stop_tag_idx)
+        elif self.crf_type == 'pytorch-crf':
+            from torchcrf import CRF
+            # https://github.com/kmkurn/pytorch-crf/blob/master/torchcrf/__init__.py
+            self.crf = CRF(len(label2id), batch_first=torch.BoolTensor([True]))
+            #  self.crf = PyTorchCRF(tagset_size, start_tag_idx, stop_tag_idx)
+        elif self.crf_type == 'old_crf':
+            from ..models.crf_0 import CRF
+            #  self.crf_0 = CRF0(tagset_size=len(label2id),
+            #                    tag_dictionary=label2id,
+            #                    device=device)
+            self.crf_0 = CRF(tagset_size, start_tag_idx, stop_tag_idx)
+            #  self.crf = OldCRF(tagset_size, start_tag_idx, stop_tag_idx)
+        elif self.crf_type == 'new_crf':
+            from ..models.crf import CRF
+            self.crf = CRF(len(label2id), batch_first=True)
+            # self.crf = NewCRF(tagset_size, start_tag_idx, stop_tag_idx)
+        elif self.crf_type == 'lstm_crf':
+            from ..models.lstm_crf import CRF
+            self.crf = CRF(tagset_size, start_tag_idx, stop_tag_idx)
+            #  self.crf = LSTMCRF(tagset_size, start_tag_idx, stop_tag_idx)
+
         # lstm_crf
         #  self.crf = CRF(tagset_size, start_tag_idx, stop_tag_idx)
         #  self.crf = LSTMCRF(tagset_size, start_tag_idx, stop_tag_idx)
@@ -194,7 +223,7 @@ class BertCrfForNer(BertPreTrainedModel):
         #  self.crf = OldCRF(tagset_size, start_tag_idx, stop_tag_idx)
 
         # CRFPP
-        self.crf = CRFPP(tagset_size, start_tag_idx, stop_tag_idx)
+        #  self.crf = CRFPP(tagset_size, start_tag_idx, stop_tag_idx)
         #  self.crf = NCRFPP(tagset_size, start_tag_idx, stop_tag_idx)
 
         # CRFSLTK
@@ -230,6 +259,27 @@ class BertCrfForNer(BertPreTrainedModel):
 
             crf_loss = clf_loss
 
+            if self.no_crf_loss:
+                loss = clf_loss
+            else:
+                if self.crf_type == 'ncrfpp':
+                    crf_loss = self.crf.neg_log_likelihood_loss(
+                        logits, attention_mask, labels)
+                elif self.crf_type == 'pytorch-crf':
+                    # pytorch-crf
+                    crf_loss = -self.crf(logits, labels)  #, attention_mask)
+                elif self.crf_type == 'old_crf':
+                    crf_loss = self.crf.calculate_loss(logits,
+                                                       tag_list=labels,
+                                                       lengths=input_lens)
+                elif self.crf_type == 'new_crf':
+                    crf_loss = self.crf(logits, labels)
+                    #  crf_loss = self.crf(logits.transpose(0, 1), labels.transpose(0, 1))
+                elif self.crf_type == 'lstm_crf':
+                    crf_loss = self.crf.neg_log_likelihood(logits, labels)
+
+                loss = crf_loss
+
             #  crf_loss = self.crf.get_loss(logits, labels, attention_mask)
 
             # lstm_crf
@@ -262,7 +312,7 @@ class BertCrfForNer(BertPreTrainedModel):
             #  crf_loss = 0.0
 
             #  loss = clf_loss + crf_loss
-            loss = clf_loss
+            #  loss = crf_loss
             outputs = (loss, ) + outputs
         return outputs  # (loss), scores
 
@@ -368,6 +418,8 @@ def load_pretrained_model(args):
         num_labels=args.num_labels,
         label2id=args.label2id,
     )
+    setattr(config, 'crf_type', args.crf_type)
+    setattr(config, 'no_crf_loss', args.no_crf_loss)
 
     logger.info(f"model_path: {args.model_path}")
     logger.info(f"config:{config}")
@@ -446,9 +498,32 @@ def build_default_model(args):
     return model, optimizer, scheduler
 
 
+def preds_to_entities(preds, id2label, markup='bios', autofix=False):
+    #  logger.debug(f"{preds}")
+    preds = [id2label[x] for x in preds]
+    label_entities = get_entities(preds,
+                                  id2label=id2label,
+                                  markup=markup,
+                                  autofix=autofix)
+    return label_entities
+
+
+def init_labels(args, ner_labels):
+    label_set = ['X', 'O', '[CLS]', '[SEP]']
+    for x in ner_labels:
+        label_set += [f"B-{x}", f"I-{x}", f"S-{x}"]
+    args.id2label = {i: label for i, label in enumerate(label_set)}
+    args.label2id = {label: i for i, label in enumerate(label_set)}
+    args.num_labels = len(label_set)
+
+    logger.info(f"args.label2id: {args.label2id}")
+    logger.info(f"args.id2label: {args.id2label}")
+    logger.info(f"args.num_labels: {args.num_labels}")
+
 class NerTrainer(Trainer):
-    def __init__(self, args, build_model=None, tokenizer=None):
+    def __init__(self, args, ner_labels, build_model=None, tokenizer=None):
         super(NerTrainer, self).__init__(args)
+        init_labels(args, ner_labels)
         if tokenizer:
             self.tokenizer = tokenizer
         else:
@@ -495,6 +570,7 @@ class NerTrainer(Trainer):
         self.metric = SeqEntityScore(args.id2label,
                                      markup=args.markup,
                                      autofix=args.autofix)
+        self.error_entities = []
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
     def on_eval_step(self, args, model, step, batch, batch_features):
@@ -506,6 +582,28 @@ class NerTrainer(Trainer):
         outputs = model(**inputs)
         loss, logits = outputs[:2]
 
+        # --------------------------------------
+        # NCRFPP CRF
+        if args.crf_type == 'ncrfpp':
+            if args.n_gpu > 1:
+                scores, tags = model.module.crf._viterbi_decode(
+                    logits, inputs["attention_mask"])
+            else:
+                scores, tags = model.crf._viterbi_decode(
+                    logits, inputs["attention_mask"])
+            tags = tags.cpu().numpy().tolist()
+        elif args.crf_type == 'pytorch-crf':
+            tags = model.crf.decode(logits)
+            #  tags = model.crf.decode(logits.transpose(0, 1))
+        elif args.crf_type == 'old_crf':
+            tags, _ = model.crf.obtain_labels(logits, inputs['input_lens'])
+        elif args.crf_type == 'new_crf':
+            tags = model.crf.decode(logits, inputs['attention_mask'])
+            tags = tags.cpu().numpy().tolist()[0]
+        elif args.crf_type == 'lstm_crf':
+            tags = model.crf(logits)
+
+        # --------------------------------------
         #  seq_path = model.crf.decode(logits, attention_mask)
 
         # --------------------------------------
@@ -525,13 +623,13 @@ class NerTrainer(Trainer):
         # --------------------------------------
         # NCRFPP CRF
 
-        if args.n_gpu > 1:
-            scores, tags = model.module.crf._viterbi_decode(
-                logits, inputs["attention_mask"])
-        else:
-            scores, tags = model.crf._viterbi_decode(logits,
-                                                     inputs["attention_mask"])
-        tags = tags.cpu().numpy().tolist()
+        #  if args.n_gpu > 1:
+        #      scores, tags = model.module.crf._viterbi_decode(
+        #          logits, inputs["attention_mask"])
+        #  else:
+        #      scores, tags = model.crf._viterbi_decode(logits,
+        #                                               inputs["attention_mask"])
+        #  tags = tags.cpu().numpy().tolist()
 
         # --------------------------------------
         # local new CRF
@@ -596,6 +694,14 @@ class NerTrainer(Trainer):
         eval_info, _ = self.metric.result()
         results = {f'{key}': value for key, value in eval_info.items()}
 
+        #  batch_preds = tags
+        #  for i in range(len(batch_preds)):
+        #      preds = batch_preds[i]
+        #      R = preds_to_entities(preds, id2label=args.id2label)
+        #      T = batch_features[i].subjects
+        #      if R != T:
+        #          self.error_entities.append((R, T))
+
         return (loss, ), results
 
     def on_predict_start(self, args, test_dataset):
@@ -609,6 +715,24 @@ class NerTrainer(Trainer):
 
         outputs = model(**inputs)
         logits = outputs[0]
+
+        # --------------------------------------
+        # NCRFPP CRF
+        if args.crf_type == 'ncrfpp':
+            _, batch_preds = model.crf._viterbi_decode(
+                logits, inputs["attention_mask"])
+            batch_preds = batch_preds.cpu().numpy().tolist()
+        elif args.crf_type == 'pytorch-crf':
+            batch_preds = model.crf.decode(
+                logits)  #, inputs['attention_mask'].bool())
+        elif args.crf_type == 'old_crf':
+            batch_preds, _ = model.crf_0.obtain_labels(logits,
+                                                       inputs['input_lens'])
+        elif args.crf_type == 'new_crf':
+            batch_preds = model.crf.decode(logits, inputs['attention_mask'])
+            batch_preds = batch_preds.cpu().numpy().tolist()[0]
+        elif args.crf_type == 'lstm_crf':
+            tags = model.crf(logits)
 
         #  batch_preds = model.crf.decode(logits, attention_mask)
 
@@ -638,9 +762,9 @@ class NerTrainer(Trainer):
 
         # --------------------------------------
         # NCRFPP CRF
-        _, batch_preds = model.crf._viterbi_decode(logits,
-                                                   inputs["attention_mask"])
-        batch_preds = batch_preds.cpu().numpy().tolist()
+        #  _, batch_preds = model.crf._viterbi_decode(logits,
+        #                                             inputs["attention_mask"])
+        #  batch_preds = batch_preds.cpu().numpy().tolist()
 
         # --------------------------------------
         # CRFSLTK
@@ -652,17 +776,19 @@ class NerTrainer(Trainer):
 
         def to_entities(args, preds):
             #  logger.debug(f"{preds}")
-            preds = [args.id2label[x] for x in preds]
-            label_entities = get_entities(preds,
-                                          args.id2label,
-                                          args.markup,
-                                          autofix=args.autofix)
+
+            #  preds = [args.id2label[x] for x in preds]
+            #  label_entities = get_entities(preds,
+            #                                args.id2label,
+            #                                args.markup,
+            #                                autofix=args.autofix)
+            label_entities = preds_to_entities(preds, id2label=args.id2label)
 
             #  logger.debug(f"{label_entities}")
             json_d = {}
             json_d['id'] = step
-            tag_seq = preds  #[args.id2label[x] for x in preds]
-            json_d['tag_seq'] = " ".join(tag_seq)
+            preds = [args.id2label[x] for x in preds]
+            json_d['tag_seq'] = " ".join(preds)
             json_d['entities'] = label_entities
 
             #  logger.debug(f"{json_d}")

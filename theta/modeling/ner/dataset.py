@@ -10,36 +10,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data import RandomSampler, SequentialSampler
 from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
-from ...utils import seg_generator
-
-
-class InputExample(object):
-    """A single training/test example for token classification."""
-    def __init__(self, guid, text_a, labels):
-        """Constructs a InputExample.
-        Args:
-            guid: Unique id for the example.
-            text_a: list. The words of the sequence.
-            labels: (Optional) list. The labels for each word of the sequence. This should be
-            specified for train and dev examples, but not for test examples.
-        """
-        self.guid = guid
-        self.text_a = text_a
-        self.labels = labels
-
-    def __repr__(self):
-        return str(self.to_json_string())
-
-    def to_dict(self):
-        """Serializes this instance to a Python dictionary."""
-        output = copy.deepcopy(self.__dict__)
-        return output
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        #  return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
-        return json.dumps(self.to_dict(), ensure_ascii=False,
-                          sort_keys=True) + "\n"
+from ..ner_utils import InputExample
 
 
 class InputFeatures(object):
@@ -67,45 +38,28 @@ class InputFeatures(object):
                           sort_keys=True) + "\n"
 
 
-def load_examples(args,
-                  data_generator,
-                  examples_file,
-                  seg_len=0,
-                  seg_backoff=0):
 
-    examples = []
+def to_BIOS(labels, num_tokens):
+    bios_labels = ['O'] * num_tokens
+    #  logger.debug(f"num_tokens: {num_tokens}, labels: {labels}")
+    for c, s, e in labels:
+        assert s <= e
+        if s == e:
+            bios_labels[s] = f"S-{c}"
+        else:
+            bios_labels[s] = f"B-{c}"
+            for i in range(1, e + 1 - s):
+                bios_labels[s + i] = f"I-{c}"
 
-    for guid, text_a, text_b, labels in data_generator(
-            args, examples_file, seg_len=seg_len, seg_backoff=seg_backoff):
-        assert text_a is not None
-        #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
-        #                                                seg_len, seg_backoff):
-        #      seg_words_a = [w for w in seg_text_a]
-        #
-        #      examples.append(
-        #          InputExample(guid=guid, text_a=seg_words_a, labels=labels))
-        examples.append(InputExample(guid=guid, text_a=text_a, labels=labels))
-    logger.info(f"Loaded {len(examples)} examples.")
-
-    return examples
-
-
-def init_labels(args, ner_labels):
-    label_set = ['X', 'O', '[CLS]', '[SEP]']
-    for x in ner_labels:
-        label_set += [f"B-{x}", f"I-{x}", f"S-{x}"]
-    args.id2label = {i: label for i, label in enumerate(label_set)}
-    args.label2id = {label: i for i, label in enumerate(label_set)}
-    args.num_labels = len(label_set)
-
-    logger.info(f"args.label2id: {args.label2id}")
-    logger.info(f"args.id2label: {args.id2label}")
-    logger.info(f"args.num_labels: {args.num_labels}")
+    return bios_labels
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     texts = [e.text_a[:max_seq_length - 2] for e in examples]
+
+    #  for e in tqdm(examples, desc="to BIOS"):
+    #      e.labels = to_BIOS(e.labels, len(e.text_a))
 
     #  logger.debug(f"texts: {texts}")
 
@@ -135,15 +89,18 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     all_attention_mask = [[1] * len(input_ids) for input_ids in all_input_ids]
     all_token_type_ids = [[0] * len(input_ids) for input_ids in all_input_ids]
 
-    def encode_labels(e):
-        if e.labels is not None:
-            label_ids = [label2id[x] for x in e.labels[:max_seq_length-2]]
+    def encode_labels(labels, input_len):
+        if labels is not None:
+            #  logger.debug(f"labels: {labels}")
+            label_ids = [label2id[x] for x in to_BIOS(labels, input_len)]
         else:
-            label_ids = [label2id['O']] * len(e.text_a[:max_seq_length - 2])
+            label_ids = [label2id['O']] * input_len
         return label_ids
 
-    all_labels = [[label2id[tokenizer.cls_token]] + encode_labels(e) +
-                  [label2id[tokenizer.sep_token]] for e in examples]
+    all_labels = [[label2id[tokenizer.cls_token]] +
+                  encode_labels(e.labels, input_len - 2) +
+                  [label2id[tokenizer.sep_token]]
+                  for e, input_len in zip(examples, all_input_lens)]
 
     all_padding_lens = [max_seq_length - n for n in all_input_lens]
     for i, (input_ids, attention_mask, token_type_ids, label_ids,
@@ -154,6 +111,17 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
         all_attention_mask[i] = attention_mask + [0] * padding_length
         all_token_type_ids[i] = token_type_ids + [0] * padding_length
         all_labels[i] = label_ids + [0] * padding_length
+
+    logger.debug(f"all_input_ids.shape: {np.array(all_input_ids).shape}")
+    logger.debug(
+        f"all_attention_mask.shape: {np.array(all_attention_mask).shape}")
+    logger.debug(
+        f"all_token_type_ids.shape: {np.array(all_token_type_ids).shape}")
+    logger.debug(f"all_labels.shape: {np.array(all_labels).shape}")
+    logger.debug(f"all_input_lens.shape: {np.array(all_input_lens).shape}")
+    assert np.array(all_input_ids).shape[1] == max_seq_length
+    assert np.array(all_attention_mask).shape[1] == max_seq_length
+    assert np.array(all_token_type_ids).shape[1] == max_seq_length
 
     all_features = [
         InputFeatures(input_ids=input_ids,
