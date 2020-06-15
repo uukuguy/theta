@@ -325,9 +325,9 @@ def data_seg_generator(lines,
                     all_text_entities.append((guid, text_a, seg_entities))
 
                     for entity in seg_entities:
-                        label_type = entity.category
-                        s = entity.start  # - seg_offset
-                        e = entity.end  #- seg_offset
+                        label_type = entity['category']
+                        s = entity['start']  # - seg_offset
+                        e = entity['end']  #- seg_offset
                         #  print(s, e)
                         assert e >= s
                         #  logger.debug(
@@ -363,10 +363,11 @@ def data_seg_generator(lines,
                 #      f"mention {entity['mention']} in {text_a.find(entity['mention'])}"
                 #  )
                 #  logger.debug(f"entity: {entity}")
-                assert text_a[entity.start:entity.end + 1] == entity.mention
+                assert text_a[entity['start']:entity['end'] +
+                              1] == entity['mention']
             labels = [
-                (entity.category, entity.start, entity.end)
-                for entity in entities if entity.end < (
+                (entity['category'], entity['start'], entity['end'])
+                for entity in entities if entity['end'] < (
                     min(len(text_a), seg_len) if seg_len > 0 else len(text_a))
             ]
             yield guid, text_a, None, labels, 0

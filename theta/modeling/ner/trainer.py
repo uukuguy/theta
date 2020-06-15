@@ -314,7 +314,11 @@ class BertCrfForNer(BertPreTrainedModel):
             #  loss = clf_loss + crf_loss
             #  loss = crf_loss
             outputs = (loss, ) + outputs
-        return outputs  # (loss), scores
+            return outputs
+        else:
+            #  return (0.0, ) + outputs  # (loss), scores
+            #  return (torch.tensor(0.0).cuda(), ) + outputs
+            return outputs
 
 
 #  from transformers import AlbertConfig
@@ -520,6 +524,7 @@ def init_labels(args, ner_labels):
     logger.info(f"args.id2label: {args.id2label}")
     logger.info(f"args.num_labels: {args.num_labels}")
 
+
 class NerTrainer(Trainer):
     def __init__(self, args, ner_labels, build_model=None, tokenizer=None):
         super(NerTrainer, self).__init__(args)
@@ -714,6 +719,7 @@ class NerTrainer(Trainer):
         attention_mask = inputs['attention_mask']
 
         outputs = model(**inputs)
+        #  logits = outputs[0][1]
         logits = outputs[0]
 
         # --------------------------------------

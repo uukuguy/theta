@@ -238,9 +238,12 @@ class BertForSequenceClassification(BertPreTrainedModel):
 #                    gamma=128)
 #  loss = CircleLoss(scale=32, margin=0.25)(logits.view(
 #      -1, self.num_labels), labels.view(-1))
-            outputs = (loss, ) + outputs
-
-        return outputs  # (loss), logits, (hidden_states), (attentions)
+#  outputs = (loss, ) + outputs
+            return (loss, ) + outputs
+        else:
+            # (loss), logits, (hidden_states), (attentions)
+            #  return (torch.tensor(0.0).cuda(), ) + outputs
+            return outputs
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizerFast),
@@ -381,6 +384,7 @@ def init_labels(args, labels):
     logger.info(f"args.label2id: {args.label2id}")
     logger.info(f"args.id2label: {args.id2label}")
     logger.info(f"args.num_labels: {args.num_labels}")
+
 
 class GlueTrainer(Trainer):
     def __init__(self, args, glue_labels, build_model=None, tokenizer=None):

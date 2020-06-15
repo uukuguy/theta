@@ -45,8 +45,8 @@ def load_glue_examples(data_generator, examples_file):
 
     examples = []
 
-    for guid, text_a, _, label in data_generator(examples_file):
-        examples.append(InputExample(guid=guid, text_a=text_a, label=label))
+    for guid, text_a, text_b, label in data_generator(examples_file):
+        examples.append(InputExample(guid=guid, text_a=text_a, text_b = text_b, label=label))
     logger.info(f"Loaded {len(examples)} examples.")
 
     return examples

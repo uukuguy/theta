@@ -284,9 +284,20 @@ class Trainer:
 
                 if enable_kd:
                     inputs = self.batch_to_inputs(args, batch)
-                    inputs['labels'] = None
+                    if "labels" in inputs:
+                        inputs['labels'] = None
+                    #  num_inputs = len(inputs)
+                    #  for kk, vv in inputs.items():
+                    #      logger.info(f"inputs[{kk}]: {vv.shape}, {vv}")
                     with torch.no_grad():
                         kd_logits = kd_model(**inputs)[0]
+                        #  kd_logits = kd_model(**inputs)[1]
+                    #  logger.warning(
+                    #      f"outputs[1]: {outputs[1].shape}, {outputs[1]}")
+                    #  logger.warning(
+                    #      f"outputs[0]: {outputs[0].shape}, {outputs[0]}")
+                    #  logger.warning(
+                    #      f"kd_logits: {kd_logits.shape}, {kd_logits}")
                     kd_loss = kd_loss_fct(outputs[1], kd_logits)
                     loss += args.kd_coeff * kd_loss
 

@@ -72,7 +72,9 @@ class BertSpanForNer(BertPreTrainedModel):
                 label_logits = torch.argmax(label_logits,
                                             -1).unsqueeze(2).float()
         end_logits = self.end_fc(sequence_output, label_logits)
+        avg_logits = (start_logits + end_logits) / 2
         outputs = (
+            avg_logits,
             start_logits,
             end_logits,
         ) + outputs[2:]
@@ -101,7 +103,10 @@ class BertSpanForNer(BertPreTrainedModel):
             end_loss = loss_fct(active_end_logits, active_end_labels)
             total_loss = (start_loss + end_loss) / 2
             outputs = (total_loss, ) + outputs
-        return outputs
+            return outputs
+        else:
+            #  return (0.0, ) + outputs
+            return (torch.tensor(0.0).cuda(), ) + outputs
 
 
 class SpanEntityScore(object):
@@ -348,7 +353,7 @@ class NerTrainer(Trainer):
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
 
             outputs = model(**inputs)
-            tmp_eval_loss, start_logits, end_logits = outputs[:3]
+            tmp_eval_loss, mean_logits, start_logits, end_logits = outputs[:4]
             eval_loss += tmp_eval_loss
             num_eval_steps += 1
 
@@ -387,7 +392,7 @@ class NerTrainer(Trainer):
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
 
             outputs = model(**inputs)
-            _, start_logits, end_logits = outputs[:3]
+            _, _, start_logits, end_logits = outputs[:4]
 
             R = bert_extract_item(start_logits, end_logits)
 
