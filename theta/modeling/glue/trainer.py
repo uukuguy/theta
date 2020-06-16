@@ -114,7 +114,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
         outputs = (logits, ) + outputs[
             2:]  # add hidden states and attention if they are here
 
-        if labels is not None:
+        #  if labels is not None:
+        if labels is not None and any(labels):
             if self.num_labels == 1:
                 #  We are doing regression
                 loss_fct = MSELoss()
@@ -523,7 +524,9 @@ class GlueTrainer(Trainer):
         inputs = self.batch_to_inputs(args, batch, known_labels=False)
         outputs = model(**inputs)
 
-        _, logits = outputs[:2]
+        #  logger.debug(f"inputs: {inputs}")
+        #  logger.debug(f"outputs: {outputs}")
+        logits = outputs[0]
         if self.logits is None:
             self.logits = logits.detach().cpu().numpy()
         else:

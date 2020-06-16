@@ -133,7 +133,7 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
         'lens':
         torch.tensor(all_lens, dtype=torch.long),
         'labels':
-        torch.tensor(all_labels, dtype=torch.long),
+        torch.tensor(all_labels, dtype=torch.long), 
     })
 
 

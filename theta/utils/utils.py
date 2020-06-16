@@ -247,11 +247,11 @@ def split_train_eval_examples(examples: [list, np.array],
                               shuffle=False,
                               random_state=None) -> [list, np.array]:
     examples = list(examples)
-    if shuffle:
-        #      #  examples = shuffle_list(examples, random_state=random_state)
-        random.shuffle(examples)
+    num_examples = len(examples)
 
-    num_examples = get_list_size(examples)
+    # for entity_typing
+    if shuffle:
+        random.shuffle(examples)
 
     num_train_examples = int(num_examples * train_rate)
     num_eval_examples = num_examples - num_train_examples
@@ -263,6 +263,10 @@ def split_train_eval_examples(examples: [list, np.array],
     eval_examples = examples[s:e]
     train_examples = concatenate_list(examples[:s], examples[e:])
 
+    # for medical_entity
+    #  if shuffle:
+    #      examples = shuffle_list(examples, random_state=random_state)
+    #
     #  num_eval_examples = int(num_examples * (1 - train_rate))
     #  assert fold <= num_examples // num_eval_examples
     #
