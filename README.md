@@ -29,6 +29,8 @@ pip install theta==0.20.0
 
 选用bert-base-chinese预训练模型，CLUE测评F1得分56.100。
 
+完整代码见theta/examples/TNEWS：[tnews.ipynb](theta/examples/TNEWS/tnews.ipynb)
+
 [TNEWS数据集下载](https://storage.googleapis.com/cluebenchmark/tasks/tnews_public.zip)
 
 ### 导入基础库
