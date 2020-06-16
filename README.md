@@ -20,7 +20,11 @@ pip install http://122.112.206.124:3000/idleuncle/theta.git
 > {"label": "102", "label_desc": "news_entertainment", "sentence": "江疏影甜甜圈自拍，迷之角度竟这么好看，美吸引一切事物"}
 > 每一条数据有三个属性，从前往后分别是 分类ID，分类名称，新闻字符串（仅含标题）。
 
-#### 导入基础库
+选用bert-base-chinese预训练模型，CLUE测评F1得分56.100。
+
+[TNEWS数据集下载](https://storage.googleapis.com/cluebenchmark/tasks/tnews_public.zip)
+
+### 导入基础库
 
 ```
 import json
@@ -33,7 +37,7 @@ from theta.modeling.glue import GlueTrainer, load_model, get_args
 from theta.utils import load_json_file
 ```
 
-#### 自定义数据生成器
+### 自定义数据生成器
 
 多数情况下，此节是唯一需要自行修改的部分。
 
@@ -94,7 +98,7 @@ def test_data_generator(test_file):
         yield guid, text, None, None
 ```
 
-#### 载入数据集
+### 载入数据集
 
 以下代码不需要修改，原样使用即可。
 
@@ -123,11 +127,11 @@ def load_test_examples(test_file):
     return test_examples
 ```
 
-#### 自定义模型
+### 自定义模型
 
 Theta提供缺省模型，多数情况下不需要自定义模型。关于自定义模型的详细情况，在进阶文档中说明。
 
-#### 自定义训练器
+### 自定义训练器
 
 当使用缺省模型时，训练器也是不需要定义的，直接使用AppTrainer=GlueTrainer即可。
 
@@ -140,7 +144,7 @@ class AppTrainer(GlueTrainer):
         super(AppTrainer, self).__init__(args, glue_labels, build_model=None)
 ```
 
-#### 主函数
+### 主函数
 
 主函数是固定套路，通常不需要修改。 
 可以在add_special_args函数中定义自行需要的命令行参数，并在main函数中处理，具体例子见以下do_eda参数。
@@ -188,4 +192,50 @@ if __name__ == '__main__':
     args = get_args([add_special_args])
     main(args)
 
+```
+### 启动训练
+
+```
+	python run_tnews.py \
+		--do_train \
+		--model_type bert \
+		--model_path /opt/share/pretrained/pytorch/bert-base-chinese 
+		--data_dir ./data \
+		--output_dir ./output \
+		--dataset_name tnews \
+		--train_file ./data/train.json
+		--learning_rate 2e-5 \
+		--train_max_seq_length 160 \
+		--per_gpu_train_batch_size 64 \
+		--per_gpu_eval_batch_size 64 \
+		--num_train_epochs 10 
+```
+
+### 启动验证
+
+```
+	python run_tnews.py \
+		--do_eval \
+		--model_type bert \
+		--model_path ./output/best \
+		--data_dir ./data \
+		--output_dir ./output \
+		--dataset_name tnews \
+		--eval_file ./data/dev.json
+		--eval_max_seq_length 160 \
+		--per_gpu_eval_batch_size 64 
+```
+
+### 启动推理
+```
+	python run_tnews.py \
+		--do_predict \
+		--model_type bert \
+		--model_path ./output/best \
+		--data_dir ./data \
+		--output_dir ./output \
+		--dataset_name tnews \
+		--test_file ./data/test.json
+		--eval_max_seq_length 160 \
+		--per_gpu_predict_batch_size 64 
 ```
