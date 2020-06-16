@@ -15,6 +15,34 @@ pip install git+http://122.112.206.124:3000/idleuncle/theta@0.20.0
 ```
 pip install theta==0.20.0
 ```
+
+## CLUE-CLUENER 细粒度命名实体识别
+
+本数据是在清华大学开源的文本分类数据集THUCTC基础上，选出部分数据进行细粒度命名实体标注，原数据来源于Sina News RSS.
+
+训练集：10748 验证集：1343
+
+标签类别： 数据分为10个标签类别，分别为: 地址（address），书名（book），公司（company），游戏（game），政府（goverment），电影（movie），姓名（name），组织机构（organization），职位（position），景点（scene）
+
+数据下载地址：https://github.com/CLUEbenchmark/CLUENER2020
+
+排行榜地址：https://cluebenchmarks.com/ner.html
+
+完整代码见theta/examples/CLUENER：[cluener.ipynb](theta/examples/CLUENER/cluener.ipynb)
+
+选用bert-base-chinese预训练模型，CLUE测评F1得分77.160。
+
+```
+# 训练
+make -f Makefile.cluener train
+
+# 推理
+make -f Makefile.cluener predict
+
+# 生成提交结果文件
+make -f Makefile.cluener submission
+```
+
 ## 文本分类任务
 
 以下样例是CLUE（[中文任务基准测评](https://cluebenchmarks.com/index.html)）中今日头条中文新闻（短文）分类任务。
