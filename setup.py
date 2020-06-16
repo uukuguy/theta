@@ -14,16 +14,18 @@ from setuptools import find_packages, setup, Command
 REQUIRED = [
     "numpy",
     # dataclasses for Python versions that don't have it
-    "dataclasses;python_version<'3.7'"
+    "dataclasses;python_version<'3.7'",
     "tqdm >= 4.27",
-    "loguru"
+    "loguru",
+    "torch >= 1.4.0",
+    "transformers >=1.1.0",
 ]
 
 # Package meta-data.
 NAME = 'theta'
-DESCRIPTION = 'Pytorch deep learning utilities .'
+DESCRIPTION = 'Deep learning toolbox for end-to-end text classification and entity extraction tasks.'
 URL = 'https://github.com/idleuncle/theta'
-EMAIL = 'idleuncle@gmail.com'
+EMAIL = '531045572@qq.com'
 AUTHOR = 'Jiangwen Su'
 REQUIRES_PYTHON = '>=3.6.0'
 VERSION = None
