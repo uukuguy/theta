@@ -8,7 +8,7 @@ Theta是基于深度学习的文本挖掘基础能力工具箱，提供文本分
 
 测试版
 ```
-pip install git+http://122.112.206.124:3000/idleuncle/theta:0.20.0
+pip install git+http://122.112.206.124:3000/idleuncle/theta@0.20.0
 ```
 正式版
 
