@@ -5,8 +5,15 @@ Deep learning toolbox for end-to-end text classification and entity extraction t
 Theta是基于深度学习的文本挖掘基础能力工具箱，提供文本分类、文本抽取、文本匹配、阅读理解、知识问答、知识图谱等端到端开箱即用工具集。
 
 ## 安装
+
+测试版
 ```
-pip install http://122.112.206.124:3000/idleuncle/theta.git
+pip install git+http://122.112.206.124:3000/idleuncle/theta:0.20.0
+```
+正式版
+
+```
+pip install theta==0.20.0
 ```
 ## 文本分类任务
 
