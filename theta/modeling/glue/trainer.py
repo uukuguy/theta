@@ -243,8 +243,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return (loss, ) + outputs
         else:
             # (loss), logits, (hidden_states), (attentions)
-            #  return (torch.tensor(0.0).cuda(), ) + outputs
-            return outputs
+            return (torch.tensor(0.0).cuda(), ) + outputs
+            #  return outputs
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizerFast),
@@ -526,7 +526,8 @@ class GlueTrainer(Trainer):
 
         #  logger.debug(f"inputs: {inputs}")
         #  logger.debug(f"outputs: {outputs}")
-        logits = outputs[0]
+        logits = outputs[1]
+        #  logits = outputs[0]
         if self.logits is None:
             self.logits = logits.detach().cpu().numpy()
         else:

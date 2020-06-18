@@ -169,11 +169,11 @@ def save_ner_preds(args, preds, test_examples):
                                                        args.seg_len,
                                                        args.seg_backoff)
 
-    reviews_file = f"{args.output_dir}/{args.dataset_name}_reviews_fold{args.fold}.json"
+    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_fold{args.fold}.json"
     json.dump(reviews, open(reviews_file, 'w'), ensure_ascii=False, indent=2)
     logger.info(f"Reviews file: {reviews_file}")
 
-    category_mentions_file = f"{args.output_dir}/{args.dataset_name}_category_mentions_fold{args.fold}.txt"
+    category_mentions_file = f"{args.latest_dir}/{args.dataset_name}_category_mentions_fold{args.fold}.txt"
     num_categories = len(category_mentions)
     num_mentions = 0
     with open(category_mentions_file, 'w') as wt:
@@ -184,6 +184,8 @@ def save_ner_preds(args, preds, test_examples):
     logger.info(
         f"Total {num_categories} categories and {num_mentions} mentions saved to {category_mentions_file}"
     )
+
+    return reviews_file, category_mentions_file
 
 
 def augement_entities(all_text_entities, labels_map, num_augements):

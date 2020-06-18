@@ -74,7 +74,7 @@ class BertSpanForNer(BertPreTrainedModel):
         end_logits = self.end_fc(sequence_output, label_logits)
         avg_logits = (start_logits + end_logits) / 2
         outputs = (
-            #  avg_logits,
+            avg_logits,
             start_logits,
             end_logits,
         ) + outputs[2:]
@@ -102,12 +102,19 @@ class BertSpanForNer(BertPreTrainedModel):
             start_loss = loss_fct(active_start_logits, active_start_labels)
             end_loss = loss_fct(active_end_logits, active_end_labels)
             total_loss = (start_loss + end_loss) / 2
-            outputs = (total_loss, ) + outputs
+            outputs = (
+                total_loss,
+            ) + outputs
             return outputs
         else:
             #  return (0.0, ) + outputs
-            #  return (torch.tensor(0.0).cuda(), ) + outputs
-            return outputs
+            logger.warning(
+                f"start_positions: {start_positions}, end_positions: {end_positions}"
+            )
+            return (
+                torch.tensor(0.0).cuda(),
+            ) + outputs
+            #  return outputs
 
 
 class SpanEntityScore(object):
@@ -354,8 +361,8 @@ class NerTrainer(Trainer):
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
 
             outputs = model(**inputs)
-            #  tmp_eval_loss, avg_logits, start_logits, end_logits = outputs[:4]
-            tmp_eval_loss, start_logits, end_logits = outputs[:3]
+            tmp_eval_loss, avg_logits, start_logits, end_logits = outputs[:4]
+            #  tmp_eval_loss, start_logits, end_logits = outputs[:3]
             eval_loss += tmp_eval_loss
             num_eval_steps += 1
 
@@ -394,8 +401,8 @@ class NerTrainer(Trainer):
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
 
             outputs = model(**inputs)
-            #  _, _, start_logits, end_logits = outputs[:4]
-            _, start_logits, end_logits = outputs[:3]
+            _, _, start_logits, end_logits = outputs[:4]
+            #  _, start_logits, end_logits = outputs[:3]
 
             R = bert_extract_item(start_logits, end_logits)
 

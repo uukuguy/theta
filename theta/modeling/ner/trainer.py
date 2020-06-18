@@ -317,8 +317,8 @@ class BertCrfForNer(BertPreTrainedModel):
             return outputs
         else:
             #  return (0.0, ) + outputs  # (loss), scores
-            #  return (torch.tensor(0.0).cuda(), ) + outputs
-            return outputs
+            return (torch.tensor(0.0).cuda(), ) + outputs
+            #  return outputs
 
 
 #  from transformers import AlbertConfig
@@ -719,8 +719,8 @@ class NerTrainer(Trainer):
         attention_mask = inputs['attention_mask']
 
         outputs = model(**inputs)
-        #  logits = outputs[0][1]
-        logits = outputs[0]
+        logits = outputs[1]
+        #  logits = outputs[0]
 
         # --------------------------------------
         # NCRFPP CRF

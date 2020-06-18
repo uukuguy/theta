@@ -10,6 +10,67 @@ from .ner_utils import LabeledText, show_ner_datainfo, get_ner_preds_reviews, sa
 from .glue_utils import show_glue_datainfo, load_glue_examples
 from .common_args import add_common_args
 
+from dataclasses import dataclass, field
+from typing import List
+
+
+class Params:
+    def log(self):
+        for k, v in self.__dict__.items():
+            if isinstance(v, Params):
+                v.log()
+            else:
+                mlflow.log_param(k, v)
+
+    def debug(self):
+        for k, v in self.__dict__.items():
+            if isinstance(v, Params):
+                v.debug()
+            else:
+                logger.debug(f"{k}: {v}")
+
+    def update_args(self, args):
+        for k, v in self.__dict__.items():
+            if isinstance(v, Params):
+                v.update_args(args)
+            else:
+                setattr(args, k, v)
+
+        return args
+
+
+@dataclass
+class CommonParams(Params):
+    dataset_name: str = None
+    learning_rate: float = 2e-5
+    train_max_seq_length: int = 256
+    eval_max_seq_length: int = 256
+    predict_max_seq_length: int = 256
+    per_gpu_train_batch_size: int = 16
+    per_gpu_eval_batch_size: int = 16
+    per_gpu_predict_batch_size: int = 16
+    seg_len: int = 254
+    seg_backoff: int = 64
+    num_train_epochs: int = 5
+    fold: int = 0
+    num_augements: int = 0
+    enable_kd: bool = False
+    loss_type: str = "CrossEntropyLoss"
+    model_type: str = "bert"
+    model_path: str = None
+    fp16: bool = True
+
+
+@dataclass
+class NerParams(Params):
+    ner_labels: List[str] = field(default_factory=list)
+    ner_type: str = "crf"
+
+
+@dataclass
+class GlueParams(Params):
+    glue_labels: List[str] = field(default_factory=list)
+
 
 def augement_entities(all_text_entities, labels_map):
     aug_tokens = []

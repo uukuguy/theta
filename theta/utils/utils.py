@@ -250,30 +250,30 @@ def split_train_eval_examples(examples: [list, np.array],
     num_examples = len(examples)
 
     # for entity_typing
-    if shuffle:
-        random.shuffle(examples)
-
-    num_train_examples = int(num_examples * train_rate)
-    num_eval_examples = num_examples - num_train_examples
-
-    e = num_examples - num_eval_examples * fold
-    s = num_examples - num_eval_examples * (fold + 1)
-    if s < 0:
-        s = 0
-    eval_examples = examples[s:e]
-    train_examples = concatenate_list(examples[:s], examples[e:])
-
-    # for medical_entity
     #  if shuffle:
-    #      examples = shuffle_list(examples, random_state=random_state)
+    #      random.shuffle(examples)
     #
-    #  num_eval_examples = int(num_examples * (1 - train_rate))
-    #  assert fold <= num_examples // num_eval_examples
+    #  num_train_examples = int(num_examples * train_rate)
+    #  num_eval_examples = num_examples - num_train_examples
     #
-    #  s = num_eval_examples * fold
-    #  e = num_eval_examples * (fold + 1)
+    #  e = num_examples - num_eval_examples * fold
+    #  s = num_examples - num_eval_examples * (fold + 1)
+    #  if s < 0:
+    #      s = 0
     #  eval_examples = examples[s:e]
     #  train_examples = concatenate_list(examples[:s], examples[e:])
+
+    # for medical_entity
+    if shuffle:
+        examples = shuffle_list(examples, random_state=random_state)
+
+    num_eval_examples = int(num_examples * (1 - train_rate))
+    assert fold <= num_examples // num_eval_examples
+
+    s = num_eval_examples * fold
+    e = num_eval_examples * (fold + 1)
+    eval_examples = examples[s:e]
+    train_examples = concatenate_list(examples[:s], examples[e:])
 
     return train_examples, eval_examples
 

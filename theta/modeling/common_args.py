@@ -21,8 +21,23 @@ def add_common_args(parser):
     parser.add_argument("--resume_train",
                         action="store_true",
                         help="Continue to train model.")
+    parser.add_argument("--do_experiment",
+                        action="store_true",
+                        help="Whether to run tracking experiment.")
+    parser.add_argument("--do_submit",
+                        action="store_true",
+                        help="Whether to generate submission.")
+    parser.add_argument("--do_eda",
+                        action="store_true",
+                        help="Whether to explore data analysis.")
 
     # --------------- Main arguments ---------------
+
+    parser.add_argument(
+        "--tracking_uri",
+        default=None,
+        type=str,
+        help="Mlflow tracking uri (eg. http://tracking.mlflow:5000)")
 
     parser.add_argument(
         "--seed",
@@ -183,6 +198,10 @@ def add_common_args(parser):
                         type=str,
                         default=None,
                         help="The name of experiment.")
+    parser.add_argument("--run_name",
+                        type=str,
+                        default=None,
+                        help="The name of experiment.")
     parser.add_argument("--task_name",
                         type=str,
                         default=None,
@@ -217,7 +236,10 @@ def add_common_args(parser):
                         type=float,
                         default=1.0,
                         help="KD loss coefficient.")
-    parser.add_argument("--kd_decay", type=float, default=0.995, help="The exponential decay of KD.")
+    parser.add_argument("--kd_decay",
+                        type=float,
+                        default=0.995,
+                        help="The exponential decay of KD.")
 
     # ------------------------------
     parser.add_argument("--server_ip",
@@ -327,13 +349,54 @@ def get_main_args(
             taskname = taskname[p0 + 1:]
         args.task_name = taskname
 
-    if args.experiment_name is None or len(args.experiment_name) == 0:
-        t = time.localtime()
-        args.experiment_name = f"exp-{args.task_name}-" \
-            f"{t.tm_year:04d}{t.tm_mon:02d}{t.tm_mday:02d}" \
-            f"{t.tm_hour:02d}{t.tm_min:02d}{t.tm_sec:02d}"
+    #  if args.experiment_name is None or len(args.experiment_name) == 0:
+    #      t = time.localtime()
+    #      args.experiment_name = f"exp-{args.task_name}-" \
+    #          f"{t.tm_year:04d}{t.tm_mon:02d}{t.tm_mday:02d}" \
+    #          f"{t.tm_hour:02d}{t.tm_min:02d}{t.tm_sec:02d}"
+
+    if args.submissions_dir:
+        if not os.path.exists(args.submissions_dir):
+            os.makedirs(args.submissions_dir)
+
+    #  if not os.path.exists(args.local_dir):
+    #      os.makedirs(args.local_dir)
+
+    latest_dir = Path(args.output_dir) / "latest"
+    #  if os.path.exists(latest_dir):
+    #      os.unlink(latest_dir)
+    #      os.symlink(args.local_dir, latest_dir)
+    args.latest_dir = latest_dir
+
+    def ensure_latest_dir(args):
+        if not os.path.exists(args.latest_dir):
+            os.makedirs(args.latest_dir)
+            import uuid
+            local_id = str(uuid.uuid1()).replace('-', '')
+            args.local_id = local_id
+            with open(f"{args.latest_dir}/local_id", 'w') as wt:
+                wt.write(f"{local_id}")
+        else:
+            with open(f"{args.latest_dir}/local_id", 'r') as rd:
+                args.local_id = rd.read().strip()
+        logger.warning(f"local_id: {args.local_id}")
+
+        #  if not os.path.exists(args.local_dir):
+        #      os.makedirs(args.local_dir)
+        #  if os.path.islink(args.latest_dir):
+        #      os.unlink(args.latest_dir)
+        #  os.symlink(local_id, args.latest_dir)
+
+    ensure_latest_dir(args)
+    args.local_dir = f"{args.output_dir}/{args.local_id}"
 
     logname = args.task_name
-    logger.add(Path(args.output_dir) / f"{logname}.log")
+    logger.add(Path(args.latest_dir) / f"{logname}.log")
+
+    logger.warning(f"dataset_name: {args.dataset_name}")
+    logger.warning(f"experiment_name: {args.experiment_name}")
+    logger.warning(f"local_id: {args.local_id}")
+    logger.warning(f"local_dir: {args.local_dir}")
+    logger.warning(f"latest_dir: {args.latest_dir}")
 
     return args

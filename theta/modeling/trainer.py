@@ -290,8 +290,8 @@ class Trainer:
                     #  for kk, vv in inputs.items():
                     #      logger.info(f"inputs[{kk}]: {vv.shape}, {vv}")
                     with torch.no_grad():
-                        kd_logits = kd_model(**inputs)[0]
-                        #  kd_logits = kd_model(**inputs)[1]
+                        #  kd_logits = kd_model(**inputs)[0]
+                        kd_logits = kd_model(**inputs)[1]
                     #  logger.warning(
                     #      f"outputs[1]: {outputs[1].shape}, {outputs[1]}")
                     #  logger.warning(
@@ -352,7 +352,11 @@ class Trainer:
                     # -------- Save checkpoint --------
                     if args.save_checkpoints:
                         checkpoint_dir = f"checkpoint-{trained_steps}"
-                        checkpoint_path = output_dir / checkpoint_dir
+
+                        #  checkpoint_path = output_dir / checkpoint_dir
+                        checkpoint_path = Path(
+                            args.latest_dir) / checkpoint_dir
+
                         self.save_model(args, model, tokenizer, optimizer,
                                         scheduler, checkpoint_path)
 
@@ -400,7 +404,10 @@ class Trainer:
                                 f"Best {best_index}: {eval_value:.4f} ({eval_value - best_value:.6f})"
                             )
                             best_value = eval_value
-                            bestmodel_path = output_dir / f"best_fold{args.fold}"
+
+                            #  bestmodel_path = output_dir / f"best_fold{args.fold}"
+                            bestmodel_path = Path(args.latest_dir) / "best"
+
                             self.save_model(args, model, tokenizer, optimizer,
                                             scheduler, bestmodel_path)
 
