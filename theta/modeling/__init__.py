@@ -114,7 +114,8 @@ def log_global_params(args, experiment_params):
 
 def archive_local_model(args, submission_file):
     if args.do_experiment:
-        mlflow.log_param("submission_file", submission_file)
+        mlflow.log_param(f"{args.dataset_name}_submission_file",
+                         submission_file)
         mlflow.log_artifact(submission_file)
         logger.info(f"Log {submission_file} to tracking.mlflow.")
 
