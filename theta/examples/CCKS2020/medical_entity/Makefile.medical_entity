@@ -29,6 +29,22 @@ NUM_AUGEMENTS=2
 ADDITIONAL_OPTS=--enable_kd
 #ADDITIONAL_OPTS=
 
+# ------------------------------------------------------------
+DATASET_NAME=medical_entity
+EXPERIMENT_NAME=ccks2020_medical_entity
+TRACKING_URI=http://tracking.mlflow:5000
+TRAIN_FILE= 'data/rawdata/ccks2020_2_task1_train/task1_train.txt'
+EVAL_FILE= 'data/rawdata/ccks2020_2_task1_train/task1_train.txt'
+TEST_FILE = 'data/rawdata/ccks2_task1_val/task1_no_val_utf8.txt'
+NER_TYPE=span
+all:
+	NER_TYPE=${NER_TYPE} python run_${DATASET_NAME}.py \
+		--do_experiment \
+        --experiment_name ${EXPERIMENT_NAME} \
+        --tracking_uri ${TRACKING_URI} \
+		--train_file ${TRAIN_FILE} \
+		--eval_file ${EVAL_FILE} \
+		--test_file ${TEST_FILE} \
 
 train:
 	NER_TYPE=${NER_TYPE} python run_${DATASET_NAME}.py \
@@ -59,6 +75,7 @@ eval:
 		--eval_max_seq_length ${EVAL_MAX_SEQ_LENGTH} \
 		--data_dir ${DATA_DIR} \
 		--dataset_name ${DATASET_NAME} \
+		--train_file ${TRAIN_FILE} \
 		--eval_file ${EVAL_FILE} \
 		--seg_len ${SEG_LEN} \
 		--seg_backoff ${SEG_BACKOFF} \

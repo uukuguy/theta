@@ -4,6 +4,7 @@
 import numpy as np
 from loguru import logger
 from collections import Counter
+import mlflow
 
 import torch
 import torch.nn as nn
@@ -102,18 +103,14 @@ class BertSpanForNer(BertPreTrainedModel):
             start_loss = loss_fct(active_start_logits, active_start_labels)
             end_loss = loss_fct(active_end_logits, active_end_labels)
             total_loss = (start_loss + end_loss) / 2
-            outputs = (
-                total_loss,
-            ) + outputs
+            outputs = (total_loss, ) + outputs
             return outputs
         else:
             #  return (0.0, ) + outputs
             logger.warning(
                 f"start_positions: {start_positions}, end_positions: {end_positions}"
             )
-            return (
-                torch.tensor(0.0).cuda(),
-            ) + outputs
+            return (torch.tensor(0.0).cuda(), ) + outputs
             #  return outputs
 
 
@@ -375,6 +372,11 @@ class NerTrainer(Trainer):
         eval_info, entity_info = self.metric.result()
         results = {f'{key}': value for key, value in eval_info.items()}
         results['loss'] = eval_loss
+
+        if args.do_experiment:
+            mlflow.log_metric('loss', eval_loss)
+            for key, value in eval_info.items():
+                mlflow.log_metric(key, value)
 
         return (eval_loss, ), results
 

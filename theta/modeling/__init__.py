@@ -7,11 +7,12 @@ from loguru import logger
 from .trainer import generate_dataloader
 from .onnx import export_onnx, inference_from_onnx
 from .ner_utils import LabeledText, show_ner_datainfo, get_ner_preds_reviews, save_ner_preds, load_ner_examples, load_ner_labeled_examples
-from .glue_utils import show_glue_datainfo, load_glue_examples
+from .glue_utils import show_glue_datainfo, load_glue_examples, save_glue_preds
 from .common_args import add_common_args
 
 from dataclasses import dataclass, field
 from typing import List
+import mlflow
 
 
 class Params:
@@ -29,6 +30,14 @@ class Params:
             else:
                 logger.debug(f"{k}: {v}")
 
+    def update_parser(self, parser):
+        for k, v in self.__dict__.items():
+            if isinstance(v, Params):
+                v.update_parser(parser)
+            else:
+                parser.set_defaults(**{k: v})
+        return parser
+
     def update_args(self, args):
         for k, v in self.__dict__.items():
             if isinstance(v, Params):
@@ -42,6 +51,11 @@ class Params:
 @dataclass
 class CommonParams(Params):
     dataset_name: str = None
+    experiment_name: str = None
+    tracking_uri: str = None
+    train_file: str = None
+    eval_file: str = None
+    test_file: str = None
     learning_rate: float = 2e-5
     train_max_seq_length: int = 256
     eval_max_seq_length: int = 256
@@ -58,6 +72,7 @@ class CommonParams(Params):
     loss_type: str = "CrossEntropyLoss"
     model_type: str = "bert"
     model_path: str = None
+    train_rate: float = 0.9
     fp16: bool = True
 
 
@@ -70,6 +85,46 @@ class NerParams(Params):
 @dataclass
 class GlueParams(Params):
     glue_labels: List[str] = field(default_factory=list)
+
+
+@dataclass
+class NerAppParams(Params):
+    common_params: CommonParams = field(default_factory=CommonParams)
+    ner_params: NerParams = field(default_factory=NerParams)
+
+
+@dataclass
+class GlueAppParams(Params):
+    common_params: CommonParams = field(default_factory=CommonParams)
+    glue_params: GlueParams = field(default_factory=GlueParams)
+
+
+def log_global_params(args, experiment_params):
+    if args.do_experiment:
+        run_id = mlflow.active_run().info.run_id
+        mlflow.log_param("run_id", run_id)
+        mlflow.log_param("local_id", args.local_id)
+        mlflow.log_param("args", args)
+        mlflow.log_param("latest_dir", args.latest_dir)
+        mlflow.log_param("local_dir", args.local_dir)
+
+        mlflow.log_param("experiment_params", experiment_params)
+        experiment_params.log()
+
+
+def archive_local_model(args, submission_file):
+    if args.do_experiment:
+        mlflow.log_param("submission_file", submission_file)
+        mlflow.log_artifact(submission_file)
+        logger.info(f"Log {submission_file} to tracking.mlflow.")
+
+    import shutil
+    if os.path.exists(args.local_dir):
+        shutil.rmtree(args.local_dir)
+    shutil.copytree(args.latest_dir, args.local_dir)
+    logger.info(
+        f"Archive local model({args.local_id}) {args.latest_dir} to {args.local_dir}"
+    )
 
 
 def augement_entities(all_text_entities, labels_map):

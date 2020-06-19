@@ -10,6 +10,7 @@ from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers import BertConfig, BertTokenizerFast
 from transformers.modeling_bert import BertPreTrainedModel, BertModel
 from sklearn.metrics import classification_report, roc_auc_score
+import mlflow
 
 from ..trainer import Trainer, get_default_optimizer_parameters
 from ...losses import FocalLoss
@@ -484,6 +485,11 @@ class GlueTrainer(Trainer):
         else:
             result = acc_and_f1(self.preds,
                                 np.argmax(self.out_label_ids, axis=1))
+
+        if args.do_experiment:
+            mlflow.log_metric('loss', eval_loss.item())
+            for key, value in result.items():
+                mlflow.log_metric(key, value)
 
         self.results.update(result)
 

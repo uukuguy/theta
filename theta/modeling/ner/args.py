@@ -10,6 +10,10 @@ def add_modeling_args(parser):
                         default='bios',
                         type=str,
                         choices=['bios', 'bio'])
+    parser.add_argument('--ner_type',
+                        default='crf',
+                        type=str,
+                        choices=['crf', 'span'])
     parser.add_argument("--autofix",
                         action="store_true",
                         help="Auto fix CRF label errors.")
@@ -33,5 +37,7 @@ def add_modeling_args(parser):
     return parser
 
 
-def get_args(special_args: list = None):
-    return get_main_args(add_modeling_args, special_args)
+def get_args(experiment_param = None, special_args: list = None):
+    return get_main_args(add_modeling_args, 
+                         experiment_params=experiment_params,
+                         special_args = special_args)

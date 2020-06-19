@@ -7,6 +7,7 @@ from loguru import logger
 from theta.utils import seg_generator
 from dataclasses import dataclass, field
 from typing import List
+import mlflow
 
 # ----------------------
 # 实体标注规范
@@ -184,6 +185,13 @@ def save_ner_preds(args, preds, test_examples):
     logger.info(
         f"Total {num_categories} categories and {num_mentions} mentions saved to {category_mentions_file}"
     )
+
+    #  ----- Tracking -----
+    if args.do_experiment:
+        mlflow.log_param("reviews_file", reviews_file)
+        mlflow.log_artifact(reviews_file)
+        mlflow.log_param("category_mentions_file", category_mentions_file)
+        mlflow.log_artifact(category_mentions_file)
 
     return reviews_file, category_mentions_file
 

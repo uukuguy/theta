@@ -12,9 +12,6 @@ FOLD=0
 OUTPUT_DIR=outputs
 #CHECKPOINT_MODEL=${OUTPUT_DIR}/best_fold${FOLD}
 CHECKPOINT_MODEL=${OUTPUT_DIR}/latest/best
-TRAIN_FILE= 'data/task2_train_reformat.tsv'
-EVAL_FILE= 'data/task2_train_reformat.tsv'
-TEST_FILE = 'data/task2_no_val.tsv'
 
 
 EPOCHS=10
@@ -34,6 +31,23 @@ NUM_AUGEMENTS=2
 ADDITIONAL_OPTS=--enable_kd
 #ADDITIONAL_OPTS=
 
+# ------------------------------------------------------------
+DATASET_NAME=medical_event
+EXPERIMENT_NAME=ccks2020_medical_event
+TRACKING_URI=http://tracking.mlflow:5000
+TRAIN_FILE= 'data/task2_train_reformat.tsv'
+EVAL_FILE= 'data/task2_train_reformat.tsv'
+TEST_FILE = 'data/task2_no_val.tsv'
+NER_TYPE=crf
+EPOCHS=1
+all:
+	NER_TYPE=${NER_TYPE} python run_${DATASET_NAME}.py \
+		--do_experiment \
+        --experiment_name ${EXPERIMENT_NAME} \
+        --tracking_uri ${TRACKING_URI} \
+		--train_file ${TRAIN_FILE} \
+		--eval_file ${EVAL_FILE} \
+		--test_file ${TEST_FILE} \
 
 train:
 	NER_TYPE=${NER_TYPE} python run_${DATASET_NAME}.py \
@@ -57,6 +71,7 @@ train:
 		--model_path ${PRETRAINED_MODEL} \
         --do_lower_case \
 		--overwrite_cache \
+		--ner_type ${NER_TYPE} \
         ${ADDITIONAL_OPTS}
 
 eval:
@@ -66,6 +81,7 @@ eval:
 		--data_dir ${DATA_DIR} \
 		--dataset_name ${DATASET_NAME} \
         --experiment_name ${EXPERIMENT_NAME} \
+		--train_file ${TRAIN_FILE} \
 		--eval_file ${EVAL_FILE} \
 		--seg_len ${SEG_LEN} \
 		--seg_backoff ${SEG_BACKOFF} \
@@ -74,6 +90,7 @@ eval:
 		--model_type ${MODEL_TYPE} \
 		--model_path ${CHECKPOINT_MODEL} \
 		--per_gpu_eval_batch_size ${EVAL_BATCH_SIZE} \
+		--ner_type ${NER_TYPE} \
         --do_lower_case \
 		--overwrite_cache
 
@@ -91,6 +108,7 @@ predict:
 		--output_dir ${OUTPUT_DIR} \
 		--model_type ${MODEL_TYPE} \
 		--model_path ${CHECKPOINT_MODEL} \
+		--ner_type ${NER_TYPE} \
         --do_lower_case 
 
 experiment:
@@ -117,6 +135,7 @@ experiment:
 		--output_dir ${OUTPUT_DIR} \
 		--model_type ${MODEL_TYPE} \
 		--model_path ${PRETRAINED_MODEL} \
+		--ner_type ${NER_TYPE} \
         --do_lower_case \
         ${ADDITIONAL_OPTS}
 

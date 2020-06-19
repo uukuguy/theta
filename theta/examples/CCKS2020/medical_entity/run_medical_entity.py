@@ -5,14 +5,15 @@ import os, sys, json, random, copy
 from tqdm import tqdm
 from loguru import logger
 from pathlib import Path
+import mlflow
 
 from theta.utils import load_json_file, split_train_eval_examples
 from theta.modeling import LabeledText, load_ner_examples, load_ner_labeled_examples, save_ner_preds, show_ner_datainfo
 
-if os.environ['NER_TYPE'] == 'span':
-    from theta.modeling.ner_span import load_model, NerTrainer, get_args
-else:
-    from theta.modeling.ner import load_model, NerTrainer, get_args
+#  if os.environ['NER_TYPE'] == 'span':
+#      from theta.modeling.ner_span import load_model, get_args
+#  else:
+#      from theta.modeling.ner import load_model, get_args
 
 ner_labels = ['疾病和诊断', '影像检查', '实验室检验', '手术', '药物', '解剖部位']
 
@@ -93,15 +94,6 @@ def load_test_examples(args):
     return test_base_examples
 
 
-# -------------------- Model --------------------
-class AppTrainer(NerTrainer):
-    def __init__(self, args, ner_labels):
-        super(AppTrainer, self).__init__(args, ner_labels, build_model=None)
-
-    #  def on_predict_end(self, args, test_dataset):
-    #      super(Trainer, self).on_predict_end(args, test_dataset)
-
-
 def generate_submission(args):
     reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_fold{args.fold}.json"
     reviews = json.load(open(reviews_file, 'r'))
@@ -128,15 +120,35 @@ def generate_submission(args):
 
     logger.info(f"Saved {len(reviews)} lines in {submission_file}")
 
-    import shutil
-    if os.path.exists(args.local_dir):
-        shutil.rmtree(args.local_dir)
-    shutil.copytree(args.latest_dir, args.local_dir)
-    logger.info("Copy tree {args.latest_dir} to {args.loca_dir}")
+    from theta.modeling import archive_local_model
+    archive_local_model(args, submission_file)
+
+
+from theta.modeling import Params, CommonParams, NerParams, NerAppParams, log_global_params
+
+experiment_params = NerAppParams(
+    CommonParams(dataset_name="medical_entity",
+                 learning_rate=2e-5,
+                 train_max_seq_length=256,
+                 eval_max_seq_length=256,
+                 per_gpu_train_batch_size=8,
+                 per_gpu_eval_batch_size=8,
+                 per_gpu_predict_batch_size=8,
+                 seg_len=254,
+                 seg_backoff=64,
+                 num_train_epochs=3,
+                 fold=0,
+                 num_augements=2,
+                 enable_kd=True,
+                 loss_type="CrossEntropyLoss",
+                 model_type="bert",
+                 model_path=
+                 "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
+                 fp16=False), NerParams(ner_labels=ner_labels,
+                                        ner_type='span'))
 
 
 def main(args):
-
     if args.do_eda:
         show_ner_datainfo(ner_labels, train_data_generator, args.train_file,
                           test_data_generator, args.test_file)
@@ -145,22 +157,65 @@ def main(args):
         generate_submission(args)
 
     else:
+
+        # -------------------- Model --------------------
+        #  if args.ner_type == 'span':
+        #      from theta.modeling.ner_span import NerTrainer
+        #  else:
+        #      from theta.modeling.ner import NerTrainer
+
+        class AppTrainer(NerTrainer):
+            def __init__(self, args, ner_labels):
+                super(AppTrainer, self).__init__(args,
+                                                 ner_labels,
+                                                 build_model=None)
+
+            #  def on_predict_end(self, args, test_dataset):
+            #      super(Trainer, self).on_predict_end(args, test_dataset)
+
         trainer = AppTrainer(args, ner_labels)
 
-        if args.do_train:
+        def do_train(args):
             train_examples, val_examples = load_train_val_examples(args)
             trainer.train(args, train_examples, val_examples)
 
-        elif args.do_eval:
+        def do_eval(args):
+            args.model_path = args.best_model_path
             _, eval_examples = load_train_val_examples(args)
             model = load_model(args)
             trainer.evaluate(args, model, eval_examples)
 
-        elif args.do_predict:
+        def do_predict(args):
+            args.model_path = args.best_model_path
             test_examples = load_test_examples(args)
             model = load_model(args)
             trainer.predict(args, model, test_examples)
-            save_ner_preds(args, trainer.pred_results, test_examples)
+            reviews_file, category_mentions_file = save_ner_preds(
+                args, trainer.pred_results, test_examples)
+            return reviews_file, category_mentions_file
+
+        if args.do_train:
+            do_train(args)
+
+        elif args.do_eval:
+            do_eval(args)
+
+        elif args.do_predict:
+            do_predict(args)
+
+        elif args.do_experiment:
+            if args.tracking_uri:
+                mlflow.set_tracking_uri(args.tracking_uri)
+            mlflow.set_experiment(args.experiment_name)
+
+            with mlflow.start_run(run_name=f"{args.local_id}") as mlrun:
+                log_global_params(args, experiment_params)
+
+                # ----- Train -----
+                do_train(args)
+
+                # ----- Predict -----
+                reviews_file, category_mentions_file = do_predict(args)
 
 
 if __name__ == '__main__':
@@ -168,5 +223,14 @@ if __name__ == '__main__':
     def add_special_args(parser):
         return parser
 
+    if experiment_params.ner_params.ner_type == 'span':
+        from theta.modeling.ner_span import load_model, get_args, NerTrainer
+    else:
+        from theta.modeling.ner import load_model, get_args, NerTrainer
+
     args = get_args([add_special_args])
+
+    experiment_params.debug()
+    args = experiment_params.update_args(args)
+
     main(args)

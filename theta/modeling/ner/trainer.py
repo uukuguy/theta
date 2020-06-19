@@ -3,6 +3,7 @@
 
 import numpy as np
 from loguru import logger
+import mlflow
 
 import torch
 import torch.nn as nn
@@ -699,6 +700,11 @@ class NerTrainer(Trainer):
         eval_info, _ = self.metric.result()
         results = {f'{key}': value for key, value in eval_info.items()}
 
+        if args.do_experiment:
+            mlflow.log_metric('loss', loss)
+            for key, value in eval_info.items():
+                mlflow.log_metric(key, value)
+
         #  batch_preds = tags
         #  for i in range(len(batch_preds)):
         #      preds = batch_preds[i]
@@ -719,6 +725,7 @@ class NerTrainer(Trainer):
         attention_mask = inputs['attention_mask']
 
         outputs = model(**inputs)
+        #  logger.debug(f"outputs: {outputs}")
         logits = outputs[1]
         #  logits = outputs[0]
 

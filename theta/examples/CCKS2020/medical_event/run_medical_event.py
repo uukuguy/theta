@@ -12,9 +12,9 @@ from theta.utils import load_json_file, split_train_eval_examples
 from theta.modeling import LabeledText, load_ner_examples, load_ner_labeled_examples, save_ner_preds, show_ner_datainfo
 
 if os.environ['NER_TYPE'] == 'span':
-    from theta.modeling.ner_span import load_model, NerTrainer, get_args
+    from theta.modeling.ner_span import load_model, get_args
 else:
-    from theta.modeling.ner import load_model, NerTrainer, get_args
+    from theta.modeling.ner import load_model, get_args
 
 ner_labels = ['肿瘤部位', '病灶大小', '转移部位']
 
@@ -188,15 +188,6 @@ def load_test_examples(args):
     return test_base_examples
 
 
-# -------------------- Model --------------------
-class AppTrainer(NerTrainer):
-    def __init__(self, args, ner_labels):
-        super(AppTrainer, self).__init__(args, ner_labels, build_model=None)
-
-    #  def on_predict_end(self, args, test_dataset):
-    #      super(Trainer, self).on_predict_end(args, test_dataset)
-
-
 def generate_submission(args):
     #  submission_file = os.path.join(args.output_dir,
     #                                 f"{args.dataset_name}_submission.xlsx")
@@ -251,56 +242,33 @@ def generate_submission(args):
 
     logger.info(f"Saved {submission_file}")
 
-    import shutil
-    if os.path.exists(args.local_dir):
-        shutil.rmtree(args.local_dir)
-    shutil.copytree(args.latest_dir, args.local_dir)
-    logger.info("Copy tree {args.latest_dir} to {args.loca_dir}")
+    from theta.modeling import archive_local_model
+    archive_local_model(args, submission_file)
 
 
-from dataclasses import dataclass, field
-from theta.modeling import Params, CommonParams, NerParams
+from theta.modeling import Params, CommonParams, NerParams, NerAppParams, log_global_params
 
-
-@dataclass
-class AppParams(Params):
-    common_params: CommonParams = field(default_factory=CommonParams)
-    ner_params: NerParams = field(default_factory=NerParams)
-
-
-experiment_params = AppParams(
-    CommonParams(dataset_name="me",
-                 learning_rate=2e-5,
-                 train_max_seq_length=256,
-                 eval_max_seq_length=256,
-                 per_gpu_train_batch_size=8,
-                 per_gpu_eval_batch_size=8,
-                 per_gpu_predict_batch_size=8,
-                 seg_len=254,
-                 seg_backoff=64,
-                 num_train_epochs=10,
-                 fold=0,
-                 num_augements=2,
-                 enable_kd=True,
-                 loss_type="CrossEntropyLoss",
-                 model_type="bert",
-                 model_path=
-                 "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-                 fp16=False), NerParams(ner_labels=ner_labels))
-
-
-def log_global_params(args, experiment_params):
-    if args.do_experiment:
-        run_id = mlflow.active_run().info.run_id
-        mlflow.log_param("run_id", run_id)
-        mlflow.log_param("local_id", args.local_id)
-        mlflow.log_param("args", args)
-        mlflow.log_param("latest_dir", args.latest_dir)
-        mlflow.log_param("local_dir", args.local_dir)
-
-        experiment_params.log()
-
-
+experiment_params = NerAppParams(
+    CommonParams(
+        dataset_name="medical_event",
+        learning_rate=2e-5,
+        train_max_seq_length=256,
+        eval_max_seq_length=256,
+        per_gpu_train_batch_size=8,
+        per_gpu_eval_batch_size=8,
+        per_gpu_predict_batch_size=8,
+        seg_len=254,
+        seg_backoff=64,
+        num_train_epochs=3,
+        fold=0,
+        num_augements=2,
+        enable_kd=True,
+        loss_type="CrossEntropyLoss",
+        model_type="bert",
+        model_path=
+        "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
+        fp16=False,
+    ), NerParams(ner_labels=ner_labels, ner_type='crf'))
 
 
 def main(args):
@@ -313,6 +281,21 @@ def main(args):
         generate_submission(args)
 
     else:
+        # -------------------- Model --------------------
+        if args.ner_type == 'span':
+            from theta.modeling.ner_span import NerTrainer
+        else:
+            from theta.modeling.ner import NerTrainer
+
+        class AppTrainer(NerTrainer):
+            def __init__(self, args, ner_labels):
+                super(AppTrainer, self).__init__(args,
+                                                 ner_labels,
+                                                 build_model=None)
+
+            #  def on_predict_end(self, args, test_dataset):
+            #      super(Trainer, self).on_predict_end(args, test_dataset)
+
         trainer = AppTrainer(args, ner_labels)
 
         def do_train(args):
@@ -320,11 +303,13 @@ def main(args):
             trainer.train(args, train_examples, val_examples)
 
         def do_eval(args):
+            args.model_path = args.best_model_path
             _, eval_examples = load_train_val_examples(args)
             model = load_model(args)
             trainer.evaluate(args, model, eval_examples)
 
         def do_predict(args):
+            args.model_path = args.best_model_path
             test_examples = load_test_examples(args)
             model = load_model(args)
             trainer.predict(args, model, test_examples)
@@ -347,20 +332,13 @@ def main(args):
             mlflow.set_experiment(args.experiment_name)
 
             with mlflow.start_run(run_name=f"{args.local_id}") as mlrun:
-                log_global_params(args)
+                log_global_params(args, experiment_params)
 
                 # ----- Train -----
                 do_train(args)
 
                 # ----- Predict -----
                 reviews_file, category_mentions_file = do_predict(args)
-
-                # ----- Tracking -----
-                #  mlflow.log_param("reviews_file", reviews_file)
-                #  mlflow.log_artifact(reviews_file)
-                #  mlflow.log_param("category_mentions_file",
-                #                   category_mentions_file)
-                #  mlflow.log_artifact(category_mentions_file)
 
 
 if __name__ == '__main__':
@@ -370,7 +348,10 @@ if __name__ == '__main__':
 
     args = get_args([add_special_args])
 
+    #  logger.info(f"args: {args}")
+
     experiment_params.debug()
     args = experiment_params.update_args(args)
+    #  logger.warning(f"args: {args}")
 
     main(args)

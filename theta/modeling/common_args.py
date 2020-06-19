@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os, sys, time
-from pathlib import Path
 from loguru import logger
 
 
@@ -56,7 +55,7 @@ def add_common_args(parser):
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./output",
+        default="./outputs",
         #  required=True,
         help="The output dir.",
     )
@@ -206,13 +205,9 @@ def add_common_args(parser):
                         type=str,
                         default=None,
                         help="The name of task.")
-    parser.add_argument(
-        "--dataset_name",
-        type=str,
-        #  required=True,
-        help="Dataset name for cached filename.")
+    parser.add_argument("--dataset_name", type=str, help="Dataset name.")
     parser.add_argument("--train_rate",
-                        default=0.8,
+                        default=0.9,
                         type=float,
                         help="train and eval rate.")
     parser.add_argument(
@@ -327,6 +322,7 @@ def add_common_args(parser):
 
 def get_main_args(
     add_modeling_args,
+    experiment_params=None,
     special_args: list = None,
 ):
     import argparse
@@ -334,6 +330,9 @@ def get_main_args(
 
     parser = add_common_args(parser)
     parser = add_modeling_args(parser)
+
+    if experiment_params:
+        parser = experiment_params.update_parser(parser)
 
     if special_args:
         for sa in special_args:
@@ -362,7 +361,7 @@ def get_main_args(
     #  if not os.path.exists(args.local_dir):
     #      os.makedirs(args.local_dir)
 
-    latest_dir = Path(args.output_dir) / "latest"
+    latest_dir = os.path.join(args.output_dir, "latest")
     #  if os.path.exists(latest_dir):
     #      os.unlink(latest_dir)
     #      os.symlink(args.local_dir, latest_dir)
@@ -388,10 +387,11 @@ def get_main_args(
         #  os.symlink(local_id, args.latest_dir)
 
     ensure_latest_dir(args)
-    args.local_dir = f"{args.output_dir}/{args.local_id}"
+    args.local_dir = os.path.join(args.output_dir, args.local_id)
+    args.best_model_path = os.path.join(args.latest_dir, "best")
 
     logname = args.task_name
-    logger.add(Path(args.latest_dir) / f"{logname}.log")
+    logger.add(os.path.join(args.latest_dir, f"{logname}.log"))
 
     logger.warning(f"dataset_name: {args.dataset_name}")
     logger.warning(f"experiment_name: {args.experiment_name}")

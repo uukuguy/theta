@@ -6,6 +6,7 @@ from tqdm import tqdm
 from loguru import logger
 from theta.utils import seg_generator
 from dataclasses import dataclass, field
+import mlflow
 
 from ..utils import seg_generator
 
@@ -46,7 +47,8 @@ def load_glue_examples(data_generator, examples_file):
     examples = []
 
     for guid, text_a, text_b, label in data_generator(examples_file):
-        examples.append(InputExample(guid=guid, text_a=text_a, text_b = text_b, label=label))
+        examples.append(
+            InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
     logger.info(f"Loaded {len(examples)} examples.")
 
     return examples
@@ -89,3 +91,24 @@ def show_glue_datainfo(glue_labels, train_data_generator, train_file,
     logger.info(f"min: {np.min(test_lengths)}")
     logger.info(f"max: {np.max(test_lengths)}")
     logger.info(f"")
+
+
+def save_glue_preds(args, preds, test_examples):
+    assert len(test_examples) == len(preds)
+    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.tsv"
+    with open(reviews_file, 'w') as fw:
+        fw.write("guid\ttext_a\ttext_b\tlabel\n")
+        for input_example, v in zip(test_examples, preds):
+            guid = input_example.guid
+            text_a = input_example.text_a or ""
+            text_b = input_example.text_b or ""
+            label = args.id2label[v]
+            fw.write(f"{guid}\t{text_a}\t{text_b}\t{label}\n")
+    logger.info(f"Total {len(preds)} lines saved to {reviews_file}")
+
+    #  ----- Tracking -----
+    if args.do_experiment:
+        mlflow.log_param("reviews_file", reviews_file)
+        mlflow.log_artifact(reviews_file)
+
+    return reviews_file
