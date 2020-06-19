@@ -4,17 +4,64 @@ Deep learning toolbox for end-to-end text classification and entity extraction t
 
 Theta是基于深度学习的文本挖掘基础能力工具箱，提供文本分类、文本抽取、文本匹配、阅读理解、知识问答、知识图谱等端到端开箱即用工具集。
 
+## 更新
+
+2020.06.19 - 版本 0.21.0
+
+- 新增文本分类任务案例：CCKS 2020：新冠知识图谱构建与问答评测（一）新冠百科知识图谱类型推断(examples/CCKS2020/entity_typing)，线上成绩0.93720，排名第)，线上成绩0.93720，排名第一。
+- 新增mlflow训练跟踪，记录每次实验的参数、评估指标等。
+
 ## 安装
 
 测试版
 ```
-pip install git+http://122.112.206.124:3000/idleuncle/theta@0.20.0
+pip install git+http://122.112.206.124:3000/idleuncle/theta@0.21.0
 ```
 正式版
 
 ```
-pip install theta==0.20.0
+pip install theta==0.21.0
 ```
+## CCKS 2020：新冠知识图谱构建与问答评测（一）新冠百科知识图谱类型推断
+
+[赛事网址](https://www.biendata.xyz/competition/ccks_2020_7_1/) 线上成绩0.93720
+
+完整代码见theta/examples/CCKS2020/entity_typing/
+
+本评测任务围绕新冠百科知识图谱构建中的实体类型推断（Entity Type Inference）展开。评测从实体百科（包括百度百科、互动百科、维基百科、医学百科）页面出发，从给定的数据中推断相关实体的类型。
+
+输入样例 
+
+entity.txt:
+
+> 烟草花叶病毒
+> 大肠杆菌
+> 艾滋病
+> 盐酸西普利嗪
+> 内科
+> 太阳
+
+type.txt：
+
+> 病毒
+> 细菌
+> 疾病
+> 药物
+> 医学专科
+> 检查科目
+> 症状
+
+**输出样例**
+
+> 烟草花叶病毒    病毒
+> 大肠杆菌    细菌
+> 艾滋病    疾病
+> 盐酸西普利嗪    药物
+> 内科    医学专科
+> 太阳    NoneType
+
+
+
 
 ## CLUE-CLUENER 细粒度命名实体识别
 
@@ -43,7 +90,7 @@ make -f Makefile.cluener predict
 make -f Makefile.cluener submission
 ```
 
-## 文本分类任务
+## CLUE-TNEWS 今日头条中文新闻（短文）分类任务
 
 以下样例是CLUE（[中文任务基准测评](https://cluebenchmarks.com/index.html)）中今日头条中文新闻（短文）分类任务。
 
