@@ -11,10 +11,10 @@ import mlflow
 from theta.utils import load_json_file, split_train_eval_examples
 from theta.modeling import LabeledText, load_ner_examples, load_ner_labeled_examples, save_ner_preds, show_ner_datainfo
 
-if os.environ['NER_TYPE'] == 'span':
-    from theta.modeling.ner_span import load_model, get_args
-else:
-    from theta.modeling.ner import load_model, get_args
+#  if os.environ['NER_TYPE'] == 'span':
+#      from theta.modeling.ner_span import load_model, get_args
+#  else:
+#      from theta.modeling.ner import load_model, get_args
 
 ner_labels = ['肿瘤部位', '病灶大小', '转移部位']
 
@@ -158,8 +158,7 @@ def load_train_val_examples(args):
         train_base_examples,
         train_rate=args.train_rate,
         fold=args.fold,
-        shuffle=True,
-        random_state=args.seed)
+        shuffle=True)
 
     logger.info(f"Loaded {len(train_examples)} train examples, "
                 f"{len(val_examples)} val examples.")
@@ -251,6 +250,11 @@ from theta.modeling import Params, CommonParams, NerParams, NerAppParams, log_gl
 experiment_params = NerAppParams(
     CommonParams(
         dataset_name="medical_event",
+        experiment_name="ccks2020_medical_event",
+        tracking_uri="http://tracking.mlflow:5000",
+        train_file='data/task2_train_reformat.tsv',
+        eval_file='data/task2_train_reformat.tsv',
+        test_file='data/task2_no_val.tsv',
         learning_rate=2e-5,
         train_max_seq_length=256,
         eval_max_seq_length=256,
@@ -259,8 +263,8 @@ experiment_params = NerAppParams(
         per_gpu_predict_batch_size=8,
         seg_len=254,
         seg_backoff=64,
-        num_train_epochs=3,
-        fold=0,
+        num_train_epochs=5,
+        fold=9,
         num_augements=2,
         enable_kd=True,
         loss_type="CrossEntropyLoss",
@@ -270,15 +274,22 @@ experiment_params = NerAppParams(
         fp16=False,
     ), NerParams(ner_labels=ner_labels, ner_type='crf'))
 
+experiment_params.debug()
+
 
 def main(args):
-
-    if args.do_eda:
+    def do_eda(args):
         show_ner_datainfo(ner_labels, train_data_generator, args.train_file,
                           test_data_generator, args.test_file)
 
-    elif args.do_submit:
+    def do_submit(args):
         generate_submission(args)
+
+    if args.do_eda:
+        do_eda(args)
+
+    elif args.do_submit:
+        do_submit(args)
 
     else:
         # -------------------- Model --------------------
@@ -338,7 +349,10 @@ def main(args):
                 do_train(args)
 
                 # ----- Predict -----
-                reviews_file, category_mentions_file = do_predict(args)
+                do_predict(args)
+
+                # ----- Submit -----
+                do_submit(args)
 
 
 if __name__ == '__main__':
@@ -346,12 +360,13 @@ if __name__ == '__main__':
     def add_special_args(parser):
         return parser
 
-    args = get_args([add_special_args])
+    if experiment_params.ner_params.ner_type == 'span':
+        from theta.modeling.ner_span import load_model, get_args, NerTrainer
+    else:
+        from theta.modeling.ner import load_model, get_args, NerTrainer
 
-    #  logger.info(f"args: {args}")
-
-    experiment_params.debug()
-    args = experiment_params.update_args(args)
-    #  logger.warning(f"args: {args}")
+    args = get_args(experiment_params=experiment_params,
+                    special_args=[add_special_args])
+    logger.info(f"args: {args}")
 
     main(args)

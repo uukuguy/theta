@@ -1,4 +1,4 @@
-DATASET_NAME=entity_typing
+DATASET_NAME=o2o_reviews
 all:
 	python run_${DATASET_NAME}.py \
 		--do_experiment \

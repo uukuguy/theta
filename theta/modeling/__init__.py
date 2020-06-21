@@ -53,6 +53,7 @@ class CommonParams(Params):
     dataset_name: str = None
     experiment_name: str = None
     tracking_uri: str = None
+    artifact_path: str = None
     train_file: str = None
     eval_file: str = None
     test_file: str = None
@@ -69,11 +70,20 @@ class CommonParams(Params):
     fold: int = 0
     num_augements: int = 0
     enable_kd: bool = False
+    kd_coeff: float = 1.0
+    kd_decay: float = 0.995
+    enable_sda: bool = False
+    sda_teachers: int = 2
+    sda_coeff: float = 1.0
+    sda_decay: float = 0.995
     loss_type: str = "CrossEntropyLoss"
+    focalloss_gamma: float = 1.5
+    focalloss_alpha: List = None
     model_type: str = "bert"
     model_path: str = None
     train_rate: float = 0.9
     fp16: bool = True
+    best_index: str = "f1"
 
 
 @dataclass
@@ -125,6 +135,11 @@ def archive_local_model(args, submission_file):
     shutil.copytree(args.latest_dir, args.local_dir)
     logger.info(
         f"Archive local model({args.local_id}) {args.latest_dir} to {args.local_dir}"
+    )
+
+    os.remove(args.local_id_file)
+    logger.info(
+        f"Unlink {args.local_id_file} after archived local model({args.local_id})."
     )
 
 

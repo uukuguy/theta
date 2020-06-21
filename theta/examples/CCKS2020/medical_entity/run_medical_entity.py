@@ -127,34 +127,49 @@ def generate_submission(args):
 from theta.modeling import Params, CommonParams, NerParams, NerAppParams, log_global_params
 
 experiment_params = NerAppParams(
-    CommonParams(dataset_name="medical_entity",
-                 learning_rate=2e-5,
-                 train_max_seq_length=256,
-                 eval_max_seq_length=256,
-                 per_gpu_train_batch_size=8,
-                 per_gpu_eval_batch_size=8,
-                 per_gpu_predict_batch_size=8,
-                 seg_len=254,
-                 seg_backoff=64,
-                 num_train_epochs=3,
-                 fold=0,
-                 num_augements=2,
-                 enable_kd=True,
-                 loss_type="CrossEntropyLoss",
-                 model_type="bert",
-                 model_path=
-                 "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-                 fp16=False), NerParams(ner_labels=ner_labels,
-                                        ner_type='span'))
+    CommonParams(
+        dataset_name="medical_entity",
+        experiment_name="ccks2020_medical_entity",
+        tracking_uri="http://tracking.mlflow:5000",
+        train_file='data/rawdata/ccks2020_2_task1_train/task1_train.txt',
+        eval_file='data/rawdata/ccks2020_2_task1_train/task1_train.txt',
+        test_file='data/rawdata/ccks2_task1_val/task1_no_val_utf8.txt',
+        learning_rate=2e-5,
+        train_max_seq_length=256,
+        eval_max_seq_length=256,
+        per_gpu_train_batch_size=8,
+        per_gpu_eval_batch_size=8,
+        per_gpu_predict_batch_size=8,
+        seg_len=254,
+        seg_backoff=64,
+        num_train_epochs=5,
+        fold=5,
+        num_augements=2,
+        enable_kd=True,
+        loss_type="CrossEntropyLoss",
+        model_type="bert",
+        model_path=
+        #  "/opt/share/pretrained/pytorch/hfl/chinese-electra-large-discriminator",
+        "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
+        fp16=False),
+    NerParams(ner_labels=ner_labels, ner_type='span'))
+
+experiment_params.debug()
 
 
 def main(args):
-    if args.do_eda:
+    def do_eda(args):
         show_ner_datainfo(ner_labels, train_data_generator, args.train_file,
                           test_data_generator, args.test_file)
 
-    elif args.do_submit:
+    def do_submit(args):
         generate_submission(args)
+
+    if args.do_eda:
+        do_eda(args)
+
+    elif args.do_submit:
+        do_submit(args)
 
     else:
 
@@ -215,7 +230,10 @@ def main(args):
                 do_train(args)
 
                 # ----- Predict -----
-                reviews_file, category_mentions_file = do_predict(args)
+                do_predict(args)
+
+                # ----- Submit -----
+                do_submit(args)
 
 
 if __name__ == '__main__':
@@ -228,9 +246,8 @@ if __name__ == '__main__':
     else:
         from theta.modeling.ner import load_model, get_args, NerTrainer
 
-    args = get_args([add_special_args])
-
-    experiment_params.debug()
-    args = experiment_params.update_args(args)
+    args = get_args(experiment_params=experiment_params,
+                    special_args=[add_special_args])
+    logger.info(f"args: {args}")
 
     main(args)

@@ -11,23 +11,21 @@ import mlflow
 from theta.modeling import load_glue_examples, show_glue_datainfo, save_glue_preds
 from theta.modeling.glue import load_model, GlueTrainer, get_args
 
-glue_labels = ['病毒', '细菌', '疾病', '药物', '医学专科', '检查科目', '症状', 'NoneType']
-# 10,     52,    1267,  2550,  7,     147,   867,   100
-# [0.200, 0.200, 0.025, 0.025, 0.200, 0.100, 0.050, 0.200]
-
-# --- 0.9383 (10/10)
-#[0.5, 0.40, 0.10, 0.05, 0.5, 0.40, 0.40, 0.40]
+glue_labels = ['0', '1']
 
 # -------------------- Data --------------------
 
 
+def clean_text(text):
+    import re
+    text = re.sub("[^\u4e00-\u9fa5]", '', text)
+    return text
+
+
 def train_data_generator(train_file):
-    df_train = pd.read_csv(train_file,
-                           sep='\t',
-                           header=None,
-                           names=['text', 'label'])
+    df_train = pd.read_csv(train_file, sep='\t')
     for i, row in tqdm(df_train.iterrows()):
-        yield f"{i}", row.text, None, row.label
+        yield f"{i}", clean_text(row.comment), None, str(row.label)
 
 
 def load_train_val_examples(args):
@@ -43,20 +41,15 @@ def load_train_val_examples(args):
         fold=args.fold,
         shuffle=True)
 
-    #  random.shuffle(all_train_examples)
-    #  num_train_examples = int(len(all_train_examples) * args.train_rate)
-    #  val_examples = all_train_examples[num_train_examples:]
-    #  train_examples = all_train_examples[:num_train_examples]
-
     logger.info(f"Loaded {len(train_examples)} train examples, "
                 f"{len(val_examples)} val examples.")
     return train_examples, val_examples
 
 
 def test_data_generator(test_file):
-    for i, line in enumerate(tqdm(open(test_file, 'r'))):
-        line = line.strip()
-        yield f"{i}", line, None, None
+    df_test = pd.read_csv(test_file)
+    for i, row in tqdm(df_test.iterrows()):
+        yield row.id, clean_text(row.comment), None, None
 
 
 def load_test_examples(args):
@@ -67,23 +60,6 @@ def load_test_examples(args):
     return test_base_examples
 
 
-# -------------------- Trainer --------------------
-
-
-class Trainer(GlueTrainer):
-    def __init__(self, args, glue_labels):
-        super(Trainer, self).__init__(args, glue_labels, build_model=None)
-
-    #  def build_model(self, args):
-    #      return build_model(args)
-
-    def on_predict_end(self, args, test_dataset):
-        super(Trainer, self).on_predict_end(args, test_dataset)
-        logger.info(self.logits)
-        logger.info(self.probs)
-        logger.info(self.preds)
-
-
 # -------------------- Output --------------------
 
 
@@ -91,12 +67,14 @@ def generate_submission(args):
     reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.tsv"
     df_reviews = pd.read_csv(reviews_file, sep='\t')
 
-    submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.txt"
+    submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.csv"
+
     with open(submission_file, 'w') as fw:
+        fw.write("id,label\n")
         for i, row in tqdm(df_reviews.iterrows()):
-            text = row.text_a
+            guid = row.guid
             label = row.label
-            fw.write(f"{text}\t{label}\n")
+            fw.write(f"{guid},{label}\n")
     logger.info(f"Saved {df_reviews.shape[0]} lines in {submission_file}")
 
     #  ----- Tracking -----
@@ -139,22 +117,17 @@ from theta.modeling import Params, CommonParams, GlueParams, GlueAppParams, log_
 
 experiment_params = GlueAppParams(
     CommonParams(
-        dataset_name="entity_typing",
-        experiment_name="ccks2020_entity_typing",
-        tracking_uri="http://tracking.mlflow:5000",
-        train_file="data/rawdata/ccks_7_1_competition_data/entity_type.txt",
-        eval_file="data/rawdata/ccks_7_1_competition_data/entity_type.txt",
-        test_file=
-        "data/rawdata/ccks_7_1_competition_data/entity_validation.txt",
+        dataset_name="o2o_reviews",
+        experiment_name="o2o_reviews",
+        train_file="data/train.csv",
+        eval_file="data/train.csv",
+        test_file="data/test_new.csv",
         learning_rate=1e-5,
-        train_max_seq_length=32,
-        eval_max_seq_length=32,
-        per_gpu_train_batch_size=96,
-        per_gpu_eval_batch_size=96,
-        per_gpu_predict_batch_size=96,
-        #  per_gpu_train_batch_size=128,
-        #  per_gpu_eval_batch_size=128,
-        #  per_gpu_predict_batch_size=128,
+        train_max_seq_length=256,
+        eval_max_seq_length=256,
+        per_gpu_train_batch_size=16,
+        per_gpu_eval_batch_size=16,
+        per_gpu_predict_batch_size=16,
         seg_len=0,
         seg_backoff=0,
         num_train_epochs=10,
@@ -165,13 +138,11 @@ experiment_params = GlueAppParams(
         sda_teachers=1,
         loss_type="CrossEntropyLoss",
         model_type="bert",
-        model_path=
-        "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
+        model_path="/opt/share/pretrained/pytorch/bert-base-chinese",
         train_rate=0.9,
         fp16=False,
         best_index='f1',
-    ),
-    GlueParams(glue_labels=glue_labels, ))
+    ), GlueParams(glue_labels=glue_labels, ))
 
 experiment_params.debug()
 

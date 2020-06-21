@@ -4,6 +4,7 @@
 import os, json, copy
 from pathlib import Path
 from loguru import logger
+import numpy as np
 
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -111,7 +112,7 @@ class Trainer:
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
-        logger.info(f"Saving model checkpoint to {model_path}")
+        logger.warning(f"Saving model checkpoint to {model_path}")
 
         model_to_save = (model.module if hasattr(model, "module") else model)
         model_to_save.save_pretrained(model_path)
@@ -231,11 +232,14 @@ class Trainer:
                         steps_trained_in_current_epoch)
 
         train_loss, logging_loss = 0.0, 0.0
-        best_value = 0.0
-        best_type = 'max'  # ['max', 'min']
 
-        #  best_value = float('inf')
-        #  best_type = 'min'
+        best_index = args.best_index
+        if best_index in ['loss']:
+            best_value = float('inf')
+            best_type = 'min'
+        else:
+            best_value = 0.0
+            best_type = 'max'  # ['max', 'min']
 
         model.zero_grad()
 
@@ -248,6 +252,14 @@ class Trainer:
             kd_loss_fct = MSELoss()
             kd_model = copy.deepcopy(model)
             kd_model.eval()
+
+        enable_sda = args.enable_sda
+        if enable_sda:
+            from torch.nn import MSELoss
+            sda_loss_fct = MSELoss()
+            history_logits = []
+            sda_teachers = args.sda_teachers
+            teacher_models = []
 
         #  train_iterator = trange(
         #      epochs_trained,
@@ -262,6 +274,7 @@ class Trainer:
             #                        desc="Iteration",
             #                        disable=args.local_rank not in [-1, 0])
             #  for step, batch in enumerate(epoch_iterator):
+
 
             pbar = Progbar(target=len(train_dataloader),
                            stateful_metrics=['loss'],
@@ -280,7 +293,7 @@ class Trainer:
 
                 #  logger.debug(f"outputs: {outputs}")
                 # -------- loss --------
-                loss = outputs[0]
+                loss, logits = outputs[:2]
 
                 if enable_kd:
                     inputs = self.batch_to_inputs(args, batch)
@@ -291,6 +304,20 @@ class Trainer:
                         kd_logits = kd_model(**inputs)[1]
                     kd_loss = kd_loss_fct(outputs[1], kd_logits)
                     loss += args.kd_coeff * kd_loss
+
+                if enable_sda:
+                    if teacher_models:
+                        inputs = self.batch_to_inputs(args, batch)
+                        if "labels" in inputs:
+                            inputs['labels'] = None
+                        with torch.no_grad():
+                            teacher_logits = [
+                                m(**inputs)[1] for m in teacher_models
+                            ]
+                        teacher_logits = torch.stack(teacher_logits)
+                        teacher_logits = torch.mean(teacher_logits, dim=0)
+                        sda_loss = sda_loss_fct(logits, teacher_logits)
+                        loss += sda_loss * args.sda_coeff
 
                 #  logger.debug(f"loss: {loss}")
                 if args.n_gpu > 1:
@@ -335,6 +362,20 @@ class Trainer:
                                                       parameters):
                                 s_param.sub_(one_minus_decay *
                                              (s_param - param))
+                    if enable_sda:
+                        decay = min(args.sda_decay,
+                                    (1 + trained_steps) / (10 + trained_steps))
+                        one_minus_decay = 1.0 - decay
+                        with torch.no_grad():
+                            for sda_model in teacher_models:
+                                parameters = [
+                                    p for p in model.parameters()
+                                    if p.requires_grad
+                                ]
+                                for s_param, param in zip(
+                                        sda_model.parameters(), parameters):
+                                    s_param.sub_(one_minus_decay *
+                                                 (s_param - param))
 
                 # -------- Save models --------
                 if is_master_process(
@@ -368,7 +409,7 @@ class Trainer:
                         #  learning_rate_scalar = scheduler.get_lr()[0]
                         eval_logs[
                             "learning_rate"] = f"{learning_rate_scalar:.6f}"
-                        eval_logs["loss"] = f"{loss_scalar:.6f}"
+                        eval_logs["loss_scalar"] = f"{loss_scalar:.6f}"
                         #  for key, value in eval_logs.items():
                         #      tb_writer.add_scalar(key, value, trained_steps)
                         print(
@@ -381,7 +422,8 @@ class Trainer:
                         logging_loss = train_loss
 
                         # -------- Save best model --------
-                        best_index = 'f1'  # ['f1', 'acc', 'recall', 'loss']
+                        #  best_index = 'f1'  # ['f1', 'acc', 'recall', 'loss']
+                        best_index = args.best_index
                         eval_value = eval_results[best_index]
                         is_best = False
                         if best_index in ['loss']:
@@ -391,7 +433,7 @@ class Trainer:
                             if eval_value > best_value:
                                 is_best = True
                         if is_best:
-                            logger.info(
+                            logger.warning(
                                 f"Best {best_index}: {eval_value:.4f} ({eval_value - best_value:.6f})"
                             )
                             best_value = eval_value
@@ -408,6 +450,12 @@ class Trainer:
                                     best_symlink.unlink()
                                 os.symlink(f"../{checkpoint_dir}",
                                            best_symlink)
+
+            if enable_sda:
+                teacher_models = teacher_models[-sda_teachers:][1:]
+                t_model = copy.deepcopy(model)
+                t_model.eval()
+                teacher_models.append(t_model)
 
             print(" ")
             if 'cuda' in str(args.device):
@@ -480,8 +528,11 @@ class Trainer:
             values += [('loss', loss.item())]
             pbar.update(step + 1, values=values)
 
-        self.eval_loss = eval_loss / eval_steps
         results = self.on_eval_end(args, eval_dataset)
+
+        self.eval_loss = eval_loss / eval_steps
+        results['loss'] = self.eval_loss
+        logger.info(f" dev: loss = {self.eval_loss:.6f}")
 
         return results
 

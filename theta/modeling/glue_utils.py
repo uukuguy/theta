@@ -108,7 +108,8 @@ def save_glue_preds(args, preds, test_examples):
 
     #  ----- Tracking -----
     if args.do_experiment:
+        logger.debug(f"mlflow tracking uri: {mlflow.get_tracking_uri()}")
         mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
-        mlflow.log_artifact(reviews_file)
+        mlflow.log_artifact(reviews_file, args.artifact_path)
 
     return reviews_file

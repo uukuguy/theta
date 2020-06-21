@@ -188,10 +188,10 @@ def save_ner_preds(args, preds, test_examples):
 
     #  ----- Tracking -----
     if args.do_experiment:
-        mlflow.log_param("reviews_file", reviews_file)
-        mlflow.log_artifact(reviews_file)
-        mlflow.log_param("category_mentions_file", category_mentions_file)
-        mlflow.log_artifact(category_mentions_file)
+        mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
+        mlflow.log_artifact(reviews_file, args.artifact_path)
+        mlflow.log_param(f"{args.dataset_name}_category_mentions_file", category_mentions_file)
+        mlflow.log_artifact(category_mentions_file, args.artifact_path)
 
     return reviews_file, category_mentions_file
 

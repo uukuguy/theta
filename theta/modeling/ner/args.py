@@ -37,7 +37,7 @@ def add_modeling_args(parser):
     return parser
 
 
-def get_args(experiment_param = None, special_args: list = None):
+def get_args(experiment_params = None, special_args: list = None):
     return get_main_args(add_modeling_args, 
                          experiment_params=experiment_params,
                          special_args = special_args)

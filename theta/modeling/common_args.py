@@ -32,11 +32,23 @@ def add_common_args(parser):
 
     # --------------- Main arguments ---------------
 
+    tracking_uri = None
+    if 'TRACKING_URI' in os.environ:
+        tracking_uri = os.environ['TRACKING_URI']
     parser.add_argument(
         "--tracking_uri",
-        default=None,
+        default=tracking_uri,
         type=str,
         help="Mlflow tracking uri (eg. http://tracking.mlflow:5000)")
+
+    artifact_path = None
+    if 'ARTIFACT_PATH' in os.environ:
+        artifact_path = os.environ['ARTIFACT_PATH']
+    parser.add_argument(
+        "--artifact_path",
+        default=artifact_path,
+        type=str,
+        help="Mlflow artifact path.")
 
     parser.add_argument(
         "--seed",
@@ -86,6 +98,11 @@ def add_common_args(parser):
         type=str,
         help="The pretrained model path.",
     )
+    parser.add_argument("--best_index",
+                        default="f1",
+                        type=str,
+                        choices=['f1', 'acc', 'recall', 'loss'],
+                        help="Best index for save model.  ")
     # --------------- Data arguments ---------------
     parser.add_argument(
         "--train_max_seq_length",
@@ -235,6 +252,21 @@ def add_common_args(parser):
                         type=float,
                         default=0.995,
                         help="The exponential decay of KD.")
+    parser.add_argument("--enable_sda",
+                        action='store_true',
+                        help="Whether to do knowledge distillation (KD-SDA).")
+    parser.add_argument("--sda_teachers",
+                        type=int,
+                        default=2,
+                        help="KD SDA teachers.")
+    parser.add_argument("--sda_coeff",
+                        type=float,
+                        default=1.0,
+                        help="KD loss coefficient.")
+    parser.add_argument("--sda_decay",
+                        type=float,
+                        default=0.995,
+                        help="The exponential decay of KD.")
 
     # ------------------------------
     parser.add_argument("--server_ip",
@@ -367,16 +399,19 @@ def get_main_args(
     #      os.symlink(args.local_dir, latest_dir)
     args.latest_dir = latest_dir
 
+    args.local_id_file = os.path.join(args.latest_dir, "local_id")
+
     def ensure_latest_dir(args):
         if not os.path.exists(args.latest_dir):
             os.makedirs(args.latest_dir)
+        if not os.path.exists(args.local_id_file):
             import uuid
             local_id = str(uuid.uuid1()).replace('-', '')
             args.local_id = local_id
-            with open(f"{args.latest_dir}/local_id", 'w') as wt:
+            with open(args.local_id_file, 'w') as wt:
                 wt.write(f"{local_id}")
         else:
-            with open(f"{args.latest_dir}/local_id", 'r') as rd:
+            with open(args.local_id_file, 'r') as rd:
                 args.local_id = rd.read().strip()
         logger.warning(f"local_id: {args.local_id}")
 

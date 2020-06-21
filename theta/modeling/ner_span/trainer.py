@@ -374,7 +374,7 @@ class NerTrainer(Trainer):
         results['loss'] = eval_loss
 
         if args.do_experiment:
-            mlflow.log_metric('loss', eval_loss)
+            mlflow.log_metric('loss', eval_loss.item())
             for key, value in eval_info.items():
                 mlflow.log_metric(key, value)
 
