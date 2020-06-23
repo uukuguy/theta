@@ -14,6 +14,7 @@ def get_args():
 
     parser.add_argument("--diff", action='store_true')
     parser.add_argument("--list", action='store_true')
+    parser.add_argument("--show", action='store_true')
     parser.add_argument("--output_dir", default="./outputs")
     parser.add_argument("--local_id", action='append')
 
@@ -34,14 +35,6 @@ def find_models(args):
             all_models.append((local_id, model_path))
 
 
-def show_models(args):
-    print('-' * 80)
-    print("local_id", ' ' * 28, "model_path")
-    print('-' * 80)
-    for local_id, model_path in all_models:
-        print(local_id, '    ', model_path)
-
-
 def get_model(local_id):
     for model in all_models:
         if model[0] == local_id:
@@ -49,8 +42,23 @@ def get_model(local_id):
     return None
 
 
+def show_model(args):
+    logger.info(f"{args.local_id}")
+    for model_id in args.local_id:
+        model = get_model(model_id)
+        args_path = os.path.join(model[1], "best/training_args.json")
+        training_args = json.load(open(args_path))
+        logger.warning(f"----- {model_id} -----")
+        for k, v in sorted(training_args.items()):
+            logger.info(f"{k}: {v}")
+
+
 def list_models(args):
-    show_models(args)
+    print('-' * 80)
+    print("local_id", ' ' * 28, "model_path")
+    print('-' * 80)
+    for local_id, model_path in all_models:
+        print(local_id, '    ', model_path)
 
 
 def diff_models(args):
@@ -94,6 +102,8 @@ def main(args):
         list_models(args)
     elif args.diff:
         diff_models(args)
+    elif args.show:
+        show_model(args)
     else:
         print("Usage: theta [list|diff]")
 
