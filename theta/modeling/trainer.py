@@ -325,7 +325,7 @@ class Trainer:
                 #  logger.debug(f"inputs: {inputs}")
                 #  logger.info(f"loss: {loss}")
 
-                if not loss :
+                if loss is None:
                     continue
 
                 if args.n_gpu > 1:
@@ -420,7 +420,7 @@ class Trainer:
                         eval_logs["loss_scalar"] = f"{loss_scalar:.6f}"
                         #  for key, value in eval_logs.items():
                         #      tb_writer.add_scalar(key, value, trained_steps)
-                        print(
+                        logger.debug(
                             json.dumps({
                                 **eval_logs,
                                 **{

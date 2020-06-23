@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, glob, json
+import os, glob, json, datetime
 from tqdm import tqdm
 from loguru import logger
 
@@ -24,6 +24,8 @@ def get_args():
 
 
 def find_models(args):
+    global all_models
+
     output_dir = args.output_dir
     files = glob.glob(os.path.join(output_dir, "*/local_id"))
 
@@ -32,7 +34,13 @@ def find_models(args):
         with open(file, 'r') as rd:
             local_id = rd.readline().strip()
             model_path = os.path.split(file)[0]
-            all_models.append((local_id, model_path))
+
+            ctime = os.stat(file).st_ctime
+            ctime = datetime.datetime.fromtimestamp(ctime).strftime(
+                '%Y/%m/%d %H:%M:%S')
+
+            all_models.append((local_id, model_path, ctime))
+    all_models = sorted(all_models, key=lambda x: x[2], reverse=True)
 
 
 def get_model(local_id):
@@ -49,16 +57,20 @@ def show_model(args):
         args_path = os.path.join(model[1], "best/training_args.json")
         training_args = json.load(open(args_path))
         logger.warning(f"----- {model_id} -----")
-        for k, v in sorted(training_args.items()):
-            logger.info(f"{k}: {v}")
+        logger.info(f'{model[2]}')
+        logger.info(
+            json.dumps({k: v
+                        for k, v in sorted(training_args.items())},
+                       ensure_ascii=False,
+                       indent=2))
 
 
 def list_models(args):
-    print('-' * 80)
-    print("local_id", ' ' * 28, "model_path")
-    print('-' * 80)
-    for local_id, model_path in all_models:
-        print(local_id, '    ', model_path)
+    print('-' * 102)
+    print("local_id", ' ' * 28, "ctime", ' ' * 15, "model_path")
+    print('-' * 102)
+    for local_id, model_path, ctime in all_models:
+        print(local_id, '    ', ctime, ' ', model_path)
 
 
 def diff_models(args):
@@ -75,6 +87,7 @@ def diff_models(args):
             logger.warning(f"Model {dest_model_id} not found.")
             return
 
+        logger.info(f"{[src_model[2], dest_model[2]]}")
         src_args_path = os.path.join(src_model[1], "best/training_args.json")
         dest_args_path = os.path.join(dest_model[1], "best/training_args.json")
 
