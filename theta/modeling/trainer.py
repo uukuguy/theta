@@ -7,6 +7,7 @@ from loguru import logger
 import numpy as np
 
 import torch
+from torch.autograd import Variable
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from ..utils import init_theta
 
@@ -275,7 +276,6 @@ class Trainer:
             #                        disable=args.local_rank not in [-1, 0])
             #  for step, batch in enumerate(epoch_iterator):
 
-
             pbar = Progbar(target=len(train_dataloader),
                            stateful_metrics=['loss'],
                            desc=f"Epoch({epoch+1}/{args.num_train_epochs})")
@@ -317,9 +317,17 @@ class Trainer:
                         teacher_logits = torch.stack(teacher_logits)
                         teacher_logits = torch.mean(teacher_logits, dim=0)
                         sda_loss = sda_loss_fct(logits, teacher_logits)
+                        #  sda_loss = Variable(sda_loss, requires_grad=True)
                         loss += sda_loss * args.sda_coeff
 
-                #  logger.debug(f"loss: {loss}")
+                #  loss = Variable(loss, requires_grad=True)
+                #  inputs = self.batch_to_inputs(args, batch)
+                #  logger.debug(f"inputs: {inputs}")
+                #  logger.info(f"loss: {loss}")
+
+                if not loss :
+                    continue
+
                 if args.n_gpu > 1:
                     loss = loss.mean()
                 if args.gradient_accumulation_steps > 1:

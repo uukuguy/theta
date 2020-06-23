@@ -25,7 +25,10 @@ def clean_text(text):
 def train_data_generator(train_file):
     df_train = pd.read_csv(train_file, sep='\t')
     for i, row in tqdm(df_train.iterrows()):
-        yield f"{i}", clean_text(row.comment), None, str(row.label)
+        text = clean_text(row.comment)
+        if len(text) == 0:
+            continue
+        yield f"{i}", text, None, str(row.label)
 
 
 def load_train_val_examples(args):
@@ -117,7 +120,7 @@ from theta.modeling import Params, CommonParams, GlueParams, GlueAppParams, log_
 
 experiment_params = GlueAppParams(
     CommonParams(
-        dataset_name="o2o_reviews",
+        dataset_name="o2o_sda",
         experiment_name="o2o_reviews",
         train_file="data/train.csv",
         eval_file="data/train.csv",
@@ -134,8 +137,8 @@ experiment_params = GlueAppParams(
         fold=0,
         num_augements=0,
         enable_kd=False,
-        enable_sda=False,
-        sda_teachers=1,
+        enable_sda=True,
+        sda_teachers=3,
         loss_type="CrossEntropyLoss",
         model_type="bert",
         model_path="/opt/share/pretrained/pytorch/bert-base-chinese",

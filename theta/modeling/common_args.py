@@ -32,23 +32,16 @@ def add_common_args(parser):
 
     # --------------- Main arguments ---------------
 
-    tracking_uri = None
-    if 'TRACKING_URI' in os.environ:
-        tracking_uri = os.environ['TRACKING_URI']
     parser.add_argument(
         "--tracking_uri",
-        default=tracking_uri,
+        default=None,
         type=str,
         help="Mlflow tracking uri (eg. http://tracking.mlflow:5000)")
 
-    artifact_path = None
-    if 'ARTIFACT_PATH' in os.environ:
-        artifact_path = os.environ['ARTIFACT_PATH']
-    parser.add_argument(
-        "--artifact_path",
-        default=artifact_path,
-        type=str,
-        help="Mlflow artifact path.")
+    parser.add_argument("--artifact_path",
+                        default=None,
+                        type=str,
+                        help="Mlflow artifact path.")
 
     parser.add_argument(
         "--seed",

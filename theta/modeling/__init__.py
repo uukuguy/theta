@@ -85,6 +85,17 @@ class CommonParams(Params):
     fp16: bool = True
     best_index: str = "f1"
 
+    def __post_init__(self):
+        tracking_uri = self.tracking_uri
+        if 'TRACKING_URI' in os.environ:
+            tracking_uri = os.environ['TRACKING_URI']
+        self.tracking_uri = tracking_uri
+
+        artifact_path = self.artifact_path
+        if 'ARTIFACT_PATH' in os.environ:
+            artifact_path = os.environ['ARTIFACT_PATH']
+        self.artifact_path = artifact_path
+
 
 @dataclass
 class NerParams(Params):

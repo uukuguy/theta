@@ -130,7 +130,6 @@ experiment_params = NerAppParams(
     CommonParams(
         dataset_name="medical_entity",
         experiment_name="ccks2020_medical_entity",
-        tracking_uri="http://tracking.mlflow:5000",
         train_file='data/rawdata/ccks2020_2_task1_train/task1_train.txt',
         eval_file='data/rawdata/ccks2020_2_task1_train/task1_train.txt',
         test_file='data/rawdata/ccks2_task1_val/task1_no_val_utf8.txt',
@@ -142,16 +141,20 @@ experiment_params = NerAppParams(
         per_gpu_predict_batch_size=8,
         seg_len=254,
         seg_backoff=64,
-        num_train_epochs=5,
-        fold=5,
+        num_train_epochs=10,
+        fold=1,
         num_augements=2,
         enable_kd=True,
+        enable_sda=False,
+        sda_teachers=2,
         loss_type="CrossEntropyLoss",
         model_type="bert",
         model_path=
         #  "/opt/share/pretrained/pytorch/hfl/chinese-electra-large-discriminator",
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-        fp16=False),
+        fp16=False,
+        best_index="f1",
+    ),
     NerParams(ner_labels=ner_labels, ner_type='span'))
 
 experiment_params.debug()
