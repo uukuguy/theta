@@ -12,6 +12,8 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("--new", action='store_true')
+    parser.add_argument("--use", action='store_true')
     parser.add_argument("--diff", action='store_true')
     parser.add_argument("--list", action='store_true')
     parser.add_argument("--show", action='store_true')
@@ -108,6 +110,32 @@ def diff_models(args):
                 logger.debug('')
 
 
+def new_model(args):
+    import uuid
+    local_id = str(uuid.uuid1()).replace('-', '')
+    local_id_file = os.path.join(args.output_dir, "latest/local_id")
+    with open(local_id_file, 'w') as wt:
+        wt.write(f"{local_id}")
+    logger.info(f"New model id: {local_id}")
+
+
+def use_model(args):
+    logger.info(f"{args.local_id}")
+    if len(args.local_id) >= 1:
+        model_id = args.local_id[0]
+        model = get_model(model_id)
+        if model:
+            local_id, model_path, ctime = model
+
+            latest_dir = os.path.join(args.output_dir, "latest")
+            import shutil
+            if os.path.exists(latest_dir):
+                shutil.rmtree(latest_dir)
+            shutil.copytree(model_path, latest_dir)
+            logger.info(
+                f"Use local model({local_id}) {model_path} to {latest_dir}")
+
+
 def main(args):
     find_models(args)
 
@@ -117,6 +145,10 @@ def main(args):
         diff_models(args)
     elif args.show:
         show_model(args)
+    elif args.new:
+        new_model(args)
+    elif args.use:
+        use_model(args)
     else:
         print("Usage: theta [list|diff]")
 

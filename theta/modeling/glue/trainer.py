@@ -116,7 +116,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
             2:]  # add hidden states and attention if they are here
 
         #  if labels is not None:
-        if labels is not None and any(labels):
+        #  if labels is not None and any(labels):
+        if labels is not None and torch.sum(labels) > 0:
             if self.num_labels == 1:
                 #  We are doing regression
                 loss_fct = MSELoss()
@@ -147,11 +148,17 @@ class BertForSequenceClassification(BertPreTrainedModel):
                     loss_fct = BCEWithLogitsLoss()
                     #  logger.debug(f"logits: {logits.shape}, {logits}")
                     #  logger.debug(f"labels: {labels.shape}, {labels}")
-                    loss = loss_fct(logits, labels.float())
+                    #  loss = loss_fct(logits, labels.float())
+                    loss = loss_fct(logits.view(-1, self.num_labels),
+                                    labels.view(-1, self.num_labels).float())
                 else:
                     loss_fct = CrossEntropyLoss()
+                    #  logger.warning(f"logits: {logits.shape}")
+                    #  logger.warning(f"labels: {labels.shape}")
                     loss = loss_fct(logits.view(-1, self.num_labels),
                                     labels.view(-1))
+                    #  loss = loss_fct(logits.view(-1, self.num_labels),
+                    #                  labels.view(-1, self.num_labels))
 
                 #  from ...losses import FocalLoss
                 #  #  loss = FocalLoss(gamma=1.5,

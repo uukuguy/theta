@@ -341,6 +341,7 @@ def add_common_args(parser):
     parser.add_argument("--focalloss_gamma", type=float, default=2.0)
     parser.add_argument("--focalloss_alpha", type=float, default=None)
     parser.add_argument("--allow_overlap", action="store_true", help="")
+    parser.add_argument("--random_type", type=str, default=None, help="[None, 'np']")
 
     return parser
 

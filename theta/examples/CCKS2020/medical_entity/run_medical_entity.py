@@ -95,7 +95,7 @@ def load_test_examples(args):
 
 
 def generate_submission(args):
-    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_fold{args.fold}.json"
+    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
     reviews = json.load(open(reviews_file, 'r'))
 
     submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json.txt"
@@ -122,6 +122,75 @@ def generate_submission(args):
 
     from theta.modeling import archive_local_model
     archive_local_model(args, submission_file)
+
+
+def to_poplar(args):
+    start_pages = 10
+    max_pages = 10
+    poplar_json = {
+        "content": "",
+        "labelCategories": [],
+        "labels": [],
+        "connectionCategories": [],
+        "connections": []
+    }
+
+    poplar_colorset = [
+        '#007bff', '#17a2b8', '#17a2b8', '#28a745', '#fd7e14', '#e83e8c',
+        '#dc3545', '#20c997', '#ffc107', '#007bff'
+    ]
+    label2id = {x: i for i, x in enumerate(ner_labels)}
+    label_categories = poplar_json['labelCategories']
+    for _id, x in enumerate(ner_labels):
+        label_categories.append({
+            "id": _id,
+            "text": x,
+            "color": poplar_colorset[label2id[x]],
+            "borderColor": "#cccccc"
+        })
+
+    poplar_labels = poplar_json['labels']
+    poplar_content = ""
+    eid = 0
+    num_pages = 0
+    page_offset = 0
+    for guid, text, _, entities in train_data_generator(args.train_file):
+        if num_pages < start_pages:
+            num_pages += 1
+            continue
+
+        page_head = f"\n-------------------- {guid} Begin --------------------\n\n"
+        page_tail = f"\n-------------------- {guid} End --------------------\n\n"
+        poplar_content += page_head + f"{text}" + page_tail
+
+        for entity in entities:
+            poplar_labels.append({
+                "id":
+                eid,
+                "categoryId":
+                label2id[entity.category],
+                "startIndex":
+                page_offset + len(page_head) + entity.start,
+                "endIndex":
+                page_offset + len(page_head) + entity.end + 1,
+            })
+            eid += 1
+
+        num_pages += 1
+        if num_pages - start_pages >= max_pages:
+            break
+
+        page_offset = len(poplar_content)
+
+    poplar_json["content"] = poplar_content
+    poplar_json['labels'] = poplar_labels
+
+    poplar_data_file = "./data/poplar_data.json"
+    json.dump(poplar_json,
+              open(poplar_data_file, 'w'),
+              ensure_ascii=False,
+              indent=2)
+    logger.info(f"Saved {poplar_data_file}")
 
 
 from theta.modeling import Params, CommonParams, NerParams, NerAppParams, log_global_params
@@ -152,9 +221,10 @@ experiment_params = NerAppParams(
         model_path=
         #  "/opt/share/pretrained/pytorch/hfl/chinese-electra-large-discriminator",
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-        fp16=False,
+        fp16=True,
         best_index="f1",
-    ),
+        seed=6636,
+        random_type=None),
     NerParams(ner_labels=ner_labels, ner_type='span'))
 
 experiment_params.debug()
@@ -173,6 +243,9 @@ def main(args):
 
     elif args.do_submit:
         do_submit(args)
+
+    elif args.to_poplar:
+        to_poplar(args)
 
     else:
 
@@ -242,6 +315,7 @@ def main(args):
 if __name__ == '__main__':
 
     def add_special_args(parser):
+        parser.add_argument("--to_poplar", action="store_true")
         return parser
 
     if experiment_params.ner_params.ner_type == 'span':

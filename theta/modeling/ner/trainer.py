@@ -701,7 +701,8 @@ class NerTrainer(Trainer):
         results = {f'{key}': value for key, value in eval_info.items()}
 
         if args.do_experiment:
-            mlflow.log_metric('loss', loss.item())
+            #  logger.debug(f"loss: {loss}")
+            #  mlflow.log_metric('loss', loss.item())
             for key, value in eval_info.items():
                 mlflow.log_metric(key, value)
 

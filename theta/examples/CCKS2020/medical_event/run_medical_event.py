@@ -214,6 +214,8 @@ def generate_submission(args):
             e = entity['end'] + 1
             entity_text = text[s:e]
 
+            if s > len(text) or e > len(text):
+                continue
             if len(entity_text) == 0 or len(entity_text) > 16:
                 continue
             if ';' in entity_text or '、' in entity_text:
@@ -263,15 +265,16 @@ experiment_params = NerAppParams(
         per_gpu_predict_batch_size=8,
         seg_len=254,
         seg_backoff=64,
-        num_train_epochs=5,
-        fold=9,
+        num_train_epochs=10,
+        fold=0,
         num_augements=2,
         enable_kd=True,
         loss_type="CrossEntropyLoss",
         model_type="bert",
         model_path=
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-        fp16=False,
+        fp16=True,
+        random_type='np',
     ), NerParams(ner_labels=ner_labels, ner_type='crf'))
 
 experiment_params.debug()

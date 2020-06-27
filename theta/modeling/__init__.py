@@ -83,7 +83,9 @@ class CommonParams(Params):
     model_path: str = None
     train_rate: float = 0.9
     fp16: bool = True
+    seed: int = 8864
     best_index: str = "f1"
+    random_type: str = None
 
     def __post_init__(self):
         tracking_uri = self.tracking_uri
@@ -101,6 +103,7 @@ class CommonParams(Params):
 class NerParams(Params):
     ner_labels: List[str] = field(default_factory=list)
     ner_type: str = "crf"
+    soft_label: bool = False
 
 
 @dataclass
@@ -148,10 +151,10 @@ def archive_local_model(args, submission_file):
         f"Archive local model({args.local_id}) {args.latest_dir} to {args.local_dir}"
     )
 
-    os.remove(args.local_id_file)
-    logger.info(
-        f"Unlink {args.local_id_file} after archived local model({args.local_id})."
-    )
+    #  os.remove(args.local_id_file)
+    #  logger.info(
+    #      f"Unlink {args.local_id_file} after archived local model({args.local_id})."
+    #  )
 
 
 def augement_entities(all_text_entities, labels_map):

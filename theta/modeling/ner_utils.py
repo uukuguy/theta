@@ -170,7 +170,8 @@ def save_ner_preds(args, preds, test_examples):
                                                        args.seg_len,
                                                        args.seg_backoff)
 
-    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_fold{args.fold}.json"
+    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
+
     json.dump(reviews, open(reviews_file, 'w'), ensure_ascii=False, indent=2)
     logger.info(f"Reviews file: {reviews_file}")
 
@@ -190,7 +191,8 @@ def save_ner_preds(args, preds, test_examples):
     if args.do_experiment:
         mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
         mlflow.log_artifact(reviews_file, args.artifact_path)
-        mlflow.log_param(f"{args.dataset_name}_category_mentions_file", category_mentions_file)
+        mlflow.log_param(f"{args.dataset_name}_category_mentions_file",
+                         category_mentions_file)
         mlflow.log_artifact(category_mentions_file, args.artifact_path)
 
     return reviews_file, category_mentions_file
@@ -267,6 +269,7 @@ def data_seg_generator(lines,
     all_text_entities = []
     labels_map = {}
 
+    num_overlap = 0
     for i, s in enumerate(tqdm(lines)):
         #  logger.debug(f"s: {s}")
         guid = str(i)
@@ -292,19 +295,21 @@ def data_seg_generator(lines,
                 if e >= us[0] and e <= us[1]:
                     overlap = True
                     break
-            if overlap and not allow_overlap:
-                logger.warning(
-                    f"Overlap! {i} mention: {entity.mention}({s}:{e}), used_span: {used_span}"
-                )
-                continue
+            if overlap:
+                num_overlap += 1
+                if not allow_overlap:
+                    #  logger.warning(
+                    #      f"Overlap! {i} mention: {entity.mention}({s}:{e}), used_span: {used_span}"
+                    #  )
+                    continue
             used_span.append((s, e))
 
             new_entities.append(entity)
         entities = new_entities
 
         seg_offset = 0
-        if seg_len <= 0:
-            seg_len = max_seq_length
+        #  if seg_len <= 0:
+        #      seg_len = max_seq_length
 
         for (seg_text, ), text_offset in seg_generator((text, ), seg_len,
                                                        seg_backoff):
@@ -357,6 +362,8 @@ def data_seg_generator(lines,
                         labels_map[label_type].append(entity_text)
 
             seg_offset += seg_len - seg_backoff
+
+    logger.warning(f"num_overlap: {num_overlap}")
 
     if num_augements > 0:
         aug_tokens = augement_entities(all_text_entities,

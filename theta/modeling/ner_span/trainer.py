@@ -192,6 +192,8 @@ def load_pretrained_model(args):
         cache_dir=args.cache_dir if args.cache_dir else None,
         soft_label=args.soft_label,
     )
+    setattr(config, 'label2id', args.label2id)
+    setattr(config, 'id2label', args.id2label)
     setattr(config, 'soft_label', args.soft_label)
     setattr(config, 'loss_type', args.loss_type)
     setattr(config, 'focalloss_gamma', args.focalloss_gamma)
@@ -232,6 +234,8 @@ def bert_extract_item(start_logits, end_logits):
     S = []
     start_pred = torch.argmax(start_logits, -1).cpu().numpy()[0][1:-1]
     end_pred = torch.argmax(end_logits, -1).cpu().numpy()[0][1:-1]
+    #  logger.info(f"start_pred: {start_pred}")
+    #  logger.info(f"end_pred: {end_pred}")
     for i, s_l in enumerate(start_pred):
         if s_l == 0:
             continue
@@ -279,10 +283,18 @@ def build_default_model(args):
 
 def init_labels(args, labels):
 
-    args.ner_labels = ['[unused1]'] + labels
+    args.ner_labels = ['[unused1]', '[unused2]', '[unused3]'] + labels
     args.id2label = {i: label for i, label in enumerate(args.ner_labels)}
     args.label2id = {label: i for i, label in enumerate(args.ner_labels)}
     args.num_labels = len(args.label2id)
+
+    #  args.id2label = {i + 100: label for i, label in enumerate(args.ner_labels)}
+    #  args.label2id = {label: i + 100 for i, label in enumerate(args.ner_labels)}
+    #
+    #  args.ner_labels = ['[unused1]'] + labels
+    #  args.id2label[0] = '[unused1]'
+    #  args.label2id['[unused1]'] = 0
+    #  args.num_labels = len(args.label2id)
 
     logger.info(f"args.label2id: {args.label2id}")
     logger.info(f"args.id2label: {args.id2label}")
@@ -363,9 +375,14 @@ class NerTrainer(Trainer):
             eval_loss += tmp_eval_loss
             num_eval_steps += 1
 
-            R = bert_extract_item(start_logits, end_logits)
-
+            num_len = all_lens[i] - 1
+            R = bert_extract_item(start_logits[:num_len], end_logits[:num_len])
+            #  R = bert_extract_item(start_logits, end_logits)
             T = batch_features[i].subjects
+
+            #  logger.warning(f"R: {R}, len: {num_len}")
+            #  logger.warning(f"T: {T}")
+
             self.metric.update(true_subject=T, pred_subject=R)
 
         eval_loss = eval_loss / num_eval_steps
@@ -406,7 +423,9 @@ class NerTrainer(Trainer):
             _, _, start_logits, end_logits = outputs[:4]
             #  _, start_logits, end_logits = outputs[:3]
 
-            R = bert_extract_item(start_logits, end_logits)
+            num_len = all_lens[i] - 1
+            R = bert_extract_item(start_logits[:num_len], end_logits[:num_len])
+            #  R = bert_extract_item(start_logits, end_logits)
 
             if R:
                 label_entities = [[args.id2label[x[0]], x[1], x[2]] for x in R]
