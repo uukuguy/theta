@@ -136,8 +136,8 @@ def to_poplar(args):
     }
 
     poplar_colorset = [
-        '#007bff', '#17a2b8', '#17a2b8', '#28a745', '#fd7e14', '#e83e8c',
-        '#dc3545', '#20c997', '#ffc107', '#007bff'
+        '#007bff', '#17a2b8', '#28a745', '#fd7e14', '#e83e8c', '#dc3545',
+        '#20c997', '#ffc107', '#007bff'
     ]
     label2id = {x: i for i, x in enumerate(ner_labels)}
     label_categories = poplar_json['labelCategories']

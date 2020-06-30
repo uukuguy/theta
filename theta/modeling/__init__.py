@@ -7,8 +7,10 @@ from loguru import logger
 from .trainer import generate_dataloader
 from .onnx import export_onnx, inference_from_onnx
 from .ner_utils import LabeledText, show_ner_datainfo, get_ner_preds_reviews, save_ner_preds, load_ner_examples, load_ner_labeled_examples
+from .ner_utils import to_train_poplar, to_reviews_poplar
 from .glue_utils import show_glue_datainfo, load_glue_examples, save_glue_preds
 from .common_args import add_common_args
+
 
 from dataclasses import dataclass, field
 from typing import List
