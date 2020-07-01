@@ -275,7 +275,7 @@ experiment_params = NerAppParams(
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
         fp16=True,
         random_type='np',
-    ), NerParams(ner_labels=ner_labels, ner_type='crf'))
+    ), NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=True))
 
 experiment_params.debug()
 
