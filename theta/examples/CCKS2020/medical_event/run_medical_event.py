@@ -200,7 +200,7 @@ def generate_submission(args):
     worksheet.write(0, 2, label='原发病灶大小')
     worksheet.write(0, 3, label='转移部位')
 
-    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_fold{args.fold}.json"
+    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
     reviews = json.load(open(reviews_file, 'r'))
 
     idx = 1
@@ -258,13 +258,13 @@ experiment_params = NerAppParams(
         eval_file='data/task2_train_reformat.tsv',
         test_file='data/task2_no_val.tsv',
         learning_rate=2e-5,
-        train_max_seq_length=256,
-        eval_max_seq_length=256,
-        per_gpu_train_batch_size=8,
-        per_gpu_eval_batch_size=8,
-        per_gpu_predict_batch_size=8,
-        seg_len=254,
-        seg_backoff=64,
+        train_max_seq_length=512,
+        eval_max_seq_length=512,
+        per_gpu_train_batch_size=4,
+        per_gpu_eval_batch_size=4,
+        per_gpu_predict_batch_size=4,
+        seg_len=510,
+        seg_backoff=128,
         num_train_epochs=10,
         fold=0,
         num_augements=2,
@@ -294,6 +294,20 @@ def main(args):
     elif args.do_submit:
         do_submit(args)
 
+    elif args.to_train_poplar:
+        from theta.modeling import to_train_poplar
+        to_train_poplar(args,
+                        train_data_generator,
+                        ner_labels=ner_labels,
+                        start_page=args.start_page,
+                        max_pages=args.max_pages)
+
+    elif args.to_reviews_poplar:
+        from theta.modeling import to_reviews_poplar
+        to_reviews_poplar(args,
+                          ner_labels=ner_labels,
+                          start_page=args.start_page,
+                          max_pages=args.max_pages)
     else:
         # -------------------- Model --------------------
         if args.ner_type == 'span':
@@ -361,6 +375,10 @@ def main(args):
 if __name__ == '__main__':
 
     def add_special_args(parser):
+        parser.add_argument("--to_train_poplar", action="store_true")
+        parser.add_argument("--to_reviews_poplar", action="store_true")
+        parser.add_argument("--start_page", type=int, default=0)
+        parser.add_argument("--max_pages", type=int, default=100)
         return parser
 
     if experiment_params.ner_params.ner_type == 'span':

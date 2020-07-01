@@ -105,6 +105,7 @@ class CommonParams(Params):
 class NerParams(Params):
     ner_labels: List[str] = field(default_factory=list)
     ner_type: str = "crf"
+    no_crf_loss: bool = False
     soft_label: bool = False
 
 
