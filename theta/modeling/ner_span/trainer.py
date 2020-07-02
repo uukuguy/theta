@@ -43,6 +43,43 @@ class BertSpanForNer(BertPreTrainedModel):
                                           self.num_labels)
         self.init_weights()
 
+#  class BertSpanForNer:
+#      def __init__(self, args):
+#          self.args = args
+#          self.soft_label = args.soft_label
+#          self.num_labels = args.num_labels
+#          self.loss_type = args.loss_type
+#          self.focalloss_gamma = args.focalloss_gamma
+#          self.focalloss_alpha = args.focalloss_alpha
+#
+#          config_class = AutoConfig
+#          model_class = AutoConfig
+#          config = config_class.from_pretrained(
+#              args.model_path,
+#              num_labels=args.num_labels,
+#              label2id = args.label2id,
+#              id2label = args.id2label,
+#              cache_dir=args.cache_dir if args.cache_dir else None,
+#          )
+#          logger.info(f"model_path: {args.model_path}")
+#          logger.info(f"config:{config}")
+#          self.bert = model_class.from_pretrained(
+#              args.model_path,
+#              from_tf=bool(".ckpt" in args.model_path),
+#              config=config,
+#              cache_dir=args.cache_dir if args.cache_dir else None,
+#          )
+#
+#          self.dropout = nn.Dropout(config.hidden_dropout_prob)
+#          self.start_fc = PoolerStartLogits(config.hidden_size, self.num_labels)
+#          if self.soft_label:
+#              self.end_fc = PoolerEndLogits(config.hidden_size + self.num_labels,
+#                                            self.num_labels)
+#          else:
+#              self.end_fc = PoolerEndLogits(config.hidden_size + 1,
+#                                            self.num_labels)
+#          self.init_weights()
+
     def forward(self,
                 input_ids,
                 attention_mask=None,

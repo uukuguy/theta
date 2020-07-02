@@ -108,6 +108,18 @@ class Trainer:
     def on_predict_end(self, args, test_dataset):
         return []
 
+    def save_args(self, args, model_path):
+        #  torch.save(args, os.path.join(model_path, "training_args.bin"))
+        json.dump(
+            {
+                k: v
+                for k, v in args.__dict__.items() if v is None
+                or type(v) in [bool, str, int, float, dict, list, tuple]
+            },
+            open(os.path.join(model_path, "training_args.json"), 'w'),
+            ensure_ascii=False,
+            indent=2)
+
     def save_model(self, args, model, tokenizer, optimizer, scheduler,
                    model_path):
         if not os.path.exists(model_path):
@@ -120,16 +132,7 @@ class Trainer:
 
         tokenizer.save_vocabulary(Path(model_path).as_posix() + '/')
 
-        #  torch.save(args, os.path.join(model_path, "training_args.bin"))
-        json.dump(
-            {
-                k: v
-                for k, v in args.__dict__.items() if v is None
-                or type(v) in [bool, str, int, float, dict, list, tuple]
-            },
-            open(os.path.join(model_path, "training_args.json"), 'w'),
-            ensure_ascii=False,
-            indent=2)
+        self.save_args(args, model_path)
 
         torch.save(optimizer.state_dict(),
                    os.path.join(model_path, "optimizer.pt"))
@@ -141,6 +144,8 @@ class Trainer:
         logger.info(
             f"Start train: {len(train_examples)} train examples, {len(eval_examples)} eval examples."
         )
+
+        self.save_args(args, args.latest_dir)
 
         #  if is_master_process(args):
         #      tb_writer = SummaryWriter()
@@ -460,10 +465,12 @@ class Trainer:
                                            best_symlink)
 
             if enable_sda:
-                teacher_models = teacher_models[-sda_teachers:][1:]
                 t_model = copy.deepcopy(model)
                 t_model.eval()
                 teacher_models.append(t_model)
+                assert len(teacher_models) <= sda_teachers + 1
+                if len(teacher_models) == sda_teachers + 1:
+                    teacher_models = teacher_models[1:]
 
             print(" ")
             if 'cuda' in str(args.device):

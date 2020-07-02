@@ -260,9 +260,9 @@ experiment_params = NerAppParams(
         learning_rate=2e-5,
         train_max_seq_length=512,
         eval_max_seq_length=512,
-        per_gpu_train_batch_size=4,
-        per_gpu_eval_batch_size=4,
-        per_gpu_predict_batch_size=4,
+        per_gpu_train_batch_size=3,
+        per_gpu_eval_batch_size=3,
+        per_gpu_predict_batch_size=3,
         seg_len=510,
         seg_backoff=128,
         num_train_epochs=10,
@@ -273,7 +273,7 @@ experiment_params = NerAppParams(
         model_type="bert",
         model_path=
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-        fp16=True,
+        fp16=False,
         random_type='np',
     ), NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=True))
 

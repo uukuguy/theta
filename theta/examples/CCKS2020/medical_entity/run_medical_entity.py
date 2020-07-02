@@ -203,13 +203,13 @@ experiment_params = NerAppParams(
         eval_file='data/rawdata/ccks2020_2_task1_train/task1_train.txt',
         test_file='data/rawdata/ccks2_task1_val/task1_no_val_utf8.txt',
         learning_rate=2e-5,
-        train_max_seq_length=256,
-        eval_max_seq_length=256,
-        per_gpu_train_batch_size=8,
-        per_gpu_eval_batch_size=8,
-        per_gpu_predict_batch_size=8,
-        seg_len=254,
-        seg_backoff=64,
+        train_max_seq_length=512,
+        eval_max_seq_length=512,
+        per_gpu_train_batch_size=4,
+        per_gpu_eval_batch_size=4,
+        per_gpu_predict_batch_size=4,
+        seg_len=510,
+        seg_backoff=128,
         num_train_epochs=10,
         fold=1,
         num_augements=2,
@@ -225,7 +225,7 @@ experiment_params = NerAppParams(
         best_index="f1",
         seed=6636,
         random_type=None),
-    NerParams(ner_labels=ner_labels, ner_type='span'))
+    NerParams(ner_labels=ner_labels, ner_type='span', no_crf_loss=False))
 
 experiment_params.debug()
 
