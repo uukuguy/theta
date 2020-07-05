@@ -7,7 +7,8 @@ import mlflow
 
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
+from ...losses import FocalLoss
 import torch.nn.functional as F
 #  from ..models.crf_0 import CRF as CRF0
 #  from ..models.crf import CRF
@@ -165,6 +166,9 @@ class BertCrfForNer(BertPreTrainedModel):
         self.num_labels = config.num_labels
         self.crf_type = config.crf_type
         self.no_crf_loss = config.no_crf_loss
+        self.loss_type = config.loss_type
+        self.focalloss_gamma = config.focalloss_gamma
+        self.focalloss_alpha = config.focalloss_alpha
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -245,9 +249,39 @@ class BertCrfForNer(BertPreTrainedModel):
         logits = self.classifier(sequence_output)
         outputs = (logits, )
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+
+            #  loss_fct = CrossEntropyLoss()
+
+            assert self.loss_type in [
+                'FocalLoss', 'CrossEntropyLoss', 'BCEWithLogitsLoss'
+            ]
+            if self.loss_type == 'FocalLoss':
+                loss_fct = FocalLoss(gamma=self.focalloss_gamma,
+                                     alpha=self.focalloss_alpha)
+
+                #  loss = FocalLoss(gamma=self.focalloss_gamma,
+                #                   alpha=self.focalloss_alpha)(logits.view(
+                #                       -1, self.num_labels), labels.view(-1))
+            elif self.loss_type == 'BCEWithLogitsLoss':
+                loss_fct = BCEWithLogitsLoss()
+                #  logger.debug(f"logits: {logits.shape}, {logits}")
+                #  logger.debug(f"labels: {labels.shape}, {labels}")
+                #  loss = loss_fct(logits, labels.float())
+                #  loss = loss_fct(logits.view(-1, self.num_labels),
+                #                  labels.view(-1, self.num_labels).float())
+            elif self.loss_type == 'CrossEntropyLoss':
+                loss_fct = CrossEntropyLoss()
+                #  logger.warning(f"logits: {logits.shape}")
+                #  logger.warning(f"labels: {labels.shape}")
+                #  loss = loss_fct(logits.view(-1, self.num_labels),
+                #                  labels.view(-1))
+            else:
+                raise Exception(
+                    f"Bad loss_type: {self.loss_type}. Must be one of 'FocalLoss', 'CrossEntropyLoss', 'BCEWithLogitsLoss'."
+                )
+
             # Only keep active parts of the loss
-            if attention_mask is not None:
+            if self.loss_type == 'CrossEntropyLoss' and attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
                 active_logits = logits.view(-1, self.num_labels)
                 active_labels = torch.where(
@@ -425,6 +459,9 @@ def load_pretrained_model(args):
     )
     setattr(config, 'crf_type', args.crf_type)
     setattr(config, 'no_crf_loss', args.no_crf_loss)
+    setattr(config, 'loss_type', args.loss_type)
+    setattr(config, 'focalloss_gamma', args.focalloss_gamma)
+    setattr(config, 'focalloss_alpha', args.focalloss_alpha)
 
     logger.info(f"model_path: {args.model_path}")
     logger.info(f"config:{config}")

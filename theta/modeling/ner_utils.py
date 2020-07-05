@@ -266,7 +266,7 @@ def data_seg_generator(lines,
                        seg_backoff=0,
                        num_augements=0,
                        allow_overlap=False):
-    assert seg_backoff >= 0 and seg_backoff <= int(seg_len / 2)
+    assert seg_backoff >= 0 and seg_backoff <= int(seg_len * 3 / 4)
     all_text_entities = []
     labels_map = {}
 
@@ -493,6 +493,7 @@ def show_ner_datainfo(ner_labels, train_data_generator, train_file,
 def to_train_poplar(args,
                     train_data_generator,
                     ner_labels,
+                    ner_connections,
                     start_page=0,
                     max_pages=100):
     poplar_json = {
@@ -520,6 +521,10 @@ def to_train_poplar(args,
             "borderColor":
             "#cccccc"
         })
+
+    connection_categories = poplar_json['connectionCategories']
+    for _id, _text in enumerate(ner_connections):
+        connection_categories.append({'id': _id, 'text': _text})
 
     poplar_labels = poplar_json['labels']
     poplar_content = ""
@@ -567,7 +572,11 @@ def to_train_poplar(args,
     logger.info(f"Saved {poplar_data_file}")
 
 
-def to_reviews_poplar(args, ner_labels, start_page=0, max_pages=100):
+def to_reviews_poplar(args,
+                      ner_labels,
+                      ner_connections,
+                      start_page=0,
+                      max_pages=100):
     poplar_json = {
         "content": "",
         "labelCategories": [],
@@ -593,6 +602,10 @@ def to_reviews_poplar(args, ner_labels, start_page=0, max_pages=100):
             "borderColor":
             "#cccccc"
         })
+
+    connection_categories = poplar_json['connectionCategories']
+    for _id, _text in enumerate(ner_connections):
+        connection_categories.append({'id': _id, 'text': _text})
 
     poplar_labels = poplar_json['labels']
     poplar_content = ""

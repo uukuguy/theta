@@ -265,7 +265,16 @@ class Trainer:
             sda_loss_fct = MSELoss()
             history_logits = []
             sda_teachers = args.sda_teachers
-            teacher_models = []
+            sda_stategy = args.sda_stategy
+
+            if args.sda_empty_first:
+                teacher_models = []
+            else:
+                t_model = copy.deepcopy(model)
+                t_model.eval()
+                teacher_models = [t_model]
+
+            #  best_logits = []
 
         #  train_iterator = trange(
         #      epochs_trained,
@@ -324,6 +333,14 @@ class Trainer:
                         sda_loss = sda_loss_fct(logits, teacher_logits)
                         #  sda_loss = Variable(sda_loss, requires_grad=True)
                         loss += sda_loss * args.sda_coeff
+
+                    #  if best_logits:
+                    #      sda_logits = torch.stack(best_logits)
+                    #      sda_logits = torch.mean(sda_logits, dim=0)
+                    #      if sda_logits.shape[0] == logits.shape[0]:
+                    #          sda_loss = sda_loss_fct(logits, sda_logits)
+                    #          #  sda_loss = Variable(sda_loss, requires_grad=True)
+                    #          loss += sda_loss * args.sda_coeff
 
                 #  loss = Variable(loss, requires_grad=True)
                 #  inputs = self.batch_to_inputs(args, batch)
@@ -447,8 +464,13 @@ class Trainer:
                                 is_best = True
                         if is_best:
                             logger.warning(
-                                f"Best {best_index}: {eval_value:.4f} ({eval_value - best_value:.6f})"
+                                f"Best {best_index}: {eval_value:.6f} ({eval_value - best_value:.6f})"
                             )
+                            #  if enable_sda:
+                            #      best_logits.append(logits.detach())
+                            #      if len(best_logits) > sda_teachers:
+                            #          best_logits = best_logits[1:]
+
                             best_value = eval_value
 
                             #  bestmodel_path = output_dir / f"best_fold{args.fold}"
@@ -463,14 +485,49 @@ class Trainer:
                                     best_symlink.unlink()
                                 os.symlink(f"../{checkpoint_dir}",
                                            best_symlink)
+                        else:
+                            logger.info(
+                                f"dev-{best_index}/best-{best_index}: {eval_value:.6f}/{best_value:.6f}"
+                            )
+
+            #  if enable_sda:
+            #      best_logits.append(logits.detach())
+            #      if len(best_logits) > sda_teachers:
+            #          best_logits = best_logits[1:]
 
             if enable_sda:
-                t_model = copy.deepcopy(model)
-                t_model.eval()
-                teacher_models.append(t_model)
-                assert len(teacher_models) <= sda_teachers + 1
-                if len(teacher_models) == sda_teachers + 1:
-                    teacher_models = teacher_models[1:]
+                if sda_stategy == "recent_models":
+                    if len(teacher_models) >= sda_teachers:
+                        teacher_models = teacher_models[1:sda_teachers + 1]
+                    t_model = copy.deepcopy(model)
+                    t_model.eval()
+                    teacher_models.append(t_model)
+                elif sda_stategy == "earliest_models":
+                    if len(teacher_models) < sda_teachers:
+                        t_model = copy.deepcopy(model)
+                        t_model.eval()
+                        teacher_models.append(t_model)
+                elif sda_stategy == 'latest_model':
+                    t_model = copy.deepcopy(model)
+                    t_model.eval()
+                    teacher_models = [t_model]
+                elif sda_stategy == 'clone_models':
+                    if len(teacher_models) == 0:
+                        t_model = copy.deepcopy(model)
+                    else:
+                        t_model = copy.deepcopy(teacher_models[-1])
+                    t_model.eval()
+                    teacher_models.append(t_model)
+                    if len(teacher_models) > sda_teachers:
+                        teacher_models = teacher_models[1:sda_teachers + 1]
+
+                #  if len(teacher_models) < sda_teachers:
+                #      if teacher_models:
+                #          tmodel = copy.deepcopy(teacher_models[-1])
+                #      else:
+                #          t_model = copy.deepcopy(model)
+                #      t_model.eval()
+                #      teacher_models.append(t_model)
 
             print(" ")
             if 'cuda' in str(args.device):

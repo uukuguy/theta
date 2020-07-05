@@ -494,7 +494,7 @@ class GlueTrainer(Trainer):
                                 np.argmax(self.out_label_ids, axis=1))
 
         if args.do_experiment:
-            mlflow.log_metric('loss', eval_loss.item())
+            #  mlflow.log_metric('loss', eval_loss.item())
             for key, value in result.items():
                 mlflow.log_metric(key, value)
 
@@ -521,7 +521,7 @@ class GlueTrainer(Trainer):
         logger.info(f"  Batch size = {args.eval_batch_size}")
         logger.info(f"******** Eval results ********")
         for key in self.results.keys():
-            logger.info(f" dev: {key} = {self.results[key]:.4f}")
+            logger.info(f" dev: {key} = {self.results[key]:.6f}")
 
         return self.results
 

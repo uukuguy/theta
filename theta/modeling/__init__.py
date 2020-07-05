@@ -74,7 +74,9 @@ class CommonParams(Params):
     kd_coeff: float = 1.0
     kd_decay: float = 0.995
     enable_sda: bool = False
-    sda_teachers: int = 2
+    sda_teachers: int = 3
+    sda_stategy: str = "recent_models"
+    sda_empty_first: bool = False
     sda_coeff: float = 1.0
     sda_decay: float = 0.995
     loss_type: str = "CrossEntropyLoss"

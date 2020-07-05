@@ -118,23 +118,33 @@ def show_model(args):
     logger.info(f"random_type: {training_args.get('random_type', None)}")
 
     logger.info('-' * 50)
-    if training_args['fp16']:
-        logger.warning(f"fp16: {training_args['fp16']}")
+
+    enable_fp16 = training_args.get('fp16', None)
+    if enable_fp16:
+        logger.warning(f"fp16: {enable_fp16}")
     else:
-        logger.debug(f"fp16: {training_args['fp16']}")
-    if training_args['enable_kd']:
-        logger.warning(f"enable_kd: {training_args['enable_kd']}")
+        logger.debug(f"fp16: {enable_fp16}")
+
+    enable_kd = training_args.get('enable_kd', None)
+    if enable_kd:
+        logger.warning(f"enable_kd: {enable_kd}")
     else:
-        logger.debug(f"enable_kd: {training_args['enable_kd']}")
-    if training_args['enable_sda']:
-        logger.warning(f"enable_sda: {training_args['enable_sda']}")
+        logger.debug(f"enable_kd: {enable_kd}")
+
+    enable_sda = training_args.get('enable_sda', None)
+    if enable_sda:
+        logger.warning(f"enable_sda: {enable_sda}")
         logger.info(f"sda_teachers: {training_args['sda_teachers']}")
         logger.info(f"sda_coeff: {training_args['sda_coeff']:.2f}")
         logger.info(f"sda_decay: {training_args['sda_decay']:.3f}")
     else:
-        logger.debug(f"enable_sda: {training_args['enable_sda']}")
+        logger.debug(f"enable_sda: {enable_sda}")
 
     logger.info('-' * 50)
+
+    ner_type = training_args.get("ner_type", None)
+    if ner_type:
+        logger.info(f"ner_type: {training_args['ner_type']}")
     logger.info(f"model_type: {training_args['model_type']}")
     logger.info(f"model_path: {training_args['model_path']}")
     logger.info(f"tracking_uri: {training_args['tracking_uri']}")
