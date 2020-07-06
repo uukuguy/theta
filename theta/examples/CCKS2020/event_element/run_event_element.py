@@ -641,18 +641,20 @@ experiment_params = NerAppParams(
         learning_rate=2e-5,
         train_max_seq_length=512,
         eval_max_seq_length=512,
-        per_gpu_train_batch_size=3,
-        per_gpu_eval_batch_size=3,
-        per_gpu_predict_batch_size=3,
+        per_gpu_train_batch_size=4,
+        per_gpu_eval_batch_size=4,
+        per_gpu_predict_batch_size=4,
         seg_len=510,
-        seg_backoff=128,
+        seg_backoff=64,
         num_train_epochs=10,
-        fold=0,
-        num_augements=0,
+        fold=2,
+        num_augements=2,
         enable_kd=False,
-        enable_sda=True,
+        enable_sda=False,
         sda_teachers=2,
-        loss_type="CrossEntropyLoss",
+        #  loss_type="CrossEntropyLoss",
+        loss_type='FocalLoss',
+        focalloss_gamma=2.0,
         model_type="bert",
         model_path=
         #  "/opt/share/pretrained/pytorch/hfl/chinese-electra-large-discriminator",
@@ -661,7 +663,7 @@ experiment_params = NerAppParams(
         fp16=True,
         best_index="f1",
         random_type="np"),
-    NerParams(ner_labels=ner_labels, ner_type='span'))
+    NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=True))
 
 experiment_params.debug()
 

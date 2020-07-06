@@ -8,7 +8,7 @@ import mlflow
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
-from ...losses import FocalLoss
+from ...losses import FocalLoss, DiceLoss
 import torch.nn.functional as F
 #  from ..models.crf_0 import CRF as CRF0
 #  from ..models.crf import CRF
@@ -262,6 +262,9 @@ class BertCrfForNer(BertPreTrainedModel):
                 #  loss = FocalLoss(gamma=self.focalloss_gamma,
                 #                   alpha=self.focalloss_alpha)(logits.view(
                 #                       -1, self.num_labels), labels.view(-1))
+            elif self.loss_type == 'DiceLoss':
+                loss_fct = DiceLoss(weight=self.diceloss_weight)
+
             elif self.loss_type == 'BCEWithLogitsLoss':
                 loss_fct = BCEWithLogitsLoss()
                 #  logger.debug(f"logits: {logits.shape}, {logits}")
@@ -462,6 +465,7 @@ def load_pretrained_model(args):
     setattr(config, 'loss_type', args.loss_type)
     setattr(config, 'focalloss_gamma', args.focalloss_gamma)
     setattr(config, 'focalloss_alpha', args.focalloss_alpha)
+    setattr(config, 'diceloss_weight', args.diceloss_weight)
 
     logger.info(f"model_path: {args.model_path}")
     logger.info(f"config:{config}")

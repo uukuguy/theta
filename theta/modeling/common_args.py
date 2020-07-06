@@ -256,7 +256,9 @@ def add_common_args(parser):
         "--sda_stategy",
         type=str,
         default="recent_models",
-        help="KD SDA stategy [recent_models|earliest_models|latest_model|clone_models].")
+        help=
+        "KD SDA stategy [recent_models|earliest_models|latest_model|clone_models]."
+    )
     parser.add_argument("--sda_empty_first", action="store_true")
     parser.add_argument("--sda_coeff",
                         type=float,
@@ -342,8 +344,9 @@ def add_common_args(parser):
         type=str,
         default="CrossEntropyLoss",
         help=
-        "Loss type: ['CrossEntropyLoss', 'FocalLoss', 'LabelSmoothingCrossEntropy', 'CircleLoss']"
+        "Loss type: ['CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'LabelSmoothingCrossEntropy', 'CircleLoss']"
     )
+    parser.add_argument("--diceloss_weight", default=None)
     parser.add_argument("--focalloss_gamma", type=float, default=2.0)
     parser.add_argument("--focalloss_alpha", type=float, default=None)
     parser.add_argument("--allow_overlap", action="store_true", help="")

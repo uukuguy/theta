@@ -7,7 +7,7 @@ from loguru import logger
 from .trainer import generate_dataloader
 from .onnx import export_onnx, inference_from_onnx
 from .ner_utils import LabeledText, show_ner_datainfo, get_ner_preds_reviews, save_ner_preds, load_ner_examples, load_ner_labeled_examples
-from .ner_utils import to_train_poplar, to_reviews_poplar
+from .ner_utils import to_train_poplar, to_reviews_poplar, to_poplar
 from .glue_utils import show_glue_datainfo, load_glue_examples, save_glue_preds
 from .common_args import add_common_args
 
@@ -82,6 +82,7 @@ class CommonParams(Params):
     loss_type: str = "CrossEntropyLoss"
     focalloss_gamma: float = 1.5
     focalloss_alpha: List = None
+    diceloss_weight: List = None
     model_type: str = "bert"
     model_path: str = None
     train_rate: float = 0.9

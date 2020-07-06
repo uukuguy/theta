@@ -11,7 +11,7 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
 
-from ...losses import FocalLoss, LabelSmoothingCrossEntropy
+from ...losses import FocalLoss, DiceLoss, LabelSmoothingCrossEntropy
 
 from .utils import CNerTokenizer, SeqEntityScore, get_entities
 from ..models.linears import PoolerStartLogits, PoolerEndLogits
@@ -42,6 +42,7 @@ class BertSpanForNer(BertPreTrainedModel):
             self.end_fc = PoolerEndLogits(config.hidden_size + 1,
                                           self.num_labels)
         self.init_weights()
+
 
 #  class BertSpanForNer:
 #      def __init__(self, args):
@@ -126,6 +127,8 @@ class BertSpanForNer(BertPreTrainedModel):
             elif self.loss_type == 'FocalLoss':
                 loss_fct = FocalLoss(gamma=self.focalloss_gamma,
                                      alpha=self.focalloss_alpha)
+            elif self.loss_type == 'DiceLoss':
+                loss_fct = DiceLoss(weight=self.diceloss_weight)
             else:
                 loss_fct = CrossEntropyLoss()
             start_logits = start_logits.view(-1, self.num_labels)
@@ -235,6 +238,7 @@ def load_pretrained_model(args):
     setattr(config, 'loss_type', args.loss_type)
     setattr(config, 'focalloss_gamma', args.focalloss_gamma)
     setattr(config, 'focalloss_alpha', args.focalloss_alpha)
+    setattr(config, 'diceloss_weight', args.diceloss_weight)
     logger.info(f"model_path: {args.model_path}")
     logger.info(f"config:{config}")
     model = model_class.from_pretrained(

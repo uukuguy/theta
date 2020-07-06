@@ -13,7 +13,7 @@ from sklearn.metrics import classification_report, roc_auc_score
 import mlflow
 
 from ..trainer import Trainer, get_default_optimizer_parameters
-from ...losses import FocalLoss
+from ...losses import FocalLoss, DiceLoss
 from ...utils import softmax, sigmoid, acc_and_f1
 from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes
 
@@ -138,12 +138,16 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 #  logger.debug(f"preds: {type(preds)}, {preds}")
 
                 assert self.loss_type in [
-                    'FocalLoss', 'CrossEntropyLoss', 'BCEWithLogitsLoss'
+                    'FocalLoss', 'DiceLoss', 'CrossEntropyLoss',
+                    'BCEWithLogitsLoss'
                 ]
                 if self.loss_type == 'FocalLoss':
                     loss = FocalLoss(gamma=self.focalloss_gamma,
                                      alpha=self.focalloss_alpha)(logits.view(
                                          -1, self.num_labels), labels.view(-1))
+                elif self.loss_type == 'DiceLoss':
+                    loss = DiceLoss(weight=self.diceloss_weight)(logits.view(
+                        -1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'BCEWithLogitsLoss':
                     loss_fct = BCEWithLogitsLoss()
                     #  logger.debug(f"logits: {logits.shape}, {logits}")
@@ -286,6 +290,7 @@ def load_pretrained_model(args):
     setattr(config, 'loss_type', args.loss_type)
     setattr(config, 'focalloss_gamma', args.focalloss_gamma)
     setattr(config, 'focalloss_alpha', args.focalloss_alpha)
+    setattr(config, 'diceloss_weight', args.diceloss_weight)
 
     logger.info(f"model_path: {args.model_path}")
     logger.info(f"config:{config}")

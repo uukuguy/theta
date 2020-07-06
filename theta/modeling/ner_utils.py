@@ -175,7 +175,7 @@ def save_ner_preds(args, preds, test_examples):
     json.dump(reviews, open(reviews_file, 'w'), ensure_ascii=False, indent=2)
     logger.info(f"Reviews file: {reviews_file}")
 
-    category_mentions_file = f"{args.latest_dir}/{args.dataset_name}_category_mentions_fold{args.fold}.txt"
+    category_mentions_file = f"{args.latest_dir}/{args.dataset_name}_category_mentions_{args.local_id}.txt"
     num_categories = len(category_mentions)
     num_mentions = 0
     with open(category_mentions_file, 'w') as wt:
@@ -488,6 +488,69 @@ def show_ner_datainfo(ner_labels, train_data_generator, train_file,
     logger.info(f"min: {np.min(test_lengths)}")
     logger.info(f"max: {np.max(test_lengths)}")
     logger.info(f"")
+
+
+def to_poplar(args, poplar_data_file, pages, ner_labels, ner_connections, start_page, max_pages):
+    poplar_json = {
+        "content": "",
+        "labelCategories": [],
+        "labels": [],
+        "connectionCategories": [],
+        "connections": []
+    }
+
+    poplar_colorset = [
+        '#007bff', '#17a2b8', '#28a745', '#fd7e14', '#e83e8c', '#dc3545',
+        '#20c997', '#ffc107', '#007bff'
+    ]
+    label2id = {x: i for i, x in enumerate(ner_labels)}
+    label_categories = poplar_json['labelCategories']
+    for _id, x in enumerate(ner_labels):
+        label_categories.append({
+            "id":
+            _id,
+            "text":
+            x,
+            "color":
+            poplar_colorset[label2id[x] % len(poplar_colorset)],
+            "borderColor":
+            "#cccccc"
+        })
+
+    connection_categories = poplar_json['connectionCategories']
+    for _id, _text in enumerate(ner_connections):
+        connection_categories.append({'id': _id, 'text': _text})
+
+    poplar_labels = poplar_json['labels']
+    poplar_content = ""
+    eid = 0
+    num_pages = 0
+    page_offset = 0
+
+    for guid, text in pages:
+
+        if num_pages < start_page:
+            num_pages += 1
+            continue
+
+        page_head = f"\n-------------------- {guid} Begin --------------------\n\n"
+        page_tail = f"\n-------------------- {guid} End --------------------\n\n"
+        poplar_content += page_head + f"{text}" + page_tail
+
+        num_pages += 1
+        if num_pages - start_page >= max_pages:
+            break
+
+        page_offset = len(poplar_content)
+
+    poplar_json["content"] = poplar_content
+    poplar_json['labels'] = poplar_labels
+
+    json.dump(poplar_json,
+              open(poplar_data_file, 'w'),
+              ensure_ascii=False,
+              indent=2)
+    logger.info(f"Saved {poplar_data_file}")
 
 
 def to_train_poplar(args,
