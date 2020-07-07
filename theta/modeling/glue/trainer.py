@@ -43,6 +43,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
         self.loss_type = config.loss_type
         self.focalloss_gamma = config.focalloss_gamma
         self.focalloss_alpha = config.focalloss_alpha
+        self.diceloss_weight = config.diceloss_weight
 
         self.init_weights()
 
@@ -146,8 +147,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
                                      alpha=self.focalloss_alpha)(logits.view(
                                          -1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'DiceLoss':
-                    loss = DiceLoss(weight=self.diceloss_weight)(logits.view(
-                        -1, self.num_labels), labels.view(-1))
+                    loss = DiceLoss(weight=self.diceloss_weight)(
+                        logits.view(-1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'BCEWithLogitsLoss':
                     loss_fct = BCEWithLogitsLoss()
                     #  logger.debug(f"logits: {logits.shape}, {logits}")

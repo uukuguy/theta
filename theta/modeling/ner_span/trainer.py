@@ -31,6 +31,7 @@ class BertSpanForNer(BertPreTrainedModel):
         self.loss_type = config.loss_type
         self.focalloss_gamma = config.focalloss_gamma
         self.focalloss_alpha = config.focalloss_alpha
+        self.diceloss_weight = config.diceloss_weight
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
