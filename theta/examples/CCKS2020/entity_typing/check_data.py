@@ -7,7 +7,8 @@ import pandas as pd
 
 train_file = "data/rawdata/ccks_7_1_competition_data/entity_type.txt"
 test_file = "data/rawdata/ccks_7_1_competition_data/entity_validation.txt",
-submission_file = "submissions/entity_typing_submission_6da7de8eb3a611eabda9fa163e51b5c3.txt"
+#  submission_file = "submissions/entity_typing_submission_6da7de8eb3a611eabda9fa163e51b5c3.txt"
+submission_file = "submissions/entity_typing_submission_e21bb4b4bc3611eaace7fa163e51b5c3.txt"
 
 data_file = train_file
 #  data_file = submission_file
@@ -53,14 +54,15 @@ lastchar2_categories = sorted(lastchar2_categories.items(),
 
 #  lastchar_categories = [x for x in lastchar_categories if x[1][0] >= 2]
 #  lastchar2_categories = [x for x in lastchar2_categories if x[1][0] >= 2]
-lastchar_categories = [
-    x for x in lastchar_categories
-    if x[1][0] >= 5 and (x[1][1] <= 3 or x[1][2] <= 3)
-]
-lastchar2_categories = [
-    x for x in lastchar2_categories
-    if x[1][0] >= 5 and (x[1][1] <= 3 or x[1][2] <= 3)
-]
+
+#  lastchar_categories = [
+#      x for x in lastchar_categories
+#      if x[1][0] >= 5 and (x[1][1] <= 10 or x[1][2] <= 10)
+#  ]
+#  lastchar2_categories = [
+#      x for x in lastchar2_categories
+#      if x[1][0] >= 5 and (x[1][1] <= 10 or x[1][2] <= 10)
+#  ]
 
 logger.info(f"{lastchar_categories}")
 logger.info(f"{lastchar2_categories}")

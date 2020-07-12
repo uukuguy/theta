@@ -154,7 +154,7 @@ experiment_params = GlueAppParams(
         seg_len=0,
         seg_backoff=0,
         num_train_epochs=10,
-        fold=5,
+        fold=7,
         num_augements=0,
         enable_kd=False,
         enable_sda=False,
@@ -163,7 +163,7 @@ experiment_params = GlueAppParams(
         sda_empty_first=True,
         #  loss_type="CrossEntropyLoss",
         loss_type="FocalLoss",
-        focalloss_gamma=2.0,
+        focalloss_gamma=1.5,
         model_type="bert",
         model_path=
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",

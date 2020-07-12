@@ -256,7 +256,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return (loss, ) + outputs
         else:
             # (loss), logits, (hidden_states), (attentions)
-            return (torch.tensor(0.0).cuda(), ) + outputs
+            #  return (torch.tensor(0.0).cuda(), ) + outputs
+            return (None, ) + outputs
             #  return outputs
 
 MODEL_CLASSES = {

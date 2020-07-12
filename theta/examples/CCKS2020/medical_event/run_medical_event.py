@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, sys, json, random, copy
+import os, sys, json, random, copy, re
 from tqdm import tqdm
 from loguru import logger
 from pathlib import Path
@@ -24,6 +24,20 @@ def clean_text(text):
     if text:
         text = text.strip()
         #  text = re.sub('\t', ' ', text)
+        # 将7.32*8.41CM 转换成7.32CMx8.41CM，官方数据格式隐含要求。
+        text = re.sub('([\d\.]+)\s*\*\s*([\d\.]+)\s*CM', r"\1CM×\2CM", text)
+        text = re.sub('([\d\.]+)CM\*([\d\.]+)CM', r"\1CM×\2CM", text)
+        text = re.sub('([\d\.]+)×([\d\.]+)CM', r"\1CM×\2CM", text)
+
+        text = re.sub('([\d\.]+)\s*\*\s*([\d\.]+)\s*cm', r"\1CM×\2CM", text)
+        text = re.sub('([\d\.]+)cm\*([\d\.]+)cm', r"\1CM×\2CM", text)
+        text = re.sub('([\d\.]+)×([\d\.]+)cm', r"\1CM×\2CM", text)
+        text = re.sub('([\d\.]+)cm×([\d\.]+)cm', r"\1CM×\2CM", text)
+
+        text = re.sub('([\d\.]+)\s*\*\s*([\d\.]+)\s*mm', r"\1MM×\2MM", text)
+        text = re.sub('([\d\.]+)cm\*([\d\.]+)mm', r"\1MM×\2MM", text)
+        text = re.sub('([\d\.]+)×([\d\.]+)mm', r"\1MM×\2MM", text)
+        text = re.sub('([\d\.]+)mm×([\d\.]+)mm', r"\1MM×\2MM", text)
     return text
 
 
@@ -35,6 +49,8 @@ def read_train_file(train_file):
 
     for i, row in tqdm(df_train.iterrows(), desc="Load train"):
         text = clean_text(row.原文)
+        #  logger.warning(f"text: {text}")
+
         primary_site = row.肿瘤原发部位.strip()
         focus_size = row.原发病灶大小.strip()
         metastatic_site = row.转移部位.strip()
@@ -44,27 +60,49 @@ def read_train_file(train_file):
         #  )
         entities = []
         if primary_site:
-            p0 = text.find(primary_site)
-            if p0 >= 0:
-                s = p0
-                e = p0 + len(primary_site)
-                entities.append({
-                    "label_type": "肿瘤部位",
-                    "start_pos": s,
-                    "end_pos": e,
-                    "mention": text[s:e]
-                })
+            sites = primary_site.split(',')
+            for ps in sites:
+                ps = ps.strip()
+                if not ps:
+                    continue
+
+                p0 = text.find(ps)
+                #  logger.info(f"primary_site: {primary_site}")
+                #  logger.info(f"p0: {p0}")
+                if p0 >= 0:
+                    s = p0
+                    e = p0 + len(ps)
+                    entities.append({
+                        "label_type": "肿瘤部位",
+                        "start_pos": s,
+                        "end_pos": e,
+                        "mention": text[s:e]
+                    })
+                #  else:
+                #      logger.warning(
+                #          f"[{i}] - primary_size: {ps} not found in text: {text}"
+                #      )
+
         if focus_size:
-            p0 = text.find(focus_size)
-            if p0 >= 0:
-                s = p0
-                e = p0 + len(focus_size)
-                entities.append({
-                    "label_type": "病灶大小",
-                    "start_pos": s,
-                    "end_pos": e,
-                    "mention": text[s:e]
-                })
+            sizes = focus_size.split(',')
+            for fs in sizes:
+                fs = fs.strip()
+                if not fs:
+                    continue
+                p0 = text.find(fs)
+                if p0 >= 0:
+                    s = p0
+                    e = p0 + len(fs)
+                    entities.append({
+                        "label_type": "病灶大小",
+                        "start_pos": s,
+                        "end_pos": e,
+                        "mention": text[s:e]
+                    })
+                #  else:
+                #      logger.warning(
+                #          f"[{i}] - focus_size: {fs} not found in text: {text}")
+
         if metastatic_site:
             sites = metastatic_site.split(',')
             s0 = 0
@@ -73,10 +111,19 @@ def read_train_file(train_file):
                 if not ms:
                     continue
                 if ms == primary_site:
+                    #  logger.warning(
+                    #      f"[{i}] - Skip! metastatic_site: {ms} == primary_size: {primary_site} in text: {text}"
+                    #  )
                     continue
                 if ms in primary_site:
+                    #  logger.warning(
+                    #      f"[{i}] - Skip! metastatic_site: {ms} contained in  primary_size: {primary_site} in text: {text}"
+                    #  )
                     continue
                 if primary_site in ms:
+                    #  logger.warning(
+                    #      f"[{i}] - Skip! primary_size: {primary_site} contained in metastatic_site: {ms} in text: {text}"
+                    #  )
                     continue
 
                 p0 = text.find(ms, s0)
@@ -95,6 +142,11 @@ def read_train_file(train_file):
                         "mention": text[s:e]
                     })
                     s0 = p0 + len(ms)
+                #  else:
+                #      logger.warning(
+                #          f"[{i}] - metastatic_site: {ms} not found in text: {text}"
+                #      )
+
         #  logger.debug(f"entities: {entities}")
         if entities:
             lines.append({"originalText": text, "entities": entities})
@@ -260,9 +312,9 @@ experiment_params = NerAppParams(
         learning_rate=2e-5,
         train_max_seq_length=512,
         eval_max_seq_length=512,
-        per_gpu_train_batch_size=3,
-        per_gpu_eval_batch_size=3,
-        per_gpu_predict_batch_size=3,
+        per_gpu_train_batch_size=4,
+        per_gpu_eval_batch_size=4,
+        per_gpu_predict_batch_size=4,
         seg_len=510,
         seg_backoff=128,
         num_train_epochs=10,
@@ -273,7 +325,7 @@ experiment_params = NerAppParams(
         model_type="bert",
         model_path=
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
-        fp16=False,
+        fp16=True,
         random_type='np',
     ), NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=True))
 
@@ -299,6 +351,7 @@ def main(args):
         to_train_poplar(args,
                         train_data_generator,
                         ner_labels=ner_labels,
+                        ner_connections=[],
                         start_page=args.start_page,
                         max_pages=args.max_pages)
 
@@ -306,6 +359,7 @@ def main(args):
         from theta.modeling import to_reviews_poplar
         to_reviews_poplar(args,
                           ner_labels=ner_labels,
+                          ner_connections=[],
                           start_page=args.start_page,
                           max_pages=args.max_pages)
     else:

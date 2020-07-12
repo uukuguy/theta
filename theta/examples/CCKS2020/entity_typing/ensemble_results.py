@@ -3,7 +3,8 @@
 
 import os, glob
 
-files = glob.glob(f"results/entity_typing_submission_*.txt")
+#  files = glob.glob(f"results/entity_typing_submission_*.txt")
+files = glob.glob(f"results/entity_typing_*.txt")
 ensemble_results_file = f"./entity_typing_ensemble_{os.path.basename(os.path.abspath('.'))}.txt"
 
 ensemble_results = []

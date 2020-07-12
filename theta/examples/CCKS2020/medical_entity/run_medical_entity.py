@@ -244,9 +244,22 @@ def main(args):
     elif args.do_submit:
         do_submit(args)
 
-    elif args.to_poplar:
-        to_poplar(args)
+    elif args.to_train_poplar:
+        from theta.modeling import to_train_poplar
+        to_train_poplar(args,
+                        train_data_generator,
+                        ner_labels=ner_labels,
+                        ner_connections=[],
+                        start_page=args.start_page,
+                        max_pages=args.max_pages)
 
+    elif args.to_reviews_poplar:
+        from theta.modeling import to_reviews_poplar
+        to_reviews_poplar(args,
+                          ner_labels=ner_labels,
+                          ner_connections=[],
+                          start_page=args.start_page,
+                          max_pages=args.max_pages)
     else:
 
         # -------------------- Model --------------------
@@ -315,7 +328,10 @@ def main(args):
 if __name__ == '__main__':
 
     def add_special_args(parser):
-        parser.add_argument("--to_poplar", action="store_true")
+        parser.add_argument("--to_train_poplar", action="store_true")
+        parser.add_argument("--to_reviews_poplar", action="store_true")
+        parser.add_argument("--start_page", type=int, default=0)
+        parser.add_argument("--max_pages", type=int, default=100)
         return parser
 
     if experiment_params.ner_params.ner_type == 'span':
