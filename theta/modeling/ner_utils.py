@@ -458,13 +458,23 @@ def load_ner_labeled_examples(lines,
 
 def show_ner_datainfo(ner_labels, train_data_generator, train_file,
                       test_data_generator, test_file):
+    from collections import defaultdict
+    label_counts = defaultdict(int)
+
+    label_examples = defaultdict(int)
+
     train_lengths = []
     for guid, text_a, _, labels in train_data_generator(train_file):
+        entity_examples = defaultdict(int)
         train_lengths.append(len(text_a))
         for entity in labels:
             c = entity.category
+            entity_examples[c] = 1
+            label_counts[c] += 1
             if c not in ner_labels:
                 ner_labels.append(c)
+        for c, n in entity_examples.items():
+            label_examples[c] += n
 
     test_lengths = [
         len(text_a)
@@ -472,7 +482,12 @@ def show_ner_datainfo(ner_labels, train_data_generator, train_file,
     ]
 
     logger.info(f"****** ner_labels ******")
-    logger.info(f"{ner_labels}")
+    logger.info(f"{len(ner_labels)} labels: {ner_labels}")
+    logger.info(f"label_counts: {label_counts}")
+    logger.info(
+        f"num train examples: {len(train_lengths)}, num test examples: {len(test_lengths)}"
+    )
+    logger.info(f"label_examples: {label_examples}")
     logger.info(f"")
     import numpy as np
     logger.info(f"****** train lengths ******")
@@ -490,7 +505,8 @@ def show_ner_datainfo(ner_labels, train_data_generator, train_file,
     logger.info(f"")
 
 
-def to_poplar(args, poplar_data_file, pages, ner_labels, ner_connections, start_page, max_pages):
+def to_poplar(args, poplar_data_file, pages, ner_labels, ner_connections,
+              start_page, max_pages):
     poplar_json = {
         "content": "",
         "labelCategories": [],
@@ -552,6 +568,86 @@ def to_poplar(args, poplar_data_file, pages, ner_labels, ner_connections, start_
               indent=2)
     logger.info(f"Saved {poplar_data_file}")
 
+def to_sampling_poplar(args,
+                    train_data_generator,
+                    ner_labels,
+                    ner_connections,
+                    start_page=0,
+                    max_pages=100):
+    poplar_json = {
+        "content": "",
+        "labelCategories": [],
+        "labels": [],
+        "connectionCategories": [],
+        "connections": []
+    }
+
+    poplar_colorset = [
+        '#007bff', '#17a2b8', '#28a745', '#fd7e14', '#e83e8c', '#dc3545',
+        '#20c997', '#ffc107', '#007bff'
+    ]
+    label2id = {x: i for i, x in enumerate(ner_labels)}
+    label_categories = poplar_json['labelCategories']
+    for _id, x in enumerate(ner_labels):
+        label_categories.append({
+            "id":
+            _id,
+            "text":
+            x,
+            "color":
+            poplar_colorset[label2id[x] % len(poplar_colorset)],
+            "borderColor":
+            "#cccccc"
+        })
+
+    connection_categories = poplar_json['connectionCategories']
+    for _id, _text in enumerate(ner_connections):
+        connection_categories.append({'id': _id, 'text': _text})
+
+    poplar_labels = poplar_json['labels']
+    poplar_content = ""
+    eid = 0
+    num_pages = 0
+    page_offset = 0
+    for guid, text, _, entities in train_data_generator(args.train_file):
+        if num_pages < start_page:
+            num_pages += 1
+            continue
+
+        page_head = f"\n-------------------- {guid} Begin --------------------\n\n"
+        page_tail = f"\n-------------------- {guid} End --------------------\n\n"
+        poplar_content += page_head + f"{text}" + page_tail
+
+        for entity in entities:
+            poplar_labels.append({
+                "id":
+                eid,
+                "categoryId":
+                label2id[entity.category],
+                "startIndex":
+                page_offset + len(page_head) + entity.start,
+                "endIndex":
+                page_offset + len(page_head) + entity.end + 1,
+            })
+            eid += 1
+
+        num_pages += 1
+        if num_pages - start_page >= max_pages:
+            break
+
+        page_offset = len(poplar_content)
+
+    poplar_json["content"] = poplar_content
+    poplar_json['labels'] = poplar_labels
+
+    if not os.path.exists("./poplar"):
+        os.makedirs("./poplar")
+    poplar_data_file = f"./poplar/poplar_sampling_data_{args.local_id}_{max_pages}_{start_page}.json"
+    json.dump(poplar_json,
+              open(poplar_data_file, 'w'),
+              ensure_ascii=False,
+              indent=2)
+    logger.info(f"Saved {poplar_data_file}")
 
 def to_train_poplar(args,
                     train_data_generator,

@@ -9,11 +9,12 @@ from transformers import BertTokenizer
 
 
 class CNerTokenizer(BertTokenizer):
-    def __init__(self, vocab_file, do_lower_case=False):
+    def __init__(self, vocab_file, do_lower_case=False, is_english=False):
         super().__init__(vocab_file=str(vocab_file),
                          do_lower_case=do_lower_case)
         self.vocab_file = str(vocab_file)
         self.do_lower_case = do_lower_case
+        self.is_english = is_english
 
     def tokenize(self, text):
         _tokens = []

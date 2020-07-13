@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, sys, json, random, copy
+import os, sys, json, random, copy, re
 from tqdm import tqdm
 from loguru import logger
 from pathlib import Path
@@ -40,18 +40,19 @@ ner_labels = [
 def clean_text(text):
     if text:
         text = text.strip()
+        text = re.sub('(<br>)', '', text)
         #  text = re.sub('\t', ' ', text)
     return text
 
 
-def train_data_generator(train_file):
+def train_data_generator_0(train_file):
 
     with open(train_file, 'r') as fr:
         lines = fr.readlines()
         for line in tqdm(lines, desc=f"train & eval"):
             d = json.loads(line)
             guid = d['doc_id']
-            text = d['content']
+            text = clean_text(d['content'])
 
             seg_text = text
             seg_labels = []
@@ -88,6 +89,60 @@ def train_data_generator(train_file):
             yield guid, text, None, sl.entities
 
 
+# 上一模型推理结果作为训练数据
+def train_data_from_last_generator(train_file):
+
+    train_files = [
+        './data/event_element_sampling_0713.json',
+    ]
+
+    for train_file in train_files:
+        tagged_train_json_data = json.load(open(train_file, 'r'))
+
+        all_labels = tagged_train_json_data['labelCategories']
+        id2label = {x['id']: x['text'] for x in all_labels}
+
+        all_entities = tagged_train_json_data['labels']
+
+        content = tagged_train_json_data['content']
+
+        #  re_b = '(\\n[-]+ yanbao\\d\\d\\d\\.txt Begin [-]+\\n\\n)'
+        #  re_e = '(\\n[-]+ yanbao\\d\\d\\d\\.txt End [-]+\\n\\n)'
+        re_b = '(\\n[-]+ [\d]+ Begin [-]+\\n\\n)'
+        re_e = '(\\n[-]+ [\d]+ End [-]+\\n\\n)'
+        b_list = []
+        for x in re.finditer(re_b, content):
+            b_list.append((x.start(), x.end()))
+        e_list = []
+        for x in re.finditer(re_e, content):
+            e_list.append((x.start(), x.end()))
+
+        pages = [(x_b[0], x_b[1], x_e[0], x_e[1])
+                 for x_b, x_e in zip(b_list, e_list)]
+
+        logger.warning(f"pages: {pages}")
+
+        for i, page in enumerate(pages):
+            head_x0, head_x1, tail_x0, tail_x1 = page
+
+            guid = f"{i}"
+            text = content[head_x1:tail_x0]
+            sl = LabeledText(guid, text)
+
+            for entity in all_entities:
+                s = entity['startIndex']
+                e = entity['endIndex'] - 1
+                assert e >= s
+                if s >= head_x1 and e < tail_x0:
+                    sl.add_entity(id2label[entity['categoryId']], s - head_x1,
+                                  e - head_x1)
+            yield guid, text, None, sl.entities
+
+
+#  train_data_generator = train_data_from_last_generator
+train_data_generator = train_data_generator_0
+
+
 def load_train_val_examples(args):
     lines = []
     for guid, text, _, entities in train_data_generator(args.train_file):
@@ -117,6 +172,30 @@ def load_train_val_examples(args):
     return train_examples, val_examples
 
 
+def load_eval_examples(eval_file):
+    lines = []
+    for guid, text, _, entities in train_data_generator_0(eval_file):
+        sl = LabeledText(guid, text, entities)
+        lines.append({'guid': guid, 'text': text, 'entities': entities})
+
+    allow_overlap = args.allow_overlap
+    if args.num_augements > 0:
+        allow_overlap = False
+
+    train_base_examples = load_ner_labeled_examples(
+        lines,
+        ner_labels,
+        seg_len=args.seg_len,
+        seg_backoff=args.seg_backoff,
+        num_augements=0,
+        allow_overlap=allow_overlap)
+
+    eval_examples = train_base_examples
+
+    logger.info(f"Loaded {len(eval_examples)} eval examples")
+    return eval_examples
+
+
 def test_data_generator(test_file):
     with open(test_file, 'r') as fr:
 
@@ -124,7 +203,7 @@ def test_data_generator(test_file):
         for line in tqdm(lines, desc=f"test"):
             d = json.loads(line.strip())
             guid = d['doc_id']
-            text = d['content']
+            text = clean_text(d['content'])
 
             yield guid, text, None, None
 
@@ -629,6 +708,44 @@ def merge_all_tops(args):
     logger.info(f"Merged result saved to {merged_result_file}")
 
 
+def sampling_train_data(train_file, max_samples=5):
+    from collections import defaultdict
+    selected_examples = defaultdict(list)
+
+    all_examples = [
+        (guid, text_a, labels)
+        for guid, text_a, _, labels in train_data_generator(train_file)
+    ]
+    random.shuffle(all_examples)
+    for guid, text_a, labels in tqdm(all_examples):
+        for entity in labels:
+            c = entity.category
+            if len(selected_examples[c]) < max_samples:
+                selected_examples[c].append((guid, text_a, labels))
+
+    all_selected_examples = {}
+    for c, examples in selected_examples.items():
+        for guid, text_a, labels in examples:
+            if guid not in all_selected_examples:
+                all_selected_examples[guid] = (guid, text_a, labels)
+    all_selected_examples = [(guid, text_a, labels)
+                             for _, (guid, text_a,
+                                     labels) in all_selected_examples.items()]
+    logger.warning(f"Sampling {len(all_selected_examples)} examples.")
+
+    def sampling_data_generator(_):
+        for guid, text_a, labels in all_selected_examples:
+            yield guid, text_a, None, labels
+
+    from theta.modeling import to_sampling_poplar
+    to_sampling_poplar(args,
+                       sampling_data_generator,
+                       ner_labels=ner_labels,
+                       ner_connections=[],
+                       start_page=args.start_page,
+                       max_pages=args.max_pages)
+
+
 from theta.modeling import Params, CommonParams, NerParams, NerAppParams, log_global_params
 
 experiment_params = NerAppParams(
@@ -638,22 +755,22 @@ experiment_params = NerAppParams(
         train_file="data/event_element_train_data_label.txt",
         eval_file="data/event_element_train_data_label.txt",
         test_file="data/event_element_dev_data.txt",
-        learning_rate=1e-3,
-        train_max_seq_length=256,
-        eval_max_seq_length=256,
-        per_gpu_train_batch_size=8,
-        per_gpu_eval_batch_size=8,
-        per_gpu_predict_batch_size=8,
-        seg_len=254,
-        seg_backoff=127,
-        num_train_epochs=5,
-        fold=5,
-        num_augements=0,
+        learning_rate=2e-5,
+        train_max_seq_length=512,
+        eval_max_seq_length=512,
+        per_gpu_train_batch_size=4,
+        per_gpu_eval_batch_size=4,
+        per_gpu_predict_batch_size=4,
+        seg_len=510,
+        seg_backoff=128,
+        num_train_epochs=10,
+        fold=0,
+        num_augements=3,
         enable_kd=False,
         enable_sda=False,
         sda_teachers=2,
-        #  loss_type="CrossEntropyLoss",
-        loss_type='FocalLoss',
+        loss_type="CrossEntropyLoss",
+        #  loss_type='FocalLoss',
         focalloss_gamma=2.0,
         model_type="bert",
         model_path=
@@ -663,12 +780,14 @@ experiment_params = NerAppParams(
         fp16=True,
         best_index="f1",
         random_type="np"),
-    NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=True))
+    NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=False))
 
 experiment_params.debug()
 
 
 def main(args):
+    from theta.utils import init_theta
+
     def do_eda(args):
         show_ner_datainfo(ner_labels, train_data_generator, args.train_file,
                           test_data_generator, args.test_file)
@@ -680,6 +799,7 @@ def main(args):
         do_eda(args)
 
     elif args.do_submit:
+        init_theta(args)
         do_submit(args)
 
     elif args.fix_results:
@@ -688,11 +808,16 @@ def main(args):
     elif args.do_merge:
         merge_all_tops(args)
 
+    elif args.sampling_train_data:
+        init_theta(args)
+        sampling_train_data(args.train_file)
+
     elif args.to_train_poplar:
         from theta.modeling import to_train_poplar
         to_train_poplar(args,
                         train_data_generator,
                         ner_labels=ner_labels,
+                        ner_connections=[],
                         start_page=args.start_page,
                         max_pages=args.max_pages)
 
@@ -700,6 +825,7 @@ def main(args):
         from theta.modeling import to_reviews_poplar
         to_reviews_poplar(args,
                           ner_labels=ner_labels,
+                          ner_connections=[],
                           start_page=args.start_page,
                           max_pages=args.max_pages)
     else:
@@ -727,7 +853,7 @@ def main(args):
 
         def do_eval(args):
             args.model_path = args.best_model_path
-            _, eval_examples = load_train_val_examples(args)
+            eval_examples = load_eval_examples(args.eval_file)
             model = load_model(args)
             trainer.evaluate(args, model, eval_examples)
 
@@ -770,6 +896,7 @@ def main(args):
 if __name__ == '__main__':
 
     def add_special_args(parser):
+        parser.add_argument("--sampling_train_data", action="store_true")
         parser.add_argument("--to_train_poplar", action="store_true")
         parser.add_argument("--to_reviews_poplar", action="store_true")
         parser.add_argument("--start_page", type=int, default=0)

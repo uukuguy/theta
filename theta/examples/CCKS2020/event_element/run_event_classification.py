@@ -1,33 +1,57 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json, random
+import json, random, re
 from tqdm import tqdm
 from loguru import logger
 import pandas as pd
 import numpy as np
 import mlflow
+from collections import Counter
 
 from theta.modeling import load_glue_examples, show_glue_datainfo, save_glue_preds
 from theta.modeling.glue import load_model, GlueTrainer, get_args
 
-glue_labels = ['病毒', '细菌', '疾病', '药物', '医学专科', '检查科目', '症状', 'NoneType']
-# 10,     52,    1267,  2550,  7,     147,   867,   100
-# [0.200, 0.200, 0.025, 0.025, 0.200, 0.100, 0.050, 0.200]
-
-# --- 0.9383 (10/10)
-#[0.5, 0.40, 0.10, 0.05, 0.5, 0.40, 0.40, 0.40]
+glue_labels = {
+    "破产清算",
+    "重大安全事故",
+    "股东增持",
+    "股东减持",
+    "股权质押",
+    "股权冻结",
+    "高层死亡",
+    "重大资产损失",
+    "重大对外赔付",
+}
 
 # -------------------- Data --------------------
 
 
+def clean_text(text):
+    if text:
+        text = text.strip()
+        text = re.sub('(<br>)', '', text)
+        #  text = re.sub('\t', ' ', text)
+    return text
+
+
 def train_data_generator(train_file):
-    df_train = pd.read_csv(train_file,
-                           sep='\t',
-                           header=None,
-                           names=['text', 'label'])
-    for i, row in tqdm(df_train.iterrows()):
-        yield f"{i}", row.text, None, row.label
+
+    with open(train_file, 'r') as fr:
+        lines = fr.readlines()
+        for line in tqdm(lines, desc=f"train & eval"):
+            d = json.loads(line)
+            guid = d['doc_id']
+            text = clean_text(d['content'])
+
+            event_types = [e['event_type'] for e in d['events']]
+            ets = Counter(event_types).most_common()
+            if len(ets) > 1:
+                logger.warning(f"guid: {guid}, event_types: {ets}")
+
+            label = ets[0][0]
+
+            yield guid, text, None, label
 
 
 def load_train_val_examples(args):
@@ -54,9 +78,15 @@ def load_train_val_examples(args):
 
 
 def test_data_generator(test_file):
-    for i, line in enumerate(tqdm(open(test_file, 'r'))):
-        line = line.strip()
-        yield f"{i}", line, None, None
+    with open(test_file, 'r') as fr:
+
+        lines = fr.readlines()
+        for line in tqdm(lines, desc=f"test"):
+            d = json.loads(line.strip())
+            guid = d['doc_id']
+            text = clean_text(d['content'])
+
+            yield guid, text, None, None
 
 
 def load_test_examples(args):
@@ -139,36 +169,35 @@ from theta.modeling import Params, CommonParams, GlueParams, GlueAppParams, log_
 
 experiment_params = GlueAppParams(
     CommonParams(
-        dataset_name="entity_typing",
-        experiment_name="ccks2020_entity_typing",
-        train_file="data/rawdata/ccks_7_1_competition_data/entity_type.txt",
-        eval_file="data/rawdata/ccks_7_1_competition_data/entity_type.txt",
-        test_file=
-        "data/rawdata/ccks_7_1_competition_data/entity_validation.txt",
+        dataset_name="event_classification",
+        experiment_name="ccks2020_entity_element",
+        train_file="data/event_element_train_data_label.txt",
+        eval_file="data/event_element_train_data_label.txt",
+        test_file="data/event_element_dev_data.txt",
         learning_rate=1e-5,
-        train_max_seq_length=32,
-        eval_max_seq_length=32,
-        per_gpu_train_batch_size=96,
-        per_gpu_eval_batch_size=96,
-        per_gpu_predict_batch_size=96,
+        train_max_seq_length=512,
+        eval_max_seq_length=512,
+        per_gpu_train_batch_size=4,
+        per_gpu_eval_batch_size=4,
+        per_gpu_predict_batch_size=4,
         seg_len=0,
         seg_backoff=0,
         num_train_epochs=10,
-        fold=8,
+        fold=0,
         num_augements=0,
         enable_kd=False,
         enable_sda=False,
         sda_teachers=3,
         sda_stategy="clone_models",
         sda_empty_first=True,
-        #  loss_type="CrossEntropyLoss",
-        loss_type="FocalLoss",
-        focalloss_gamma=2.0,
+        loss_type="CrossEntropyLoss",
+        #  loss_type="FocalLoss",
+        focalloss_gamma=1.5,
         model_type="bert",
         model_path=
         "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese",
         train_rate=0.9,
-        fp16=False,
+        fp16=True,
         best_index='f1',
     ),
     GlueParams(glue_labels=glue_labels, ))

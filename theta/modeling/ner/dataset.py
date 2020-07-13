@@ -38,7 +38,6 @@ class InputFeatures(object):
                           sort_keys=True) + "\n"
 
 
-
 def to_BIOS(labels, num_tokens):
     bios_labels = ['O'] * num_tokens
     #  logger.debug(f"num_tokens: {num_tokens}, labels: {labels}")
@@ -91,7 +90,7 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
     def encode_labels(labels, input_len):
         if labels is not None:
-            #  logger.debug(f"labels: {labels}")
+            #  logger.debug(f"input_len: {input_len}, labels: {labels}")
             label_ids = [label2id[x] for x in to_BIOS(labels, input_len)]
         else:
             label_ids = [label2id['O']] * input_len

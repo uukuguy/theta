@@ -354,6 +354,7 @@ def add_common_args(parser):
                         type=str,
                         default=None,
                         help="[None, 'np']")
+    parser.add_argument("--is_english", action='store_true')
 
     return parser
 

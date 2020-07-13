@@ -147,8 +147,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
                                      alpha=self.focalloss_alpha)(logits.view(
                                          -1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'DiceLoss':
-                    loss = DiceLoss(weight=self.diceloss_weight)(
-                        logits.view(-1, self.num_labels), labels.view(-1))
+                    loss = DiceLoss(weight=self.diceloss_weight)(logits.view(
+                        -1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'BCEWithLogitsLoss':
                     loss_fct = BCEWithLogitsLoss()
                     #  logger.debug(f"logits: {logits.shape}, {logits}")
@@ -272,6 +272,7 @@ def load_pretrained_tokenizer(args):
     tokenizer = tokenizer_class.from_pretrained(
         args.model_path,
         do_lower_case=args.do_lower_case,
+        is_english=args.is_english,
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
 
