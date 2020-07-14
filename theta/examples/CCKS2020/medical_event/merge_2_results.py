@@ -6,14 +6,14 @@ from tqdm import tqdm
 from loguru import logger
 STEP = 2
 
-events_0 = json.load(
-    open(
-        './outputs/f7b9ad82bb4411ea906ce8611f2e5a0e/medical_event_reviews_f7b9ad82bb4411ea906ce8611f2e5a0e.json',
-        'r'))
-events_1 = json.load(
-    open(
-        './outputs/5692590cbc5911eaa90ce8611f2e5a0e/medical_event_reviews_5692590cbc5911eaa90ce8611f2e5a0e.json',
-        'r'))
+#  events_0 = json.load(
+#      open(
+#          './outputs/f7b9ad82bb4411ea906ce8611f2e5a0e/medical_event_reviews_f7b9ad82bb4411ea906ce8611f2e5a0e.json',
+#          'r'))
+#  events_1 = json.load(
+#      open(
+#          './outputs/5692590cbc5911eaa90ce8611f2e5a0e/medical_event_reviews_5692590cbc5911eaa90ce8611f2e5a0e.json',
+#          'r'))
 
 #  STEP = 2
 #
@@ -39,6 +39,20 @@ events_1 = json.load(
 #      open(
 #          './outputs/c5bf0d78bc6a11eaa317e8611f2e5a0e/medical_event_reviews_c5bf0d78bc6a11eaa317e8611f2e5a0e.json',
 #          'r'))
+
+# 0.765544
+reviews_0 = '2ad2020ec50a11eaa2f7e8611f2e5a0e'
+events_0 = json.load(
+    open(
+        './outputs/2ad2020ec50a11eaa2f7e8611f2e5a0e/medical_event_reviews_2ad2020ec50a11eaa2f7e8611f2e5a0e.json',
+        'r'))
+
+# 0.760053
+reviews_1 = '3fae0204c4e711eaaaaae8611f2e5a0e'
+events_1 = json.load(
+    open(
+        './outputs/3fae0204c4e711eaaaaae8611f2e5a0e/medical_event_reviews_3fae0204c4e711eaaaaae8611f2e5a0e.json',
+        'r'))
 
 for guid, eevts_0 in tqdm(events_0.items()):
     eevts_1 = events_1[guid]
@@ -69,7 +83,7 @@ for guid, eevts_0 in tqdm(events_0.items()):
             new_entities.append(e_1)
     entities_0 += new_entities
 
-merge_results_file = f"./submissions/merge_{STEP}_results.json"
+merge_results_file = f"./submissions/merge_{reviews_0}_{reviews_1}_results.json"
 json.dump(events_0,
           open(merge_results_file, 'w'),
           ensure_ascii=False,
@@ -79,7 +93,7 @@ logger.info(f"Saved {merge_results_file}")
 
 def generate_submission():
     #  submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.xlsx"
-    submission_file = f"./submissions/merge_{STEP}_results.xlsx"
+    submission_file = f"./submissions/merge_{reviews_0}_{reviews_1}_results.xlsx"
     import xlwt
     workbook = xlwt.Workbook(encoding='utf-8')
     worksheet = workbook.add_sheet(f"medical_event")
