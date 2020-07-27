@@ -26,7 +26,6 @@ from torch.autograd import Variable
 #
 #          return focal_loss
 
-
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2.0, alpha=None, size_average=True):
         super(FocalLoss, self).__init__()
@@ -42,13 +41,15 @@ class FocalLoss(nn.Module):
         #  print(input)
         #  print(target)
         #  print(f"input.shape: {input.shape}, target.shape: {target.shape}")
-        if input.dim() > 2:
-            input = input.view(input.size(0), input.size(1),
-                               -1)  # N,C,H,W => N,C,H*W
-            input = input.transpose(1, 2)  # N,C,H*W => N,H*W,C
-            input = input.contiguous().view(
-                -1, input.size(2))  # N,H*W,C => N*H*W,C
-        target = target.view(-1, 1)
+
+        #  if input.dim() > 2:
+        #      input = input.view(input.size(0), input.size(1),
+        #                         -1)  # N,C,H,W => N,C,H*W
+        #      input = input.transpose(1, 2)  # N,C,H*W => N,H*W,C
+        #      input = input.contiguous().view(
+        #          -1, input.size(2))  # N,H*W,C => N*H*W,C
+
+        target = target.view(-1, 1).long()
 
         logpt = F.log_softmax(input)
         logpt = logpt.gather(1, target)
@@ -83,7 +84,7 @@ class FocalLoss(nn.Module):
 #          pt = torch.exp(logpt)
 #          logpt = (1 - pt)**self.gamma * logpt
 #          loss = F.nll_loss(logpt,
-#                            target,
+#                            target.long(),
 #                            self.alpha,
 #                            ignore_index=self.ignore_index)
 #          return loss

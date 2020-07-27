@@ -24,27 +24,7 @@ import mlflow
 #      }]
 #  }
 
-
-class DataClassBase:
-    def to_dict(self):
-        #  return self.__dict__
-        dict_obj = {}
-        for k, v in self.__dict__.items():
-            if k.startswith('_'):
-                continue
-            if isinstance(v, List):
-                dict_obj[k] = [
-                    x.to_dict() if isinstance(x, DataClassBase) else x
-                    for x in v
-                ]
-            else:
-                dict_obj[k] = v
-        return dict_obj
-
-    def from_dict(self, dict_data):
-        for k in self.__dict__.keys():
-            if k in dict_data:
-                setattr(self, k, dict_data[k])
+from ..utils import DataClassBase
 
 
 @dataclass(unsafe_hash=True)
@@ -137,6 +117,12 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
 
         labeled_text = LabeledText(guid, text)
         for c, x0, x1 in entities:
+            if x0 >= len(text):
+                logger.info(f"x0({x0}) >= len(text)({len(text)})")
+                logger.warning(
+                    f"pos overflow [{guid}]:({c},{x0},{x1}) text: ({len(text)}) {text}"
+                )
+
             labeled_text.add_entity(c, x0, x1)
             if c not in category_mentions:
                 category_mentions[c] = set()
@@ -152,15 +138,24 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
                 'guid': guid,
                 'text': "",
                 'annotated_text': "",
-                'entities': []
+                'tags': []
             }
         reviews[guid]['text'] += text[:seg_len - seg_backoff]
         reviews[guid]['annotated_text'] += annotated_text
         for x in json_data['entities']:
-            if x not in reviews[guid]['entities']:
-                reviews[guid]['entities'].append(x)
-        reviews[guid]['entities'] = sorted(reviews[guid]['entities'],
-                                           key=lambda x: x['start'])
+            if x not in reviews[guid]['tags']:
+                c = x['category']
+                s = int(x['start'])
+                m = x['mention']
+                #  e = s + len(m) - 1
+                #  m = text[s:e + 1]
+                reviews[guid]['tags'].append({
+                    'category': c,
+                    'start': s,
+                    'mention': m
+                })
+        reviews[guid]['tags'] = sorted(reviews[guid]['tags'],
+                                       key=lambda x: x['start'])
 
     return reviews, category_mentions
 
@@ -170,7 +165,8 @@ def save_ner_preds(args, preds, test_examples):
                                                        args.seg_len,
                                                        args.seg_backoff)
 
-    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
+    #  reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
+    reviews_file = args.reviews_file
 
     json.dump(reviews, open(reviews_file, 'w'), ensure_ascii=False, indent=2)
     logger.info(f"Reviews file: {reviews_file}")
@@ -232,8 +228,13 @@ def augement_entities(all_text_entities, labels_map, num_augements):
                 entity['end'] = entity['start'] + len(new_entity_text) - 1
                 entity['mention'] = new_entity_text
 
-                assert text[entity['start']:entity['end'] +
-                            1] == new_entity_text
+                #  assert text[entity['start']:entity['end'] +
+                #              1] == new_entity_text
+                text_mention = text[entity['start']:entity['end'] + 1]
+                if text_mention != new_entity_text:
+                    logger.warning(
+                        f"Augment missing: |||{new_entity_text}||| vs |||{text_mention}|||"
+                    )
 
                 for n, e in enumerate(entities):
                     if n > e_idx:
@@ -284,18 +285,28 @@ def data_seg_generator(lines,
         for entity in entities:
             if entity.category not in ner_labels:
                 continue
-            entity.mention = text[entity.start:entity.end + 1]
             s = entity.start
             e = entity.end
+            entity.mention = text[s:e + 1]
 
             overlap = False
             for us in used_span:
-                if s >= us[0] and s <= us[1]:
+                if s > us[0] and s <= us[1] and e > us[1]:
                     overlap = True
+                    logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
                     break
-                if e >= us[0] and e <= us[1]:
+                if e >= us[0] and e < us[1] and s < us[0]:
                     overlap = True
+                    logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
                     break
+                #  if s >= us[0] and s <= us[1]:
+                #      overlap = True
+                #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
+                #      break
+                #  if e >= us[0] and e <= us[1]:
+                #      overlap = True
+                #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
+                #      break
             if overlap:
                 num_overlap += 1
                 if not allow_overlap:
@@ -381,8 +392,10 @@ def data_seg_generator(lines,
                 #      f"mention {entity['mention']} in {text_a.find(entity['mention'])}"
                 #  )
                 #  logger.debug(f"entity: {entity}")
-                assert text_a[entity['start']:entity['end'] +
-                              1] == entity['mention']
+
+                #  assert text_a[entity['start']:entity['end'] + 1] == entity['mention']
+                pass
+
             labels = [
                 (entity['category'], entity['start'], entity['end'])
                 for entity in entities if entity['end'] < (
@@ -468,7 +481,7 @@ def show_ner_datainfo(ner_labels, train_data_generator, train_file,
         entity_examples = defaultdict(int)
         train_lengths.append(len(text_a))
         for entity in labels:
-            c = entity.category
+            c = entity['category']
             entity_examples[c] = 1
             label_counts[c] += 1
             if c not in ner_labels:
@@ -568,12 +581,13 @@ def to_poplar(args, poplar_data_file, pages, ner_labels, ner_connections,
               indent=2)
     logger.info(f"Saved {poplar_data_file}")
 
+
 def to_sampling_poplar(args,
-                    train_data_generator,
-                    ner_labels,
-                    ner_connections,
-                    start_page=0,
-                    max_pages=100):
+                       train_data_generator,
+                       ner_labels,
+                       ner_connections,
+                       start_page=0,
+                       max_pages=100):
     poplar_json = {
         "content": "",
         "labelCategories": [],
@@ -648,6 +662,7 @@ def to_sampling_poplar(args,
               ensure_ascii=False,
               indent=2)
     logger.info(f"Saved {poplar_data_file}")
+
 
 def to_train_poplar(args,
                     train_data_generator,
@@ -820,3 +835,59 @@ def to_reviews_poplar(args,
               ensure_ascii=False,
               indent=2)
     logger.info(f"Saved {poplar_data_file}")
+
+
+def load_train_val_examples(args, train_data_generator, ner_labels):
+    #  from theta.modeling import LabeledText, load_ner_labeled_examples
+    lines = []
+    #  for guid, text, _, entities in train_data_generator(args.train_file):
+    #      sl = LabeledText(guid, text, entities)
+    #      lines.append({'guid': guid, 'text': text, 'entities': entities})
+
+    for guid, text, _, tags in train_data_generator(args.train_file):
+        sl = LabeledText(guid, text)
+        for tag in tags:
+            c = tag['category']
+            s = tag['start']
+            m = tag['mention']
+            if len(m) == 0:
+                continue
+            sl.add_entity(c, s, s + len(m) - 1)
+        lines.append({'guid': guid, 'text': text, 'entities': sl.entities})
+        if args.max_train_examples > 0 and len(
+                lines) >= args.max_train_examples:
+            break
+
+    allow_overlap = args.allow_overlap
+    if args.num_augements > 0:
+        allow_overlap = False
+
+    train_base_examples = load_ner_labeled_examples(
+        lines,
+        ner_labels,
+        seg_len=args.seg_len,
+        seg_backoff=args.seg_backoff,
+        num_augements=args.num_augements,
+        allow_overlap=allow_overlap)
+
+    from ..utils import split_train_eval_examples
+    train_examples, val_examples = split_train_eval_examples(
+        train_base_examples,
+        train_rate=args.train_rate,
+        fold=args.fold,
+        shuffle=True)
+
+    logger.info(f"Loaded {len(train_examples)} train examples, "
+                f"{len(val_examples)} val examples.")
+    return train_examples, val_examples
+
+
+def load_test_examples(args, test_data_generator):
+    #  from theta.modeling import load_ner_examples
+    test_base_examples = load_ner_examples(test_data_generator,
+                                           args.test_file,
+                                           seg_len=args.seg_len,
+                                           seg_backoff=args.seg_backoff)
+
+    logger.info(f"Loaded {len(test_base_examples)} test examples.")
+    return test_base_examples

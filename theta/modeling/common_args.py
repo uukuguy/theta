@@ -232,6 +232,16 @@ def add_common_args(parser):
                         type=float,
                         help="train sample rate.")
 
+    parser.add_argument("--max_train_examples",
+                        default=0,
+                        type=int,
+                        help="Max number of train examples.")
+    parser.add_argument("--confidence",
+                        default=0.5,
+                        type=float,
+                        help="Probs confidence.")
+    parser.add_argument("--enable_nested_entities", action="store_true")
+
     # ------------------------------
     # Knowledge distillation
     parser.add_argument("--enable_kd",
@@ -356,6 +366,11 @@ def add_common_args(parser):
                         help="[None, 'np']")
     parser.add_argument("--is_english", action='store_true')
 
+    parser.add_argument("--to_train_poplar", action="store_true")
+    parser.add_argument("--to_reviews_poplar", action="store_true")
+    parser.add_argument("--start_page", type=int, default=0)
+    parser.add_argument("--max_pages", type=int, default=100)
+
     return parser
 
 
@@ -434,6 +449,8 @@ def get_main_args(
 
     logname = args.task_name
     logger.add(os.path.join(args.latest_dir, f"{logname}.log"))
+
+    args.reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
 
     logger.warning(f"dataset_name: {args.dataset_name}")
     logger.warning(f"experiment_name: {args.experiment_name}")

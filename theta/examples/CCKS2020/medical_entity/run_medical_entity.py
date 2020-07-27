@@ -103,6 +103,13 @@ def generate_submission(args):
         for guid, json_data in reviews.items():
             output_data = {'originalText': json_data['text'], 'entities': []}
             for json_entity in json_data['entities']:
+
+                s = json_entity['start']
+                e = json_entity['end']
+                ent_len = e - s + 1
+                if ent_len >= 32:
+                    continue
+
                 output_data['entities'].append({
                     'label_type':
                     json_entity['category'],
@@ -213,7 +220,7 @@ experiment_params = NerAppParams(
         num_train_epochs=10,
         fold=1,
         num_augements=2,
-        enable_kd=True,
+        enable_kd=False,
         enable_sda=False,
         sda_teachers=2,
         loss_type="CrossEntropyLoss",
@@ -225,7 +232,7 @@ experiment_params = NerAppParams(
         best_index="f1",
         seed=6636,
         random_type=None),
-    NerParams(ner_labels=ner_labels, ner_type='span', no_crf_loss=False))
+    NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=False))
 
 experiment_params.debug()
 
@@ -285,9 +292,9 @@ def main(args):
 
         def do_eval(args):
             args.model_path = args.best_model_path
-            _, eval_examples = load_train_val_examples(args)
+            train_examples, eval_examples = load_train_val_examples(args)
             model = load_model(args)
-            trainer.evaluate(args, model, eval_examples)
+            trainer.evaluate(args, model, train_examples)
 
         def do_predict(args):
             args.model_path = args.best_model_path
@@ -328,10 +335,6 @@ def main(args):
 if __name__ == '__main__':
 
     def add_special_args(parser):
-        parser.add_argument("--to_train_poplar", action="store_true")
-        parser.add_argument("--to_reviews_poplar", action="store_true")
-        parser.add_argument("--start_page", type=int, default=0)
-        parser.add_argument("--max_pages", type=int, default=100)
         return parser
 
     if experiment_params.ner_params.ner_type == 'span':

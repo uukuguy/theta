@@ -533,6 +533,7 @@ def build_default_model(args):
         model, args.weight_decay)
     optimizer = AdamW(optimizer_parameters,
                       lr=args.learning_rate,
+                      eps=args.adam_epsilon,
                       correct_bias=False)
 
     # -------- scheduler --------

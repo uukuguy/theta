@@ -40,50 +40,90 @@ STEP = 2
 #          './outputs/c5bf0d78bc6a11eaa317e8611f2e5a0e/medical_event_reviews_c5bf0d78bc6a11eaa317e8611f2e5a0e.json',
 #          'r'))
 
-# 0.765544
-reviews_0 = '2ad2020ec50a11eaa2f7e8611f2e5a0e'
+#  # 0.765544
+#  reviews_0 = '2ad2020ec50a11eaa2f7e8611f2e5a0e'
+#  events_0 = json.load(
+#      open(f'./outputs/{reviews_0}/medical_event_reviews_{reviews_0}.json', 'r'))
+#
+#  # 0.760053
+#  reviews_1 = '3fae0204c4e711eaaaaae8611f2e5a0e'
+#  #  reviews_1 = '5d3103bec45411eaace7fa163e51b5c3'
+#  events_1 = json.load(
+#      open(f'./outputs/{reviews_1}/medical_event_reviews_{reviews_1}.json', 'r'))
+
+# ------ online f1: 0.785288 -----
+# 0.780739
+reviews_0 = "ee620d52c5e311eab56ae8611f2e5a0e"
 events_0 = json.load(
-    open(
-        './outputs/2ad2020ec50a11eaa2f7e8611f2e5a0e/medical_event_reviews_2ad2020ec50a11eaa2f7e8611f2e5a0e.json',
-        'r'))
-
-# 0.760053
-reviews_1 = '3fae0204c4e711eaaaaae8611f2e5a0e'
+    open(f'./outputs/{reviews_0}/medical_event_reviews_{reviews_0}.json', 'r'))
+# 0.765544
+reviews_1 = '2ad2020ec50a11eaa2f7e8611f2e5a0e'
 events_1 = json.load(
-    open(
-        './outputs/3fae0204c4e711eaaaaae8611f2e5a0e/medical_event_reviews_3fae0204c4e711eaaaaae8611f2e5a0e.json',
-        'r'))
+    open(f'./outputs/{reviews_1}/medical_event_reviews_{reviews_1}.json', 'r'))
 
-for guid, eevts_0 in tqdm(events_0.items()):
-    eevts_1 = events_1[guid]
-    entities_0 = eevts_0['entities']
-    entities_1 = eevts_1['entities']
-    new_entities = []
-    for e_1 in entities_1:
-        found = False
-        for e_0 in entities_0:
-            s0 = e_0['start']
-            e0 = e_0['end']
-            s1 = e_1['start']
-            e1 = e_1['end']
-            if s0 >= s1 and s0 <= e1:
-                continue
-            if s1 >= s0 and s1 <= e0:
-                continue
-            if e0 >= s1 and e0 <= e1:
-                continue
-            if e1 >= s0 and e1 <= e0:
-                continue
+reviews_2 = '5d3103bec45411eaace7fa163e51b5c3'
+events_2 = json.load(
+    open(f'./outputs/{reviews_2}/medical_event_reviews_{reviews_2}.json', 'r'))
 
-            if e_0['category'] != e_1['category'] or e_0['mention'] != e_1[
-                    'mention']:
-                found = True
-                break
-        if not found:
-            new_entities.append(e_1)
-    entities_0 += new_entities
+reviews_3 = '3fae0204c4e711eaaaaae8611f2e5a0e'
+events_3 = json.load(
+    open(f'./outputs/{reviews_3}/medical_event_reviews_{reviews_3}.json', 'r'))
+
+
+def is_identical(e0, e1):
+    return e0['category'] == e1['category'] and e0['start'] == e1[
+        'start'] and e0['end'] == e1['end']
+
+
+def find_identical(es, e):
+    for e0 in es:
+        if is_identical(e0, e):
+            return True
+    return False
+
+
+def merge_results(events_0, events_1):
+
+    for guid, eevts_0 in tqdm(events_0.items()):
+        eevts_1 = events_1[guid]
+        entities_0 = eevts_0['entities']
+        entities_1 = eevts_1['entities']
+
+        new_entities = []
+        for e_1 in entities_1:
+            found = False
+            for e_0 in entities_0:
+                s0 = e_0['start']
+                e0 = e_0['end']
+                s1 = e_1['start']
+                e1 = e_1['end']
+                if s0 >= s1 and s0 <= e1:
+                    found = True
+                    continue
+                if e0 >= s1 and e0 <= e1:
+                    found = True
+                    continue
+                if s1 >= s0 and s1 <= e0:
+                    found = True
+                    continue
+                if e1 >= s0 and e1 <= e0:
+                    found = True
+                    continue
+            if not found:
+                if not find_identical(new_entities, e_1):
+                    new_entities.append(e_1)
+        entities_0.extend(new_entities)
+        eevts_0['entities'] = sorted(entities_0, key=lambda x: x['start'])
+
+    return events_0
+
+
+events_0 = merge_results(events_0, events_1)
+#  events_0 = merge_results(events_0, events_2)
+#  events_0 = merge_results(events_0, events_3)
 
 merge_results_file = f"./submissions/merge_{reviews_0}_{reviews_1}_results.json"
+#  merge_results_file = f"./submissions/merge_{reviews_0}_total_3_results.json"
 json.dump(events_0,
           open(merge_results_file, 'w'),
           ensure_ascii=False,
@@ -91,9 +131,7 @@ json.dump(events_0,
 logger.info(f"Saved {merge_results_file}")
 
 
-def generate_submission():
-    #  submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.xlsx"
-    submission_file = f"./submissions/merge_{reviews_0}_{reviews_1}_results.xlsx"
+def generate_submission(submission_file):
     import xlwt
     workbook = xlwt.Workbook(encoding='utf-8')
     worksheet = workbook.add_sheet(f"medical_event")
@@ -144,4 +182,6 @@ def generate_submission():
     logger.info(f"Saved {submission_file}")
 
 
-generate_submission()
+submission_file = f"./submissions/merge_{reviews_0}_{reviews_1}_results.xlsx"
+#  submission_file = f"./submissions/merge_{reviews_0}_total_3_results.xlsx"
+generate_submission(submission_file)

@@ -17,11 +17,17 @@ class CNerTokenizer(BertTokenizer):
         self.is_english = is_english
 
     def tokenize(self, text):
+        if self.is_english:
+            text_tokens = []
+            words = text.split(' ')
+            for w in words:
+                word_tokens = super(CNerTokenizer, self).tokenize(w)
+            text_tokens.extend(word_tokens)
+        else:
+            text_tokens = [c for c in text]
+
         _tokens = []
 
-        text_tokens = text
-        #  if self.is_english:
-        #      text_tokens = text.split(' ')
         for c in text_tokens:
             if self.do_lower_case:
                 c = c.lower()

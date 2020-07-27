@@ -4,26 +4,14 @@
 import os, glob, json, datetime
 from tqdm import tqdm
 from loguru import logger
+import rich
+from rich import print
+from rich.console import Console
+console = Console()
+
+from .modeling import NerDataset
 
 all_models = []
-
-
-def get_args():
-    import argparse
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--new", action='store_true')
-    parser.add_argument("--use", action='store_true')
-    parser.add_argument("--diff", action='store_true')
-    parser.add_argument("--list", action='store_true')
-    parser.add_argument("--show", action='store_true')
-    parser.add_argument("--detail", action='store_true')
-    parser.add_argument("--output_dir", default="./outputs")
-    parser.add_argument("--local_id", action='append')
-
-    args = parser.parse_args()
-
-    return args
 
 
 def find_models(args):
@@ -115,7 +103,19 @@ def show_model(args):
     logger.info(f"seg_backoff: {training_args['seg_backoff']}")
     logger.info(f"train_rate: {training_args['train_rate']}")
     logger.info(f"train_sample_rate: {training_args['train_sample_rate']}")
+    max_train_examples = training_args.get('max_train_examples', 0)
+    if max_train_examples > 0:
+        logger.warning(f"max_train_examples: {max_train_examples}")
+    else:
+        logger.debug(f"max_train_examples: {max_train_examples}")
     logger.info(f"random_type: {training_args.get('random_type', None)}")
+    confidence = training_args.get('confidence', 0.5)
+    logger.info(f"confidence: {confidence}")
+    enable_nested_entities = training_args.get('enable_nested_entities', False)
+    if enable_nested_entities:
+        logger.warning(f"enable_nested_entities: {enable_nested_entities}")
+    else:
+        logger.info(f"enable_nested_entities: {enable_nested_entities}")
 
     logger.info('-' * 50)
 
@@ -232,7 +232,7 @@ def new_model(args):
     os.makedirs(latest_dir)
 
     import uuid
-    local_id = str(uuid.uuid1()).replace('-', '')
+    local_id = str(uuid.uuid1()).replace('-', '')[:8]
     local_id_file = os.path.join(latest_dir, "local_id")
     with open(local_id_file, 'w') as wt:
         wt.write(f"{local_id}")
@@ -256,6 +256,169 @@ def use_model(args):
                 f"Use local model({local_id}) {model_path} to {latest_dir}")
 
 
+def get_dataset_name(args):
+    dataset_name = args.dataset_name
+    if dataset_name is None:
+        dataset_name = os.path.basename(os.path.abspath(os.curdir))
+    return dataset_name
+
+
+def get_dataset_module(dataset_name):
+    import importlib
+    dataset_module = importlib.import_module(f"{dataset_name}")
+
+    return dataset_module
+
+
+def export_train_data(args):
+    dataset_name = get_dataset_name(args)
+    dataset_module = get_dataset_module(dataset_name)
+
+    train_data_generator = None
+    if 'train_data_generator' in dataset_module.__dict__:
+        train_data_generator = dataset_module.train_data_generator
+    ner_labels = None
+    if 'ner_labels' in dataset_module.__dict__:
+        ner_labels = dataset_module.ner_labels
+    ner_connections = None
+    if 'ner_connections' in dataset_module.__dict__:
+        ner_connections = dataset_module.ner_connections
+
+    #  logger.info(f"ner_labels: {ner_labels}")
+    #  logger.info(f"ner_connections: {ner_connections}")
+    console.log("[bold cyan]ner_labels:[/bold cyan]", ner_labels)
+    console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
+
+    ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
+    ner_dataset.load(train_data_generator)
+    ner_dataset.info()
+
+    export_format = args.format
+    if export_format == "json":
+        data_file = "tmp.json"
+        ner_dataset.save(data_file)
+    elif export_format == "brat":
+        brat_data_dir = args.brat_data_dir
+        if not brat_data_dir:
+            brat_data_dir = "brat_data"
+        if not os.path.exists(brat_data_dir):
+            os.makedirs(brat_data_dir)
+        ner_dataset.export_to_brat_files(brat_data_dir, max_pages=50)
+    elif export_format == "poplar":
+        pass
+    else:
+        raise Exception(
+            f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
+        )
+
+
+def export_test_data(args):
+    dataset_name = get_dataset_name(args)
+    dataset_module = get_dataset_module(dataset_name)
+
+    test_data_generator = None
+    if 'test_data_generator' in dataset_module.__dict__:
+        test_data_generator = dataset_module.test_data_generator
+    ner_labels = None
+    if 'ner_labels' in dataset_module.__dict__:
+        ner_labels = dataset_module.ner_labels
+    ner_connections = None
+    if 'ner_connections' in dataset_module.__dict__:
+        ner_connections = dataset_module.ner_connections
+
+    #  logger.info(f"ner_labels: {ner_labels}")
+    #  logger.info(f"ner_connections: {ner_connections}")
+    console.log("[bold cyan]ner_labels:[/bold cyan]", ner_labels)
+    console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
+
+    reviews_file = os.path.join(
+        args.output_dir, args.local_id[0],
+        f"{dataset_name}_reviews_{args.local_id[0]}.json")
+
+    def reviews_data_generator(reviews_file):
+        json_data = json.load(open(reviews_file, 'r'))
+        for guid, items in json_data.items():
+            text = items['text']
+            entities = items['entities']
+            tags = []
+            for ent in entities:
+                tags.append({
+                    'category': ent['category'],
+                    'start': ent['start'],
+                    'mention': ent['mention']
+                })
+            yield guid, text, None, tags
+
+    ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
+    ner_dataset.load(reviews_data_generator, reviews_file)
+    ner_dataset.info()
+
+    export_format = args.format
+    if export_format == "json":
+        data_file = "tmp.json"
+        ner_dataset.save(data_file)
+    elif export_format == "brat":
+        brat_data_dir = args.brat_data_dir
+        if not brat_data_dir:
+            brat_data_dir = "brat_data"
+        if not os.path.exists(brat_data_dir):
+            os.makedirs(brat_data_dir)
+        ner_dataset.export_to_brat_files(brat_data_dir, max_pages=50)
+    elif export_format == "poplar":
+        pass
+    else:
+        raise Exception(
+            f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
+        )
+
+
+def import_brat_data(args):
+    dataset_name = get_dataset_name(args)
+    brat_data_dir = args.brat_data_dir
+    logger.info(
+        f"Loading brat data from {brat_data_dir} into {dataset_name} dataset.")
+
+    ner_dataset = NerDataset(dataset_name)
+    ner_dataset.load_from_brat_data(brat_data_dir)
+    ner_dataset.save(f"{dataset_name}_from_brat.json")
+
+
+def import_poplar_data(args):
+    pass
+
+
+def json_to_brat(args):
+    dataset_name = args.dataset_name
+
+    dataset_module = get_dataset_module(dataset_name)
+
+    ner_labels = None
+    if 'ner_labels' in dataset_module.__dict__:
+        ner_labels = dataset_module.ner_labels
+    ner_connections = None
+    if 'ner_connections' in dataset_module.__dict__:
+        ner_connections = dataset_module.ner_connections
+
+    dataset_file = args.dataset_file
+    brat_data_dir = args.brat_data_dir
+
+    ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
+    ner_dataset.load_from_file(dataset_file)
+    ner_dataset.info()
+
+    brat_data_dir = args.brat_data_dir
+    if not brat_data_dir:
+        brat_data_dir = "brat_data"
+    if not os.path.exists(brat_data_dir):
+        os.makedirs(brat_data_dir)
+    ner_dataset.export_to_brat_files(brat_data_dir, max_pages=20)
+
+
+def brat_to_json(args):
+    dataset_file = args.dataset_file
+    brat_data_dir = args.brat_data_dir
+
+
 def main(args):
     find_models(args)
 
@@ -269,8 +432,52 @@ def main(args):
         new_model(args)
     elif args.use:
         use_model(args)
+    elif args.export_train_data:
+        export_train_data(args)
+    elif args.export_test_data:
+        export_test_data(args)
+    elif args.import_brat_data:
+        import_brat_data(args)
+    elif args.import_poplar_data:
+        import_poplar_data(args)
+    elif args.json_to_brat:
+        json_to_brat(args)
+    elif args.brat_to_json:
+        brat_to_json(args)
     else:
         print("Usage: theta [list|diff]")
+
+
+def get_args():
+    import argparse
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--new", action='store_true')
+    parser.add_argument("--use", action='store_true')
+    parser.add_argument("--diff", action='store_true')
+    parser.add_argument("--list", action='store_true')
+    parser.add_argument("--show", action='store_true')
+    parser.add_argument("--detail", action='store_true')
+    parser.add_argument("--output_dir", default="./outputs")
+    parser.add_argument("--local_id", action='append')
+
+    parser.add_argument("--dataset_name", default=None)
+    parser.add_argument("--brat_data_dir", default="brat_data")
+    parser.add_argument("--format",
+                        default='json',
+                        choices=['json', 'brat', 'poplar'])
+    parser.add_argument("--export_train_data", action='store_true')
+    parser.add_argument("--export_test_data", action='store_true')
+    parser.add_argument("--import_brat_data", action='store_true')
+    parser.add_argument("--import_poplar_data", action='store_true')
+
+    parser.add_argument("--json_to_brat", action='store_true')
+    parser.add_argument("--brat_to_json", action='store_true')
+    parser.add_argument("--dataset_file", default=None)
+
+    args = parser.parse_args()
+
+    return args
 
 
 if __name__ == '__main__':

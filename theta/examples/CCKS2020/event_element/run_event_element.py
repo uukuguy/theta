@@ -756,19 +756,19 @@ experiment_params = NerAppParams(
         eval_file="data/event_element_train_data_label.txt",
         test_file="data/event_element_dev_data.txt",
         learning_rate=2e-5,
-        train_max_seq_length=512,
-        eval_max_seq_length=512,
-        per_gpu_train_batch_size=4,
-        per_gpu_eval_batch_size=4,
-        per_gpu_predict_batch_size=4,
-        seg_len=510,
-        seg_backoff=128,
+        train_max_seq_length=256,
+        eval_max_seq_length=256,
+        per_gpu_train_batch_size=8,
+        per_gpu_eval_batch_size=8,
+        per_gpu_predict_batch_size=8,
+        seg_len=254,
+        seg_backoff=127,
         num_train_epochs=10,
         fold=0,
-        num_augements=3,
-        enable_kd=False,
+        num_augements=0,
+        enable_kd=True,
         enable_sda=False,
-        sda_teachers=2,
+        sda_teachers=3,
         loss_type="CrossEntropyLoss",
         #  loss_type='FocalLoss',
         focalloss_gamma=2.0,
@@ -779,8 +779,8 @@ experiment_params = NerAppParams(
         #  "/opt/share/pretrained/pytorch/bert-base-chinese",
         fp16=True,
         best_index="f1",
-        random_type="np"),
-    NerParams(ner_labels=ner_labels, ner_type='crf', no_crf_loss=False))
+        random_type=None),
+    NerParams(ner_labels=ner_labels, ner_type='span', no_crf_loss=False))
 
 experiment_params.debug()
 
@@ -897,10 +897,6 @@ if __name__ == '__main__':
 
     def add_special_args(parser):
         parser.add_argument("--sampling_train_data", action="store_true")
-        parser.add_argument("--to_train_poplar", action="store_true")
-        parser.add_argument("--to_reviews_poplar", action="store_true")
-        parser.add_argument("--start_page", type=int, default=0)
-        parser.add_argument("--max_pages", type=int, default=100)
         parser.add_argument("--fix_results", action="store_true")
         parser.add_argument("--results_file", type=str, default=None)
         parser.add_argument("--do_merge", action="store_true")

@@ -1,0 +1,33 @@
+DATASET_NAME=medent
+all:
+	python run_${DATASET_NAME}.py \
+		--do_experiment \
+
+train:
+	python run_${DATASET_NAME}.py \
+		--do_train \
+
+eval:
+	python run_${DATASET_NAME}.py \
+		--do_eval \
+
+predict:
+	python run_${DATASET_NAME}.py \
+		--do_predict \
+
+eda:
+	python run_${DATASET_NAME}.py \
+		--do_eda \
+
+submit:
+	python run_${DATASET_NAME}.py \
+		--do_submit \
+
+# import_brat_data:
+#     python -m theta --import_brat_data --dataset_name ${DATASET_NAME} --brat_data_dir brat_${DATASET_NAME}
+
+json_to_brat:
+	python -m theta --json_to_brat --dataset_name ${DATASET_NAME} --dataset_file ${DATASET_NAME}.json --brat_data_dir brat_${DATASET_NAME}
+
+brat_to_json:
+	python -m theta --brat_to_json --dataset_name ${DATASET_NAME} --dataset_file ${DATASET_NAME}.json --brat_data_dir brat_${DATASET_NAME}

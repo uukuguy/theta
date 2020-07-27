@@ -9,6 +9,131 @@ import math
 import torch
 from sklearn.metrics import f1_score
 from .multiprocesses import is_single_process
+from typing import List
+
+class DataClassBase:
+    def to_dict(self):
+        #  return self.__dict__
+        dict_obj = {}
+        for k, v in self.__dict__.items():
+            if k.startswith('_'):
+                continue
+            if isinstance(v, List):
+                dict_obj[k] = [
+                    x.to_dict() if isinstance(x, DataClassBase) else x
+                    for x in v
+                ]
+            else:
+                dict_obj[k] = v
+        return dict_obj
+
+    def from_dict(self, dict_data):
+        for k in self.__dict__.keys():
+            if k in dict_data:
+                v = dict_data[k]
+                setattr(self, k, v)
+
+
+def generate_token_offsets(text, tokens):
+    """
+    参数：
+        tokens是text被tokenizer切分后的词序列
+    输出：
+        tok2txt: {token列表序号: token在text中的偏移位置}
+    """
+    token_offsets = []
+
+    text = text.lower()
+    p0 = 0
+    #  logger.info(f"text: {text}, tokens: {tokens}")
+    for i, w in enumerate(tokens):
+        #  logger.warning(f"w: {w}")
+        assert len(w) > 0
+        if w == '[UNK]':
+            token_offsets.append(p0)
+            continue
+        #  if w.startswith("##"):
+        #      w = w[2:]
+        w = w.lower()
+        #  logger.info(f"find w: {w} in | {text[p0:]}")
+        p1 = text.find(w, p0)
+        #  logger.info(f"p1: {p1}, p0: {p0}")
+        assert p1 >= p0
+
+        token_offsets.append(p1)
+        p0 = p1 + len(w)
+
+    assert len(token_offsets) == len(tokens)
+    return token_offsets
+
+
+def get_token_index(token_offsets, offset):
+    from bisect import bisect_right
+    index = bisect_right(token_offsets, offset) - 1
+    assert index >= 0 and index < len(token_offsets)
+    return index
+
+
+# 英文文本切分成词序列，原始标注是基于字符，需要转换成token位置
+def tokenize_en(tokenizer, text, do_lower_case=False):
+    """
+    返回
+    text_tokens: [word1, word2, ...]
+    tok2txt: {token序号: token在text的起始位置}
+    """
+    text_tokens = []
+    words = text.split(' ')
+    for w in words:
+        toks = tokenizer.tokenize(w)
+
+        # 合并被切开的"##"开头的片断
+        new_toks = []
+        for tok in toks:
+            if not tok.startswith('##'):
+                new_toks.append(tok)
+            else:
+                new_toks[-1] += tok[2:]
+        toks = new_toks
+
+        text_tokens.extend(toks)
+
+    token_offsets = generate_token_offsets(text, text_tokens)
+
+    return text_tokens, token_offsets
+
+
+# 中文文本切分词序列
+def tokenize_cn(tokenizer, text, do_lower_case=False):
+    """
+    返回
+    text_tokens: [token1, token2, ...]
+    tok2txt: {token序号: token在text的起始位置}
+    """
+
+    text_tokens = []
+    for c in text_tokens:
+        if do_lower_case:
+            c = c.lower()
+
+        #  if super(CNerTokenizer,
+        #           self).tokenize(f"{c}", add_special_tokens=True)[1:-1]:
+        if c in self.vocab:
+            text_tokens.append(c)
+        else:
+            text_tokens.append('[UNK]')
+
+    tok2txt = {}
+    p0 = 0
+    words = [tokenizer.decode(tok) for tok in text_tokens]
+    for i, w in enumerate(words):
+        assert len(w) > 0
+        p1 = text.find(w, p0)
+        assert p1 >= p0
+        offsets.append(p1)
+        tok2txt[i] = p1
+        p0 = p1 + len(w)
+
+    return text_tokens, tok2txt
 
 
 def load_pytorch_model(model, model_path):
@@ -268,6 +393,7 @@ def split_train_eval_examples(examples: [list, np.array],
 
         num_train_examples = int(num_examples * train_rate)
         num_eval_examples = num_examples - num_train_examples
+        logger.info(f"num_train_examples: {num_train_examples}, num_eval_examples: {num_eval_examples}")
 
         e = num_examples - num_eval_examples * fold
         s = num_examples - num_eval_examples * (fold + 1)
