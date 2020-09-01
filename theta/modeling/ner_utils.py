@@ -7,7 +7,6 @@ from loguru import logger
 from theta.utils import seg_generator
 from dataclasses import dataclass, field
 from typing import List
-import mlflow
 
 # ----------------------
 # 实体标注规范
@@ -115,6 +114,9 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
         text = input_example.text_a
         entities = json_d['entities']
 
+        #  logger.info(
+        #      f"guid: {guid}, offset: {text_offset}, entities: {entities}")
+
         labeled_text = LabeledText(guid, text)
         for c, x0, x1 in entities:
             if x0 >= len(text):
@@ -132,6 +134,7 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
 
         labeled_text.offset(text_offset)
         json_data = labeled_text.to_dict()
+        json_entities = json_data['entities']
 
         if guid not in reviews:
             reviews[guid] = {
@@ -142,20 +145,21 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
             }
         reviews[guid]['text'] += text[:seg_len - seg_backoff]
         reviews[guid]['annotated_text'] += annotated_text
-        for x in json_data['entities']:
-            if x not in reviews[guid]['tags']:
+        reviews_tags = reviews[guid]['tags']
+        for x in json_entities:
+            if x not in reviews_tags:
                 c = x['category']
                 s = int(x['start'])
                 m = x['mention']
                 #  e = s + len(m) - 1
                 #  m = text[s:e + 1]
-                reviews[guid]['tags'].append({
-                    'category': c,
-                    'start': s,
-                    'mention': m
-                })
-        reviews[guid]['tags'] = sorted(reviews[guid]['tags'],
-                                       key=lambda x: x['start'])
+                reviews_tags.append({'category': c, 'start': s, 'mention': m})
+
+        reviews_tags = sorted(reviews_tags, key=lambda x: x['start'])
+        from ..utils import remove_duplicate_entities
+        reviews_tags = remove_duplicate_entities(reviews_tags)
+        reviews[guid]['tags'] = reviews_tags
+        #  logger.info(f"guid: {guid}, tags: {reviews[guid]['tags']}")
 
     return reviews, category_mentions
 
@@ -184,12 +188,12 @@ def save_ner_preds(args, preds, test_examples):
     )
 
     #  ----- Tracking -----
-    if args.do_experiment:
-        mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
-        mlflow.log_artifact(reviews_file, args.artifact_path)
-        mlflow.log_param(f"{args.dataset_name}_category_mentions_file",
-                         category_mentions_file)
-        mlflow.log_artifact(category_mentions_file, args.artifact_path)
+    #  if args.do_experiment:
+    #      mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
+    #      mlflow.log_artifact(reviews_file, args.artifact_path)
+    #      mlflow.log_param(f"{args.dataset_name}_category_mentions_file",
+    #                       category_mentions_file)
+    #      mlflow.log_artifact(category_mentions_file, args.artifact_path)
 
     return reviews_file, category_mentions_file
 

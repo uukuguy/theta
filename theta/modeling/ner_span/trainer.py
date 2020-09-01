@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import numpy as np
 from loguru import logger
 from collections import Counter
-import mlflow
+#  import mlflow
 
 import torch
 import torch.nn as nn
@@ -149,9 +150,9 @@ class BertSpanForNer(BertPreTrainedModel):
             return outputs
         else:
             #  return (0.0, ) + outputs
-            logger.warning(
-                f"start_positions: {start_positions}, end_positions: {end_positions}"
-            )
+            #  logger.warning(
+            #      f"start_positions: {start_positions}, end_positions: {end_positions}"
+            #  )
             return (torch.tensor(0.0).cuda(), ) + outputs
             #  return outputs
 
@@ -211,13 +212,17 @@ MODEL_CLASSES = {
 
 
 def load_pretrained_tokenizer(args):
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-    tokenizer = tokenizer_class.from_pretrained(
-        args.model_path,
-        do_lower_case=args.do_lower_case,
-        is_english=args.is_english,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
+    #  config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    #  tokenizer = tokenizer_class.from_pretrained(
+    #      args.model_path,
+    #      do_lower_case=args.do_lower_case,
+    #      is_english=args.is_english,
+    #      cache_dir=args.cache_dir if args.cache_dir else None,
+    #  )
+    from ..token_utils import HFTokenizer
+    tokenizer = HFTokenizer(os.path.join(args.model_path, 'vocab.txt'),
+                            lowercase=args.do_lower_case,
+                            cc=args.cc)
 
     return tokenizer
 
@@ -258,27 +263,57 @@ def load_pretrained_model(args):
     return model
 
 
+#  def batch_to_input_data(batch):
+#      all_input_ids = torch.stack([e.input_ids for e in batch])
+#      all_input_mask = torch.stack([e.input_mask for e in batch])
+#      all_segment_ids = torch.stack([e.segment_ids for e in batch])
+#      all_input_lens = torch.stack([e.input_len for e in batch])
+#      all_token_offsets = torch.stack([e.token_offsets for e in batch])
+#      all_start_ids = torch.stack([e.start_ids for e in batch])
+#      all_end_ids = torch.stack([e.end_ids for e in batch])
+#      all_subjects = [e.subjects for e in batch]
+#
+#      return (all_input_ids, all_input_mask, all_segment_ids, all_start_ids,
+#              all_end_ids, all_input_lens, all_subjects, all_token_offsets)
+
+
 def collate_fn(batch):
     """
     batch should be a list of (sequence, target, length) tuples...
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
-    all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens = map(
-        torch.stack, zip(*batch))
+    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens = map(
+    #      torch.stack, zip(*batch))
+    #  from .dataset import batch_to_input_data
+    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens, all_subjects, all_token_offsets = batch_to_input_data(
+    #      batch)
+    all_input_ids = torch.stack([e.input_ids for e in batch])
+    all_attention_mask = torch.stack([e.all_attention_mask for e in batch])
+    all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
+    all_input_lens = torch.stack([e.input_len for e in batch])
+    all_token_offsets = torch.stack([e.token_offsets for e in batch])
+
+    all_start_ids = torch.stack([e.start_ids for e in batch])
+    all_end_ids = torch.stack([e.end_ids for e in batch])
+    all_subjects = [e.subjects for e in batch]
+
     max_len = max(all_lens).item()
     all_input_ids = all_input_ids[:, :max_len]
-    all_input_mask = all_input_mask[:, :max_len]
-    all_segment_ids = all_segment_ids[:, :max_len]
+    all_attention_mask = all_attention_mask[:, :max_len]
+    all_token_type_ids = all_token_type_ids[:, :max_len]
+    all_token_offsets = all_token_offsets[:, :max_len]
+
     all_start_ids = all_start_ids[:, :max_len]
     all_end_ids = all_end_ids[:, :max_len]
-    return all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens
+
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_start_ids, all_end_ids, all_input_lens, all_subjects, all_token_offsets
 
 
 def bert_extract_item(start_logits, end_logits, lens):
     text_len = lens[0]
     S = []
-    starts = torch.argmax(start_logits, -1).cpu().numpy()[0][1:-1]
-    ends = torch.argmax(end_logits, -1).cpu().numpy()[0][1:-1]
+    starts = torch.argmax(start_logits, -1).cpu().numpy()[0]  #[1:-1]
+    ends = torch.argmax(end_logits, -1).cpu().numpy()[0]  #[1:-1]
 
     starts = np.array([x for x in starts if x >= 0 and x < text_len])
     ends = np.array([x for x in ends if x >= 0 and x < text_len])
@@ -291,6 +326,9 @@ def bert_extract_item(start_logits, end_logits, lens):
             if s_l == e_l:
                 S.append((s_l, i, i + j))
                 break
+            if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
+                break
+
     return S
 
 
@@ -332,7 +370,10 @@ def build_default_model(args):
 
 def init_labels(args, labels):
 
-    args.ner_labels = ['[unused1]', '[unused2]', '[unused3]'] + labels
+    #  args.ner_labels = ['[unused1]', '[unused2]', '[unused3]'] + labels
+    #  args.id2label = {i: label for i, label in enumerate(args.ner_labels)}
+    #  args.label2id = {label: i for i, label in enumerate(args.ner_labels)}
+    args.ner_labels = ['[unused1]'] + labels
     args.id2label = {i: label for i, label in enumerate(args.ner_labels)}
     args.label2id = {label: i for i, label in enumerate(args.ner_labels)}
     args.num_labels = len(args.label2id)
@@ -367,10 +408,15 @@ class NerTrainer(Trainer):
         self.label2id = args.label2id
         self.collate_fn = collate_fn
 
-    def examples_to_dataset(self, examples, max_seq_length):
-        from .dataset import examples_to_dataset
-        return examples_to_dataset(examples, self.label2id, self.tokenizer,
-                                   max_seq_length)
+    #  def examples_to_dataset(self, examples, max_seq_length):
+    #      from .dataset import examples_to_dataset
+    #      return examples_to_dataset(examples, self.label2id, self.tokenizer,
+    #                                 max_seq_length)
+
+    def encode_examples(self, examples, max_seq_length):
+        from .dataset import encode_examples
+        return encode_examples(examples, self.label2id, self.tokenizer,
+                               max_seq_length)
 
     def batch_to_inputs(self, args, batch, known_labels=True):
         inputs = {
@@ -401,21 +447,21 @@ class NerTrainer(Trainer):
         self.metric = SpanEntityScore(args.id2label)
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
-    def on_eval_step(self, args, model, step, batch, batch_features):
-        all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens = batch
+    def on_eval_step(self, args, model, step, batch):
+        all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
 
         eval_loss = 0.0
         num_eval_steps = 0
         for i in range(all_input_ids.size()[0]):
             inputs = {
                 "input_ids": all_input_ids[i].view(1, -1),
-                "attention_mask": all_input_mask[i].view(1, -1),
+                "attention_mask": all_attention_mask[i].view(1, -1),
                 "start_positions": all_start_ids[i].view(1, -1),
                 "end_positions": all_end_ids[i].view(1, -1),
             }
             if args.model_type != "distilbert":
                 # XLM and RoBERTa don"t use segment_ids
-                inputs["token_type_ids"] = (all_segment_ids[i].view(
+                inputs["token_type_ids"] = (all_token_type_ids[i].view(
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
 
             outputs = model(**inputs)
@@ -424,10 +470,12 @@ class NerTrainer(Trainer):
             eval_loss += tmp_eval_loss
             num_eval_steps += 1
 
-            R = bert_extract_item(start_logits, end_logits, all_lens[i:i + 1])
-            T = batch_features[i].subjects
+            R = bert_extract_item(start_logits, end_logits,
+                                  all_input_lens[i:i + 1])
 
-            #  logger.warning(f"R: {R}, len: {num_len}")
+            T = all_subjects[i]
+
+            #  logger.warning(f"R: {R}")
             #  logger.warning(f"T: {T}")
 
             self.metric.update(true_subject=T, pred_subject=R)
@@ -437,39 +485,43 @@ class NerTrainer(Trainer):
         results = {f'{key}': value for key, value in eval_info.items()}
         results['loss'] = eval_loss
 
-        if args.do_experiment:
-            mlflow.log_metric('loss', eval_loss.item())
-            for key, value in eval_info.items():
-                mlflow.log_metric(key, value)
+        #  if args.do_experiment:
+        #      mlflow.log_metric('loss', eval_loss.item())
+        #      for key, value in eval_info.items():
+        #          mlflow.log_metric(key, value)
 
         return (eval_loss, ), results
 
-    def on_predict_start(self, args, test_dataset):
+    def on_predict_start(self, args, test_features):
         self.pred_results = []
 
     def on_predict_step(self, args, model, step, batch):
-        all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens = batch
+        all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
 
         for i in range(all_input_ids.size()[0]):
             inputs = {
                 "input_ids": all_input_ids[i].view(1, -1),
-                "attention_mask": all_input_mask[i].view(1, -1),
-                "start_positions": all_start_ids[i].view(1, -1),
-                "end_positions": all_end_ids[i].view(1, -1),
+                "attention_mask": all_attention_mask[i].view(1, -1),
             }
             if args.model_type != "distilbert":
                 # XLM and RoBERTa don"t use segment_ids
-                inputs["token_type_ids"] = (all_segment_ids[i].view(
+                inputs["token_type_ids"] = (all_token_type_ids[i].view(
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
+            token_offsets = all_token_offsets[i]
 
             outputs = model(**inputs)
             _, _, start_logits, end_logits = outputs[:4]
             #  _, start_logits, end_logits = outputs[:3]
 
-            R = bert_extract_item(start_logits, end_logits, all_lens[i:i + 1])
+            R = bert_extract_item(start_logits, end_logits,
+                                  all_input_lens[i:i + 1])
 
             if R:
-                label_entities = [[args.id2label[x[0]], x[1], x[2]] for x in R]
+                label_entities = [[
+                    args.id2label[x[0]], token_offsets[x[1]][0].item(),
+                    token_offsets[x[2]][-1].item() - 1
+                ] for x in R]
+
             else:
                 label_entities = []
 

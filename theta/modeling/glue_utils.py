@@ -6,7 +6,7 @@ from tqdm import tqdm
 from loguru import logger
 from theta.utils import seg_generator
 from dataclasses import dataclass, field
-import mlflow
+#  import mlflow
 
 from ..utils import seg_generator
 
@@ -54,6 +54,37 @@ def load_glue_examples(data_generator, examples_file):
     return examples
 
 
+def load_train_val_examples(args, train_data_generator, glue_labels):
+    all_train_examples = load_glue_examples(train_data_generator,
+                                            args.train_file)
+
+    # 切分训练集和验证集
+    # theta 提供split_train_eval_examples辅助函数
+    from theta.utils import split_train_eval_examples
+    train_examples, val_examples = split_train_eval_examples(
+        all_train_examples,
+        train_rate=args.train_rate,
+        fold=args.fold,
+        shuffle=True)
+
+    #  random.shuffle(all_train_examples)
+    #  num_train_examples = int(len(all_train_examples) * args.train_rate)
+    #  val_examples = all_train_examples[num_train_examples:]
+    #  train_examples = all_train_examples[:num_train_examples]
+
+    logger.info(f"Loaded {len(train_examples)} train examples, "
+                f"{len(val_examples)} val examples.")
+    return train_examples, val_examples
+
+
+def load_test_examples(args, test_data_generator):
+    test_base_examples = load_glue_examples(test_data_generator,
+                                            args.test_file)
+
+    logger.info(f"Loaded {len(test_base_examples)} test examples.")
+    return test_base_examples
+
+
 def show_glue_datainfo(glue_labels, train_data_generator, train_file,
                        test_data_generator, test_file):
     train_lengths = [
@@ -95,21 +126,37 @@ def show_glue_datainfo(glue_labels, train_data_generator, train_file,
 
 def save_glue_preds(args, preds, test_examples):
     assert len(test_examples) == len(preds)
-    reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.tsv"
-    with open(reviews_file, 'w') as fw:
-        fw.write("guid\ttext_a\ttext_b\tlabel\n")
-        for input_example, v in zip(test_examples, preds):
-            guid = input_example.guid
-            text_a = input_example.text_a or ""
-            text_b = input_example.text_b or ""
-            label = args.id2label[v]
-            fw.write(f"{guid}\t{text_a}\t{text_b}\t{label}\n")
+    reviews_file = args.reviews_file
+
+    reviews = {}
+    for input_example, v in zip(test_examples, preds):
+        guid = input_example.guid
+        text_a = input_example.text_a or ""
+        text_b = input_example.text_b or ""
+        label = args.id2label[v]
+        reviews[guid] = {
+            'guid': guid,
+            'text_a': text_a,
+            'text_b': text_b,
+            'label': label
+        }
+
+    json.dump(reviews, open(reviews_file, 'w'), ensure_ascii=False, indent=2)
+    #  with open(reviews_file, 'w') as fw:
+    #      fw.write("guid\ttext_a\ttext_b\tlabel\n")
+    #      for input_example, v in zip(test_examples, preds):
+    #          guid = input_example.guid
+    #          text_a = input_example.text_a or ""
+    #          text_b = input_example.text_b or ""
+    #          label = args.id2label[v]
+    #          fw.write(f"{guid}\t{text_a}\t{text_b}\t{label}\n")
+
     logger.info(f"Total {len(preds)} lines saved to {reviews_file}")
 
     #  ----- Tracking -----
-    if args.do_experiment:
-        logger.debug(f"mlflow tracking uri: {mlflow.get_tracking_uri()}")
-        mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
-        mlflow.log_artifact(reviews_file, args.artifact_path)
+    #  if args.do_experiment:
+    #      logger.debug(f"mlflow tracking uri: {mlflow.get_tracking_uri()}")
+    #      mlflow.log_param(f"{args.dataset_name}_reviews_file", reviews_file)
+    #      mlflow.log_artifact(reviews_file, args.artifact_path)
 
     return reviews_file

@@ -10,6 +10,8 @@ import torch
 from sklearn.metrics import f1_score
 from .multiprocesses import is_single_process
 from typing import List
+from copy import deepcopy
+
 
 class DataClassBase:
     def to_dict(self):
@@ -393,7 +395,9 @@ def split_train_eval_examples(examples: [list, np.array],
 
         num_train_examples = int(num_examples * train_rate)
         num_eval_examples = num_examples - num_train_examples
-        logger.info(f"num_train_examples: {num_train_examples}, num_eval_examples: {num_eval_examples}")
+        logger.info(
+            f"num_train_examples: {num_train_examples}, num_eval_examples: {num_eval_examples}"
+        )
 
         e = num_examples - num_eval_examples * fold
         s = num_examples - num_eval_examples * (fold + 1)
@@ -462,3 +466,98 @@ def show_statistical_distribution(data_list):
     logger.info(f"std: {np.mean(data_list):.4f}")
     logger.info(f"max: {np.max(data_list):.4f}")
     logger.info(f"min: {np.min(data_list)}:.4f")
+
+
+def remove_duplicate_entities(R):
+    new_R = []
+    for i, r in enumerate(R):
+        found_dup = False
+        for r1 in R[i + 1:]:
+            if r == r1:
+                found_dup = True
+                break
+        if found_dup:
+            continue
+        new_R.append(r)
+    return new_R
+
+
+def is_uniform(entities):
+    for i, x in enumerate(entities):
+        for x1 in entities[i:]:
+            if x != x1:
+                return False
+    return True
+
+
+def merge_entities(entities_list, key=None, min_dups=2):
+    new_X = []
+    X = [x for z in entities_list for x in z]
+    #  logger.info(f"X: {X}")
+    if key:
+        X = sorted(X, key=key)
+
+    for i, x in enumerate(X[:1 - min_dups]):
+        if is_uniform(X[i:i + min_dups]):
+            new_X.append(deepcopy(x))
+    new_X = remove_duplicate_entities(new_X)
+    return new_X
+
+
+def match_tokenized_to_untokenized(subwords, sentence):
+    token_subwords = np.zeros(len(sentence))
+
+    def _run_strip_accents(text):
+        """Strips accents from a piece of text."""
+        import unicodedata
+        text = unicodedata.normalize("NFD", text)
+        output = []
+        for char in text:
+            cat = unicodedata.category(char)
+            if cat == "Mn":
+                continue
+            output.append(char)
+        return "".join(output)
+
+    sentence = [_run_strip_accents(x) for x in sentence]
+
+    token_ids, subwords_str, current_token, current_token_normalized = [
+        -1
+    ] * len(subwords), "", 0, None
+    logger.warning(f"subwords: {subwords}")
+    for i, subword in enumerate(subwords):
+        if subword in ["[CLS]", "[SEP]"]: continue
+
+        while current_token_normalized is None:
+            current_token_normalized = sentence[current_token].lower()
+
+        if subword.startswith("[UNK]"):
+            #  unk_length = int(subword[6:])
+            unk_length = 1
+            subwords[i] = subword[:5]
+            subwords_str += current_token_normalized[len(subwords_str
+                                                         ):len(subwords_str) +
+                                                     unk_length]
+        else:
+            subwords_str += subword[2:] if subword.startswith(
+                "##") else subword
+        if not current_token_normalized.startswith(subwords_str):
+            return False
+
+        token_ids[i] = current_token
+        token_subwords[current_token] += 1
+        if current_token_normalized == subwords_str:
+            subwords_str = ""
+            current_token += 1
+            current_token_normalized = None
+
+    logger.info(f"current_token: {current_token}, sentence: {sentence}")
+    logger.info(f"subwords: {subwords}")
+    logger.info(f"token_ids: {token_ids}")
+    assert current_token_normalized is None
+    while current_token < len(sentence):
+        assert not sentence[current_token]
+        current_token += 1
+    assert current_token == len(sentence)
+
+    return token_ids

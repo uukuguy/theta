@@ -1,28 +1,32 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import numpy as np
-from loguru import logger
+import os
 from collections import Counter
-import mlflow
 
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss, BCELoss
 import torch.nn.functional as F
+from loguru import logger
+from torch.nn import BCELoss, CrossEntropyLoss
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+
+from transformers import (AutoConfig, AutoModelForTokenClassification,
+                          BertConfig, BertTokenizer, BertTokenizerFast)
+from transformers.modeling_bert import BertModel, BertPreTrainedModel
+
+from ...losses import DiceLoss, FocalLoss, LabelSmoothingCrossEntropy
+from ...utils.multiprocesses import (barrier_leader_process,
+                                     barrier_member_processes,
+                                     is_multi_processes)
+#  from .utils import CNerTokenizer
+from ..models.linears import PoolerEndLogits, PoolerStartLogits
+from ..trainer import Trainer, get_default_optimizer_parameters
+
+#  import mlflow
 
 BertLayerNorm = torch.nn.LayerNorm
-
-from ...losses import FocalLoss, DiceLoss, LabelSmoothingCrossEntropy
-
-from .utils import CNerTokenizer
-from ..models.linears import PoolerStartLogits, PoolerEndLogits
-from ..trainer import Trainer, get_default_optimizer_parameters
-from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
-
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import AutoConfig, BertConfig, BertTokenizer, BertTokenizerFast, AutoModelForTokenClassification
-from transformers.modeling_bert import BertPreTrainedModel, BertModel
 
 
 def get_active_logits(logits, num_labels):
@@ -72,28 +76,33 @@ class BertPnForNer(BertPreTrainedModel):
         #  active_logits = logits.view(-1, self.num_labels * 2)
         #  active_logits = loss_sig(active_logits)
         #  active_logits = active_logits**2
+        active_logits = get_active_logits(logits, self.num_labels)
         if labels is not None:
 
-            active_logits = get_active_logits(logits, self.num_labels)
-
-            batch_size = input_ids.size(0)
+            #  active_logits = get_active_logits(logits, self.num_labels)
             active_labels = labels.view(-1, self.num_labels * 2).float()
+
+            #  logger.warning(f"active_logits.shape: {active_logits.shape}")
+            #  logger.warning(f"active_labels.shape: {active_labels.shape}")
 
             if self.loss_type == 'FocalLoss':
                 loss_fct = FocalLoss(gamma=self.focalloss_gamma,
                                      alpha=self.focalloss_alpha)
+                loss = loss_fct(active_logits, active_labels)
             else:
                 loss_fct = BCELoss(reduction='none')
+                loss = loss_fct(active_logits, active_labels)
 
-            loss = loss_fct(active_logits, active_labels)
-
+            batch_size = input_ids.size(0)
             loss = loss.view(batch_size, -1, self.num_labels * 2)
             loss = torch.mean(loss, 2)
             loss = torch.sum(attention_mask * loss) / torch.sum(attention_mask)
-            outputs = (loss, ) + outputs
+            #  outputs = (loss, ) + outputs
+            outputs = (loss, ) + (active_logits, )
         else:
             #  outputs = (active_logits, )
-            outputs = (torch.tensor(0.0).cuda(), ) + outputs
+            #  outputs = (torch.tensor(0.0).cuda(), ) + outputs
+            outputs = (torch.tensor(0.0).cuda(), ) + (active_logits, )
 
         return outputs
 
@@ -146,20 +155,24 @@ class SpanEntityScore(object):
 
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertPnForNer, CNerTokenizer),
-    #  'bert': (BertConfig, BertSpanForNer, BertTokenizer),
+    #  'bert': (BertConfig, BertPnForNer, CNerTokenizer),
+    'bert': (BertConfig, BertPnForNer, BertTokenizer),
     #  'bert': (BertConfig, BertSpanForNer, BertTokenizerFast),
 }
 
 
 def load_pretrained_tokenizer(args):
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-    tokenizer = tokenizer_class.from_pretrained(
-        args.model_path,
-        do_lower_case=args.do_lower_case,
-        is_english=args.is_english,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
+    #  config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    #  tokenizer = tokenizer_class.from_pretrained(
+    #      args.model_path,
+    #      do_lower_case=args.do_lower_case,
+    #      is_english=args.is_english,
+    #      cache_dir=args.cache_dir if args.cache_dir else None,
+    #  )
+    from ..token_utils import HFTokenizer
+    tokenizer = HFTokenizer(os.path.join(args.model_path, 'vocab.txt'),
+                            lowercase=args.do_lower_case,
+                            cc=args.cc)
 
     return tokenizer
 
@@ -204,14 +217,24 @@ def collate_fn(batch):
     batch should be a list of (sequence, target, length) tuples...
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
-    all_input_ids, all_input_mask, all_segment_ids, all_labels, all_lens = map(
-        torch.stack, zip(*batch))
-    max_len = max(all_lens).item()
+    #  from .dataset import batch_to_input_data
+    #  all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens, all_token_offsets, all_subjects = batch_to_input_data(
+    #      batch)
+    all_input_ids = torch.stack([e.input_ids for e in batch])
+    all_attention_mask = torch.stack([e.attention_mask for e in batch])
+    all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
+    all_labels = torch.stack([e.labels for e in batch])
+    all_input_lens = torch.stack([e.input_len for e in batch])
+    all_token_offsets = torch.stack([e.token_offsets for e in batch])
+    all_subjects = [e.subjects for e in batch]
+
+    max_len = max(all_input_lens).item()
     all_input_ids = all_input_ids[:, :max_len]
-    all_input_mask = all_input_mask[:, :max_len]
-    all_segment_ids = all_segment_ids[:, :max_len]
+    all_attention_mask = all_attention_mask[:, :max_len]
+    all_token_type_ids = all_token_type_ids[:, :max_len]
     all_labels = all_labels[:, :max_len]
-    return all_input_ids, all_input_mask, all_segment_ids, all_labels, all_lens
+    all_token_offsets = all_token_offsets[:, :max_len]
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_input_lens, all_token_offsets, all_subjects
 
 
 def extract_entity_from_logits(args,
@@ -248,7 +271,9 @@ def extract_entity_from_logits(args,
             for j in jj:
                 if idx < len(start) - 1 and j >= start[idx + 1]:
                     break
-                entities.append((n + 1, i - 1, j - 1))
+                s = i  #- 1
+                e = j  #- 1
+                entities.append((n + 1, s, e))
                 if not enable_nested_entities:
                     break
 
@@ -321,10 +346,14 @@ class NerTrainer(Trainer):
         self.label2id = args.label2id
         self.collate_fn = collate_fn
 
-    def examples_to_dataset(self, examples, max_seq_length):
-        from .dataset import examples_to_dataset
-        return examples_to_dataset(examples, self.label2id, self.tokenizer,
-                                   max_seq_length)
+    #  def examples_to_dataset(self, examples, max_seq_length):
+    #      from .dataset import examples_to_dataset
+    #      return examples_to_dataset(examples, self.label2id, self.tokenizer,
+    #                                 max_seq_length)
+    def encode_examples(self, examples, max_seq_length):
+        from .dataset import encode_examples
+        return encode_examples(examples, self.label2id, self.tokenizer,
+                               max_seq_length)
 
     def batch_to_inputs(self, args, batch, known_labels=True):
         inputs = {
@@ -333,7 +362,7 @@ class NerTrainer(Trainer):
             "labels": batch[3],
         }
         if args.model_type != "distilbert":
-            # XLM and RoBERTa don"t use segment_ids
+            # XLM and RoBERTa don"t use token_type_ids
             inputs["token_type_ids"] = (
                 batch[2] if args.model_type in ["bert", "xlnet"] else None)
 
@@ -350,25 +379,27 @@ class NerTrainer(Trainer):
     #                              collate_fn=collate_fn)
     #      return dataloader
 
-    def on_eval_start(self, args, eval_dataset):
+    def on_eval_start(self, args, eval_features):
         self.metric = SpanEntityScore(args.id2label)
         pass
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
-    def on_eval_step(self, args, model, step, batch, batch_features):
-        all_input_ids, all_input_mask, all_segment_ids, all_labels, all_lens = batch
+    #  def on_eval_step(self, args, model, step, batch, batch_features):
+    def on_eval_step(self, args, model, step, batch):
+        all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens, all_token_offsets, all_subjects = batch
 
         eval_loss = 0.0
         num_eval_steps = 0
         for i in range(all_input_ids.size()[0]):
             inputs = {
                 "input_ids": all_input_ids[i].view(1, -1),
-                "attention_mask": all_input_mask[i].view(1, -1),
+                "attention_mask": all_attention_mask[i].view(1, -1),
             }
             if args.model_type != "distilbert":
-                # XLM and RoBERTa don"t use segment_ids
-                inputs["token_type_ids"] = (all_segment_ids[i].view(
+                # XLM and RoBERTa don"t use token_type_ids
+                inputs["token_type_ids"] = (all_token_type_ids[i].view(
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
+            token_offsets = all_token_offsets[i]
 
             outputs = model(**inputs)
             tmp_eval_loss, logits = outputs[:2]
@@ -382,12 +413,13 @@ class NerTrainer(Trainer):
             #  preds = active_logits
             preds = get_active_logits(logits, args.num_labels)
 
-            T = batch_features[i].subjects
-            R = extract_entity_from_logits(args,
-                                           preds,
-                                           all_lens[i:i + 1],
-                                           confidence=args.confidence,
-                                           enable_nested_entities=args.enable_nested_entities)
+            T = all_subjects[i]
+            R = extract_entity_from_logits(
+                args,
+                preds,
+                all_lens[i:i + 1],
+                confidence=args.confidence,
+                enable_nested_entities=args.enable_nested_entities)
             #  logger.info(f"R: {R}")
             #  logger.info(f"T: {T}")
 
@@ -400,21 +432,22 @@ class NerTrainer(Trainer):
 
         return (eval_loss, ), results
 
-    def on_predict_start(self, args, test_dataset):
+    def on_predict_start(self, args, test_features):
         self.pred_results = []
 
     def on_predict_step(self, args, model, step, batch):
-        all_input_ids, all_input_mask, all_segment_ids, all_labels, all_lens = batch
+        all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens, all_token_offsets, all_subjects = batch
 
         for i in range(all_input_ids.size()[0]):
             inputs = {
                 "input_ids": all_input_ids[i].view(1, -1),
-                "attention_mask": all_input_mask[i].view(1, -1),
+                "attention_mask": all_attention_mask[i].view(1, -1),
             }
             if args.model_type != "distilbert":
-                # XLM and RoBERTa don"t use segment_ids
-                inputs["token_type_ids"] = (all_segment_ids[i].view(
+                # XLM and RoBERTa don"t use token_type_ids
+                inputs["token_type_ids"] = (all_token_type_ids[i].view(
                     1, -1) if args.model_type in ["bert", "xlnet"] else None)
+            token_offsets = all_token_offsets[i]
 
             outputs = model(**inputs)
             logits = outputs[1]
@@ -426,16 +459,23 @@ class NerTrainer(Trainer):
             #  preds = active_logits
             preds = get_active_logits(logits, args.num_labels)
 
-            R = extract_entity_from_logits(args,
-                                           preds,
-                                           all_lens[i:i + 1],
-                                           confidence=args.confidence,
-                                           enable_nested_entities=args.enable_nested_entities)
+            R = extract_entity_from_logits(
+                args,
+                preds,
+                all_lens[i:i + 1],
+                confidence=args.confidence,
+                enable_nested_entities=args.enable_nested_entities)
 
             if R:
-                label_entities = [[args.id2label[x[0]], x[1], x[2]] for x in R]
+                #  label_entities = [[args.id2label[x[0]], x[1], x[2]] for x in R]
+                label_entities = [[
+                    args.id2label[x[0]], token_offsets[x[1]][0].item(),
+                    token_offsets[x[2]][-1].item() - 1
+                ] for x in R]
             else:
                 label_entities = []
+
+            #  logger.info(f"label_entities: {label_entities}")
 
             #  if i < 20:
             #      logger.info(f"{i}, label_entities: {label_entities}")
@@ -451,10 +491,10 @@ class NerTrainer(Trainer):
 
             self.pred_results.append(json_d)
 
-    def on_predict_end(self, args, test_dataset):
+    def on_predict_end(self, args, test_features):
         return self.pred_results
 
-    def on_eval_end(self, args, eval_dataset):
+    def on_eval_end(self, args, eval_features):
         from ...utils.ner_utils import get_ner_results
         results = get_ner_results(self.metric)
         return results

@@ -1,21 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from pathlib import Path
 import json
-from tqdm import tqdm
-from loguru import logger
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-from torch.utils.data import RandomSampler, SequentialSampler
-from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_master_process, is_multi_processes
+from loguru import logger
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset)
+from tqdm import tqdm
+
 from ...utils import seg_generator
+from ...utils.multiprocesses import (barrier_leader_process,
+                                     barrier_member_processes,
+                                     is_master_process, is_multi_processes)
 from ..glue_utils import InputExample
+from ..trainer import common_batch_encode, common_to_tensors
 
 
-class InputFeatures(object):
+class InputFeature(object):
     """
     A single set of features of data.
 
@@ -31,11 +36,17 @@ class InputFeatures(object):
                  input_ids,
                  attention_mask=None,
                  token_type_ids=None,
-                 label=None):
+                 input_len=None,
+                 token_offsets=None,
+                 label=None,
+                 text=None):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
         self.token_type_ids = token_type_ids
+        self.input_len = input_len
+        self.token_offsets = token_offsets
         self.label = label
+        self.text = text
 
     def __repr__(self):
         return str(self.to_json_string())
@@ -79,29 +90,13 @@ class InputFeatures(object):
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
 
-    texts_a = [e.text_a for e in examples]
-    texts_b = [e.text_b for e in examples]
-    if not any(texts_b):
-        texts_b = None
-    #  texts_b = None
-    #  if len(examples) > 0 and examples[0].text_b:
-    #      texts_b = [e.text_b for e in examples]
+    num_labels = len(label2id)
+    texts = [e.text_a[:max_seq_length - 2] for e in examples]
 
-    outputs = tokenizer.batch_encode_plus(texts_a,
-                                          text_pair=texts_b,
-                                          max_length=max_seq_length,
-                                          add_special_tokens=True,
-                                          return_tensors=None,
-                                          pad_to_max_length=True,
-                                          return_attention_mask=True,
-                                          return_token_type_ids=True)
-    all_input_ids, all_attention_mask, all_token_type_ids = outputs[
-        'input_ids'], outputs['attention_mask'], outputs['token_type_ids']
-
-    all_lens = [len(input_ids) for input_ids in all_input_ids]
+    all_tokens, all_token2char, all_char2token, all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_batch_encode(
+        texts, label2id, tokenizer, max_seq_length)
 
     #  all_labels = [label2id[e.label] if e.label else 0 for e in examples]
-
     all_labels = []
     for e in examples:
         if isinstance(e.label, list):
@@ -115,26 +110,138 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
             else:
                 all_labels.append(0)
 
+    #  all_input_ids = torch.from_numpy(np.array(all_input_ids, dtype=np.int64))
+    #  all_attention_mask = torch.from_numpy(
+    #      np.array(all_attention_mask, dtype=np.int64))
+    #  all_token_type_ids = torch.from_numpy(
+    #      np.array(all_token_type_ids, dtype=np.int64))
+    #  all_input_lens = torch.from_numpy(np.array(all_input_lens, dtype=np.int64))
+    #  all_token_offsets = torch.from_numpy(
+    #      np.array(all_token_offsets, dtype=np.int64))
+    all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_to_tensors(
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens,
+        all_token_offsets)
+
+    all_labels = torch.from_numpy(np.array(all_labels, dtype=np.int64))
+
     all_features = [
-        InputFeatures(input_ids=input_ids,
-                      attention_mask=attention_mask,
-                      token_type_ids=token_type_ids,
-                      label=label)
-        for input_ids, attention_mask, token_type_ids, label in zip(
-            all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+        InputFeature(input_ids=input_ids,
+                     attention_mask=attention_mask,
+                     token_type_ids=token_type_ids,
+                     input_len=input_len,
+                     token_offsets=token_offsets,
+                     label=label,
+                     text=text) for input_ids, attention_mask,
+        token_type_ids, input_len, token_offsets, label, text in zip(
+            all_input_ids, all_attention_mask, all_token_type_ids,
+            all_input_lens, all_token_offsets, all_labels, texts)
     ]
-    return (all_features, {
-        'input_ids':
-        torch.tensor(all_input_ids, dtype=torch.long),
-        'attention_mask':
-        torch.tensor(all_attention_mask, dtype=torch.long),
-        'token_type_ids':
-        torch.tensor(all_token_type_ids, dtype=torch.long),
-        'lens':
-        torch.tensor(all_lens, dtype=torch.long),
-        'labels':
-        torch.tensor(all_labels, dtype=torch.long), 
-    })
+
+    return all_features
+    #  all_features = [
+    #      InputFeature(input_ids=input_ids,
+    #                    attention_mask=attention_mask,
+    #                    token_type_ids=token_type_ids,
+    #                    label=label)
+    #      for input_ids, attention_mask, token_type_ids, label in zip(
+    #          all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    #  ]
+    #  return (all_features, {
+    #      'input_ids':
+    #      torch.tensor(all_input_ids, dtype=torch.long),
+    #      'attention_mask':
+    #      torch.tensor(all_attention_mask, dtype=torch.long),
+    #      'token_type_ids':
+    #      torch.tensor(all_token_type_ids, dtype=torch.long),
+    #      'lens':
+    #      torch.tensor(all_input_lens, dtype=torch.long),
+    #      'labels':
+    #      torch.tensor(all_labels, dtype=torch.long),
+    #  })
+
+
+#  def encode_examples(examples, label2id, tokenizer, max_seq_length):
+#
+#      texts_a = [e.text_a for e in examples]
+#      texts_b = [e.text_b for e in examples]
+#      if not any(texts_b):
+#          texts_b = None
+#      #  texts_b = None
+#      #  if len(examples) > 0 and examples[0].text_b:
+#      #      texts_b = [e.text_b for e in examples]
+#
+#      if texts_b:
+#          outputs = tokenizer.batch_encode_plus(texts_a,
+#                                                text_pair=texts_b,
+#                                                max_length=max_seq_length,
+#                                                add_special_tokens=True,
+#                                                return_tensors=None,
+#                                                pad_to_max_length=True,
+#                                                return_attention_mask=True,
+#                                                return_token_type_ids=True)
+#          all_input_ids, all_attention_mask, all_token_type_ids = outputs[
+#              'input_ids'], outputs['attention_mask'], outputs['token_type_ids']
+#          all_input_lens = [len(input_ids) for input_ids in all_input_ids]
+#      else:
+#          all_tokens = [
+#              tokenizer.tokenize(text)[:max_seq_length]
+#              for text in tqdm(texts_a, desc="Tokenize")
+#          ]
+#          all_input_ids = [
+#              tokenizer.convert_tokens_to_ids(tokens) for tokens in all_tokens
+#          ]
+#          all_attention_mask = [[1] * len(input_ids)
+#                                for input_ids in all_input_ids]
+#          all_token_type_ids = [[0] * len(input_ids)
+#                                for input_ids in all_input_ids]
+#
+#          all_input_lens = [len(input_ids) for input_ids in all_input_ids]
+#
+#          all_padding_lens = [max_seq_length - n for n in all_input_lens]
+#          for i, (input_ids, attention_mask, token_type_ids,
+#                  padding_length) in enumerate(
+#                      zip(all_input_ids, all_attention_mask, all_token_type_ids,
+#                          all_padding_lens)):
+#              all_input_ids[i] = input_ids + [0] * padding_length
+#              all_attention_mask[i] = attention_mask + [0] * padding_length
+#              all_token_type_ids[i] = token_type_ids + [0] * padding_length
+#
+#
+#      #  all_labels = [label2id[e.label] if e.label else 0 for e in examples]
+#
+#      all_labels = []
+#      for e in examples:
+#          if isinstance(e.label, list):
+#              targets = [0] * len(label2id)
+#              for x in e.label:
+#                  targets[label2id[x]] = 1
+#              all_labels.append(targets)
+#          else:
+#              if e.label:
+#                  all_labels.append(label2id[e.label])
+#              else:
+#                  all_labels.append(0)
+#
+#      all_features = [
+#          InputFeature(input_ids=input_ids,
+#                        attention_mask=attention_mask,
+#                        token_type_ids=token_type_ids,
+#                        label=label)
+#          for input_ids, attention_mask, token_type_ids, label in zip(
+#              all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+#      ]
+#      return (all_features, {
+#          'input_ids':
+#          torch.tensor(all_input_ids, dtype=torch.long),
+#          'attention_mask':
+#          torch.tensor(all_attention_mask, dtype=torch.long),
+#          'token_type_ids':
+#          torch.tensor(all_token_type_ids, dtype=torch.long),
+#          'lens':
+#          torch.tensor(all_input_lens, dtype=torch.long),
+#          'labels':
+#          torch.tensor(all_labels, dtype=torch.long),
+#      })
 
 
 def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
@@ -165,7 +272,7 @@ def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
 #      mask_padding_with_zero=True,
 #  ):
 #      """
-#      Loads a data file into a list of ``InputFeatures``
+#      Loads a data file into a list of ``InputFeature``
 #
 #      Args:
 #          examples: List of ``InputExamples`` or ``tf.data.Dataset`` containing the examples.
@@ -184,7 +291,7 @@ def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
 #      Returns:
 #          If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
 #          containing the task-specific features. If the input is a list of ``InputExamples``, will return
-#          a list of task-specific ``InputFeatures`` which can be fed to the model.
+#          a list of task-specific ``InputFeature`` which can be fed to the model.
 #
 #      """
 #
@@ -262,7 +369,7 @@ def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
 #              logger.info("label: %s (id = %d)" % (example.label, label))
 #
 #          features.append(
-#              InputFeatures(input_ids=input_ids,
+#              InputFeature(input_ids=input_ids,
 #                            attention_mask=attention_mask,
 #                            token_type_ids=token_type_ids,
 #                            label=label))

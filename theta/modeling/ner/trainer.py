@@ -3,7 +3,7 @@
 
 import numpy as np
 from loguru import logger
-import mlflow
+#  import mlflow
 
 import torch
 import torch.nn as nn
@@ -600,10 +600,15 @@ class NerTrainer(Trainer):
                 batch[2] if args.model_type in ["bert", "xlnet"] else None)
         return inputs
 
-    def examples_to_dataset(self, examples, max_seq_length):
-        from .dataset import examples_to_dataset
-        return examples_to_dataset(examples, self.label2id, self.tokenizer,
-                                   max_seq_length)
+    #  def examples_to_dataset(self, examples, max_seq_length):
+    #      from .dataset import examples_to_dataset
+    #      return examples_to_dataset(examples, self.label2id, self.tokenizer,
+    #                                 max_seq_length)
+
+    def encode_examples(self, examples, max_seq_length):
+        from .dataset import encode_examples
+        return encode_examples(examples, self.label2id, self.tokenizer,
+                               max_seq_length)
 
     #  def generate_dataloader(self, args, dataset, batch_size, keep_order=True):
     #
@@ -744,11 +749,11 @@ class NerTrainer(Trainer):
         eval_info, _ = self.metric.result()
         results = {f'{key}': value for key, value in eval_info.items()}
 
-        if args.do_experiment:
-            #  logger.debug(f"loss: {loss}")
-            #  mlflow.log_metric('loss', loss.item())
-            for key, value in eval_info.items():
-                mlflow.log_metric(key, value)
+        #  if args.do_experiment:
+        #      #  logger.debug(f"loss: {loss}")
+        #      #  mlflow.log_metric('loss', loss.item())
+        #      for key, value in eval_info.items():
+        #          mlflow.log_metric(key, value)
 
         #  batch_preds = tags
         #  for i in range(len(batch_preds)):

@@ -279,6 +279,9 @@ def add_common_args(parser):
                         default=0.995,
                         help="The exponential decay of KD.")
 
+    parser.add_argument("--generate_submission", action="store_true")
+    parser.add_argument("--dataset_file", type=str, default=None)
+    parser.add_argument("--submission_file", type=str, default=None)
     # ------------------------------
     parser.add_argument("--server_ip",
                         type=str,
@@ -371,6 +374,16 @@ def add_common_args(parser):
     parser.add_argument("--start_page", type=int, default=0)
     parser.add_argument("--max_pages", type=int, default=100)
 
+    parser.add_argument("--emotion_words_file",
+                        type=str,
+                        default=None,
+                        help="Emotion words file.")
+
+    parser.add_argument("--cc",
+                        default=None,
+                        type=str,
+                        choices=['t2s', 's2t', 'mix2t', 'mix2s'],
+                        help="OpenCC")
     return parser
 
 
@@ -428,7 +441,7 @@ def get_main_args(
             os.makedirs(args.latest_dir)
         if not os.path.exists(args.local_id_file):
             import uuid
-            local_id = str(uuid.uuid1()).replace('-', '')
+            local_id = str(uuid.uuid1()).replace('-', '')[:8]
             args.local_id = local_id
             with open(args.local_id_file, 'w') as wt:
                 wt.write(f"{local_id}")

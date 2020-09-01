@@ -3,11 +3,14 @@
 
 # NER数据集持久化，与标注文件之间的互转。
 
-import os, json, re
+import json
+import os
+import re
 from dataclasses import dataclass, field
 from typing import List
-from tqdm import tqdm
+
 from loguru import logger
+from tqdm import tqdm
 
 
 # 实体标签
@@ -74,7 +77,7 @@ class TaggedText:
 
 # 实体标签数据集
 class NerDataset:
-    def __init__(self, name, ner_labels=None, ner_connections=None):
+    def __init__(self, name=None, ner_labels=None, ner_connections=None):
         self.name = name
         self.ner_labels = ner_labels
         self.ner_connections = ner_connections
@@ -83,7 +86,7 @@ class NerDataset:
     def __len__(self):
         return len(self.tagged_text_list)
 
-    def __item__(self, idx):
+    def __getitem__(self, idx):
         return self.tagged_text_list[idx]
 
     def __iter__(self):
@@ -99,22 +102,40 @@ class NerDataset:
     def extend(self, other_dataset):
         self.tagged_text_list.extend(other_dataset)
 
-    def save(self, filename: str):
+    def save(self, filename: str, format=None):
         """
         {'guid': '0000', 'text': "sample text", 'tags': [{'category': "实体类别1", start: 10, mention: "实体文本"}, ...]}
         """
-        with open(filename, 'w') as wt:
-            for tagged_text in tqdm(self.tagged_text_list,
-                                    desc="Save tagged text list."):
-                data_dict = tagged_text.to_dict()
-                wt.write(f"{json.dumps(data_dict, ensure_ascii=False)}\n")
+
+        if format == "json":
+            json_data = {x.guid: x.to_dict() for x in self.tagged_text_list}
+            json.dump(json_data,
+                      open(filename, 'w'),
+                      ensure_ascii=False,
+                      indent=2)
+        else:
+            with open(filename, 'w') as wt:
+                for tagged_text in tqdm(self.tagged_text_list,
+                                        desc="Save tagged text list."):
+                    data_dict = tagged_text.to_dict()
+                    wt.write(f"{json.dumps(data_dict, ensure_ascii=False)}\n")
         logger.info(f"Saved {filename}")
 
     def load_from_file(self, filename: str):
         logger.info(f"Loading {filename}")
-        lines = [
-            json.loads(x.strip()) for x in open(filename, 'r').readlines()
-        ]
+        try:
+            lines = [
+                json.loads(x.strip()) for x in open(filename, 'r').readlines()
+            ]
+        except:
+            logger.warning(
+                f"{filename} is not standard style, try reviews style...")
+            try:
+                json_data = json.load(open(filename, 'r'))
+                lines = [v for k, v in json_data.items()]
+            except:
+                logger.error("Unknown file style {filename}")
+                raise Exception(f"Unknown file style {filename}")
 
         def data_generator(data_source=None):
             for json_data in lines:
@@ -136,7 +157,7 @@ class NerDataset:
             self.tagged_text_list.append(tagged_text)
         return self
 
-    def export_to_brat_files(self, brat_data_dir, max_pages=10):
+    def export_to_brat(self, brat_data_dir, max_pages=10):
         from .brat import export_brat_files
         export_brat_files(self.tagged_text_list,
                           self.ner_labels,
@@ -144,24 +165,86 @@ class NerDataset:
                           brat_data_dir,
                           max_pages=max_pages)
 
-    def import_from_brat_files(self, brat_data_dir):
+    def import_from_brat(self, brat_data_dir):
         from .brat import import_brat_files
         import_brat_files(self.tagged_text_list, brat_data_dir)
 
-    def to_poplar_file(self, poplar_file):
+    def export_to_poplar(self, poplar_file, max_pages=100, start_page=0):
         from .poplar import save_poplar_file
         save_poplar_file(poplar_file,
                          self.ner_labels,
                          self.ner_connections,
-                         start_page=0,
-                         max_pages=100)
+                         start_page=start_page,
+                         max_pages=max_pages)
 
-    def append_from_poplar_file(self, poplar_file):
+    def import_from_poplar(self, poplar_file):
         from .poplar import poplar_data_generator
         return self.load(poplar_data_generator(poplar_file))
 
+    def diff(self, another_ner_dataset):
+        assert len(self) == len(another_ner_dataset)
 
-def ner_data_generator(train_file, dataset_name=None, ner_labels=None, ner_connections=None):
+        identical_tags_list = []
+        a_only_tags_list = []
+        b_only_tags_list = []
+        for tagged_text_a, tagged_text_b in zip(self, another_ner_dataset):
+            text_a, text_b = tagged_text_a.text, tagged_text_b.text
+            # 被标注的文本必须相同，否则标注位置无意义
+            assert text_a == text_b
+            tags_a, tags_b = tagged_text_a.tags, tagged_text_b.tags
+            tags_a = sorted(tags_a, key=lambda x: x.start)
+            tags_b = sorted(tags_b, key=lambda x: x.start)
+
+            identical_tags = []
+            a_only_tags = []
+            b_only_tags = []
+            for tag_a in tags_a:
+                found_a = False
+                for tag_b in tags_b:
+                    if tag_a == tag_b:
+                        identical_tags.append(tag_a)
+                        found_a = True
+                        break
+                if not found_a:
+                    a_only_tags.append(tag_a)
+            for tag_b in tags_b:
+                found_b = False
+                for tag_a in tags_a:
+                    if tag_a == tag_b:
+                        found_b = True
+                        break
+                if not found_b:
+                    b_only_tags.append(tag_b)
+
+            identical_tags_list.append(identical_tags)
+            a_only_tags_list.append(a_only_tags)
+            b_only_tags_list.append(b_only_tags)
+
+        return identical_tags_list, a_only_tags_list, b_only_tags_list
+
+
+def merge_ner_datasets(ner_dataset_list, min_dups=2):
+    if len(ner_dataset_list) == 0:
+        return None
+    from copy import deepcopy
+    merged_dataset = deepcopy(ner_dataset_list[0])
+    if len(ner_dataset_list) > 1:
+        for i, X in enumerate(zip(*ner_dataset_list)):
+            tags_list = [x.tags for x in X]
+            from ..utils import merge_entities
+            new_tags = merge_entities(
+                tags_list,
+                key=lambda x: x.start * 1000 + len(x.mention),
+                min_dups=min_dups)
+            merged_dataset[i].tags = new_tags
+
+    return merged_dataset
+
+
+def ner_data_generator(train_file,
+                       dataset_name=None,
+                       ner_labels=None,
+                       ner_connections=None):
     ner_dataset = NerDataset("kgcs_entities", ner_labels, ner_connections)
     ner_dataset.load_from_file(train_file)
     for tagged_text in tqdm(ner_dataset):
@@ -169,6 +252,12 @@ def ner_data_generator(train_file, dataset_name=None, ner_labels=None, ner_conne
         text = tagged_text.text
         tags = [x.to_dict() for x in tagged_text.tags]
         yield guid, text, None, tags
+
+
+def load_ner_dataset(filename):
+    ner_dataset = NerDataset()
+    ner_dataset.load_from_file(filename)
+    return ner_dataset
 
 
 if __name__ == '__main__':

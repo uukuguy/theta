@@ -1,21 +1,24 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+#  import mlflow
+import os, re, json
 import numpy as np
-from tqdm import tqdm
-from loguru import logger
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
-from transformers import BertConfig, BertTokenizerFast
-from transformers.modeling_bert import BertPreTrainedModel, BertModel
+from loguru import logger
 from sklearn.metrics import classification_report, roc_auc_score
-import mlflow
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from tqdm import tqdm
 
+from transformers import BertConfig, BertTokenizerFast
+from transformers.modeling_bert import BertModel, BertPreTrainedModel
+
+from ...losses import DiceLoss, FocalLoss
+from ...utils import acc_and_f1, sigmoid, softmax
+from ...utils.multiprocesses import (barrier_leader_process,
+                                     barrier_member_processes)
 from ..trainer import Trainer, get_default_optimizer_parameters
-from ...losses import FocalLoss, DiceLoss
-from ...utils import softmax, sigmoid, acc_and_f1
-from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes
 
 
 def logits_to_preds(logits):
@@ -30,6 +33,132 @@ def logits_to_preds(logits):
     #  ])
 
     return preds
+
+
+from transformers import BertTokenizer
+
+
+class EmotionTokenizer(BertTokenizer):
+    def __init__(self,
+                 vocab_file,
+                 do_lower_case=False,
+                 is_english=False,
+                 emotion_words_file=None):
+        super().__init__(vocab_file=str(vocab_file),
+                         do_lower_case=do_lower_case)
+        self.vocab_file = str(vocab_file)
+        self.do_lower_case = do_lower_case
+        self.is_english = is_english
+
+        self.emotion_words_file = emotion_words_file
+        self.emotion_words = []
+        self._init_emotion_words()
+        self.emotion2id = {w: i for i, w in enumerate(self.emotion_words)}
+        self.id2emotion = {i: w for i, w in enumerate(self.emotion_words)}
+
+    def _init_emotion_words(self):
+        logger.info(f"emotion_words_file: {self.emotion_words_file}")
+        with open(self.emotion_words_file, 'r') as rd:
+            lines = rd.readlines()
+        emotion_words = set()
+        for line in tqdm(lines, desc="Load emotion words"):
+            line = line.strip()
+            if line.startswith('#'):
+                continue
+            toks = line.split('\t')
+            if len(toks) < 2:
+                continue
+            emotion_words.add(toks[0])
+            if len(emotion_words) >= 100:
+                break
+        self.emotion_words = list(emotion_words)
+
+    def _replace_emotions(self, tokens, max_seq_length):
+        new_tokens = []
+        for i in range(len(tokens)):
+            found = False
+            for j in range(len(self.emotion_words)):
+                eword = self.emotion_words[j]
+                tword = ''.join(tokens[i:i + len(eword)])
+                if eword == tword:
+                    new_tokens.append(f"[unused{j}]")
+                    i += len(eword)
+                    found = True
+                    break
+            if not found:
+                new_tokens.append(tokens[i])
+        return new_tokens
+
+    def _append_emotions(self, tokens, max_seq_length):
+        new_tokens = []
+        for i in range(len(tokens)):
+            found = False
+            for j in range(len(self.emotion_words)):
+                eword = self.emotion_words[j]
+                tword = ''.join(tokens[i:i + len(eword)])
+                if eword == tword:
+                    new_tok = f"[unused{j}]"
+                    if new_tok not in new_tokens:
+                        new_tokens.append(new_tok)
+                        i += len(eword)
+                        found = True
+                        break
+        tail_tokens = []
+        for tok in new_tokens:
+            tail_tokens.append("[SEP]")
+            tail_tokens.append(tok)
+
+        if max_seq_length > 0:
+            if len(tokens) + len(tail_tokens) > max_seq_length:
+                tokens = tokens[:max_seq_length - len(tail_tokens)]
+
+        tokens.extend(tail_tokens)
+        #  logger.info(f"tokens: {tokens}")
+        return tokens
+
+    def _append_emotions_by_flash_text(self, tokens, max_seq_length):
+        from flasttext import KeywordProcessor
+        new_tokens = []
+        for i in range(len(tokens)):
+            found = False
+            for j in range(len(self.emotion_words)):
+                eword = self.emotion_words[j]
+                tword = ''.join(tokens[i:i + len(eword)])
+                if eword == tword:
+                    new_tok = f"[unused{j}]"
+                    if new_tok not in new_tokens:
+                        new_tokens.append(new_tok)
+                        i += len(eword)
+                        found = True
+                        break
+        tail_tokens = []
+        for tok in new_tokens:
+            tail_tokens.append("[SEP]")
+            tail_tokens.append(tok)
+
+        if max_seq_length > 0:
+            if len(tokens) + len(tail_tokens) > max_seq_length:
+                tokens = tokens[:max_seq_length - len(tail_tokens)]
+
+        tokens.extend(tail_tokens)
+        return tokens
+
+    def tokenize(self, text, max_seq_length=0):
+        text_tokens = [c for c in text]
+
+        _tokens = []
+        for c in text_tokens:
+            if self.do_lower_case:
+                c = c.lower()
+
+            if c in self.vocab:
+                _tokens.append(c)
+            else:
+                _tokens.append('[UNK]')
+        if self.emotion_words:
+            #  _tokens = self._replace_emotions(_tokens, max_seq_length)
+            _tokens = self._append_emotions(_tokens, max_seq_length)
+        return _tokens
 
 
 class BertForSequenceClassification(BertPreTrainedModel):
@@ -139,15 +268,25 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 #  logger.debug(f"preds: {type(preds)}, {preds}")
 
                 assert self.loss_type in [
-                    'FocalLoss', 'DiceLoss', 'CrossEntropyLoss',
+                    'FocalLoss', 'DiceLoss', 'CircleLoss', 'CrossEntropyLoss',
                     'BCEWithLogitsLoss'
                 ]
                 if self.loss_type == 'FocalLoss':
+                    # 0.58
                     loss = FocalLoss(gamma=self.focalloss_gamma,
                                      alpha=self.focalloss_alpha)(logits.view(
                                          -1, self.num_labels), labels.view(-1))
+                elif self.loss_type == 'CircleLoss':
+                    from ...losses.circleloss import CircleLoss
+                    # 0.496885 (4/5)
+                    loss = CircleLoss(gamma=15, m=1e-6, similarity='cos')(
+                        logits.view(-1, self.num_labels), labels.view(-1))
+                    #  loss = CircleLoss(gamma=15, m=1e-6, similarity='dot')(
+                    #      logits.view(-1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'DiceLoss':
-                    loss = DiceLoss(weight=self.diceloss_weight)(logits.view(
+                    #  loss = DiceLoss(weight=self.diceloss_weight)(logits.view(
+                    #      -1, self.num_labels), labels.view(-1))
+                    loss = DiceLoss(epsilon=1e-5)(logits.view(
                         -1, self.num_labels), labels.view(-1))
                 elif self.loss_type == 'BCEWithLogitsLoss':
                     loss_fct = BCEWithLogitsLoss()
@@ -256,11 +395,12 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return (loss, ) + outputs
         else:
             # (loss), logits, (hidden_states), (attentions)
-            #  return (torch.tensor(0.0).cuda(), ) + outputs
-            return (None, ) + outputs
+            return (torch.tensor(0.0).cuda(), ) + outputs
+            #  return (None, ) + outputs
             #  return outputs
 
 MODEL_CLASSES = {
+    #  'bert': (BertConfig, BertForSequenceClassification, EmotionTokenizer),
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizerFast),
     #  'albert':
     #  (AlbertConfig, AlBertForSequenceClassification, BertTokenizerFast),
@@ -268,13 +408,18 @@ MODEL_CLASSES = {
 
 
 def load_pretrained_tokenizer(args):
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-    tokenizer = tokenizer_class.from_pretrained(
-        args.model_path,
-        do_lower_case=args.do_lower_case,
-        is_english=args.is_english,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
+    #  config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    #  tokenizer = tokenizer_class.from_pretrained(
+    #      args.model_path,
+    #      do_lower_case=args.do_lower_case,
+    #      is_english=args.is_english,
+    #      emotion_words_file=args.emotion_words_file,
+    #      cache_dir=args.cache_dir if args.cache_dir else None,
+    #  )
+    from ..token_utils import HFTokenizer
+    tokenizer = HFTokenizer(os.path.join(args.model_path, 'vocab.txt'),
+                            lowercase=args.do_lower_case,
+                            cc=args.cc)
 
     return tokenizer
 
@@ -350,14 +495,23 @@ def collate_fn(batch):
     batch should be a list of (sequence, target, length) tuples...
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
-    all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_labels = map(
-        torch.stack, zip(*batch))
-    max_len = max(all_lens).item()
+    #  all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_labels = map(
+    #      torch.stack, zip(*batch))
+
+    all_input_ids = torch.stack([e.input_ids for e in batch])
+    all_attention_mask = torch.stack([e.attention_mask for e in batch])
+    all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
+    all_input_lens = torch.stack([e.input_len for e in batch])
+    all_token_offsets = torch.stack([e.token_offsets for e in batch])
+
+    all_labels = torch.stack([e.label for e in batch])
+
+    max_len = max(all_input_lens).item()
     all_input_ids = all_input_ids[:, :max_len]
     all_attention_mask = all_attention_mask[:, :max_len]
     all_token_type_ids = all_token_type_ids[:, :max_len]
-    #  all_labels = all_labels[:, :max_len]
-    return all_input_ids, all_attention_mask, all_token_type_ids, all_labels
+
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_labels
 
 
 class ClassReporter(object):
@@ -440,16 +594,20 @@ class GlueTrainer(Trainer):
     #                              collate_fn=collate_fn)
     #      return dataloader
 
-    def examples_to_dataset(self, examples, max_seq_length):
-        from .dataset import examples_to_dataset
-        return examples_to_dataset(examples, self.label2id, self.tokenizer,
-                                   max_seq_length)
+    #  def examples_to_dataset(self, examples, max_seq_length):
+    #      from .dataset import examples_to_dataset
+    #      return examples_to_dataset(examples, self.label2id, self.tokenizer,
+    #                                 max_seq_length)
+    def encode_examples(self, examples, max_seq_length):
+        from .dataset import encode_examples
+        return encode_examples(examples, self.label2id, self.tokenizer,
+                               max_seq_length)
 
     def batch_to_inputs(self, args, batch, known_labels=True):
         inputs = {
             "input_ids": batch[0],
             "attention_mask": batch[1],
-            "labels": batch[3]
+            "labels": batch[5]
         }
         if args.model_type != "distilbert":
             # XLM, DistilBERT, RoBERTa, and XLM-RoBERTa don't use segment_ids
@@ -466,8 +624,8 @@ class GlueTrainer(Trainer):
         self.probs = None
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
-    def on_eval_step(self, args, model, step, batch, batch_features):
-        input_ids, attention_mask, _, label_ids = batch
+    def on_eval_step(self, args, model, step, batch):
+        input_ids, attention_mask, _, input_lens, token_offsets, label_ids = batch
         outputs = self.on_train_step(args, model, step, batch)
         eval_loss, logits = outputs[:2]
         if self.logits is None:
@@ -501,10 +659,10 @@ class GlueTrainer(Trainer):
             result = acc_and_f1(self.preds,
                                 np.argmax(self.out_label_ids, axis=1))
 
-        if args.do_experiment:
-            #  mlflow.log_metric('loss', eval_loss.item())
-            for key, value in result.items():
-                mlflow.log_metric(key, value)
+        #  if args.do_experiment:
+        #      #  mlflow.log_metric('loss', eval_loss.item())
+        #      for key, value in result.items():
+        #          mlflow.log_metric(key, value)
 
         self.results.update(result)
 

@@ -1,15 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, glob, json, datetime
-from tqdm import tqdm
-from loguru import logger
+import datetime
+import glob
+import json
+import os
+
 import rich
-from rich import print
+from loguru import logger
+#  from rich import print
 from rich.console import Console
-console = Console()
+from tqdm import tqdm
 
 from .modeling import NerDataset
+
+console = Console()
 
 all_models = []
 
@@ -295,21 +300,36 @@ def export_train_data(args):
 
     export_format = args.format
     if export_format == "json":
-        data_file = "tmp.json"
-        ner_dataset.save(data_file)
+        dataset_file = args.dataset_file
+        ner_dataset.save(dataset_file)
     elif export_format == "brat":
         brat_data_dir = args.brat_data_dir
         if not brat_data_dir:
             brat_data_dir = "brat_data"
         if not os.path.exists(brat_data_dir):
             os.makedirs(brat_data_dir)
-        ner_dataset.export_to_brat_files(brat_data_dir, max_pages=50)
+        ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
     elif export_format == "poplar":
         pass
     else:
         raise Exception(
             f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
         )
+
+
+def reviews_data_generator(reviews_file):
+    json_data = json.load(open(reviews_file, 'r'))
+    for guid, items in json_data.items():
+        text = items['text']
+        entities = items['tags']
+        tags = []
+        for ent in entities:
+            tags.append({
+                'category': ent['category'],
+                'start': ent['start'],
+                'mention': ent['mention']
+            })
+        yield guid, text, None, tags
 
 
 def export_test_data(args):
@@ -331,23 +351,13 @@ def export_test_data(args):
     console.log("[bold cyan]ner_labels:[/bold cyan]", ner_labels)
     console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
 
-    reviews_file = os.path.join(
-        args.output_dir, args.local_id[0],
-        f"{dataset_name}_reviews_{args.local_id[0]}.json")
+    if args.local_id:
+        local_id = args.local_id[0]
+    else:
+        local_id = 'latest'
 
-    def reviews_data_generator(reviews_file):
-        json_data = json.load(open(reviews_file, 'r'))
-        for guid, items in json_data.items():
-            text = items['text']
-            entities = items['entities']
-            tags = []
-            for ent in entities:
-                tags.append({
-                    'category': ent['category'],
-                    'start': ent['start'],
-                    'mention': ent['mention']
-                })
-            yield guid, text, None, tags
+    reviews_file = os.path.join(args.output_dir, local_id,
+                                f"{dataset_name}_reviews_{local_id}.json")
 
     ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
     ner_dataset.load(reviews_data_generator, reviews_file)
@@ -363,7 +373,7 @@ def export_test_data(args):
             brat_data_dir = "brat_data"
         if not os.path.exists(brat_data_dir):
             os.makedirs(brat_data_dir)
-        ner_dataset.export_to_brat_files(brat_data_dir, max_pages=50)
+        ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
     elif export_format == "poplar":
         pass
     else:
@@ -411,12 +421,155 @@ def json_to_brat(args):
         brat_data_dir = "brat_data"
     if not os.path.exists(brat_data_dir):
         os.makedirs(brat_data_dir)
-    ner_dataset.export_to_brat_files(brat_data_dir, max_pages=20)
+    ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
 
 
 def brat_to_json(args):
     dataset_file = args.dataset_file
     brat_data_dir = args.brat_data_dir
+
+
+def diff_ner_datasets(args):
+    dataset_files = args.diff_ner_datasets
+    assert dataset_files and len(dataset_files) == 2
+    from theta.modeling import NerDataset
+
+    ner_dataset_a = NerDataset("a")
+    ner_dataset_b = NerDataset("b")
+
+    #  ner_dataset_a.load_from_file(dataset_files[0])
+    #  ner_dataset_b.load_from_file(dataset_files[1])
+    ner_dataset_a.load(reviews_data_generator, dataset_files[0])
+    ner_dataset_b.load(reviews_data_generator, dataset_files[1])
+
+    identical_tags_list, a_only_tags_list, b_only_tags_list = ner_dataset_a.diff(
+        ner_dataset_b)
+
+    total_a_only = 0
+    total_b_only = 0
+    for example, identical_tags, a_only_tags, b_only_tags in zip(
+            ner_dataset_a, identical_tags_list, a_only_tags_list,
+            b_only_tags_list):
+        if a_only_tags or b_only_tags:
+            logger.info(f"{example.guid}: {example.text[:256]}")
+            #  logger.info(f"{identical_tags}")
+            logger.info(f"a_only: {a_only_tags}")
+            logger.warning(f"b_only: {b_only_tags}")
+            logger.info(f"")
+            total_a_only += len(a_only_tags)
+            total_b_only += len(b_only_tags)
+    logger.warning(f"Total a_only (Removed): {total_a_only}")
+    logger.warning(f"Total b_only (Added): {total_b_only}")
+
+
+def merge_ner_datasets(args):
+    dataset_files = args.merge_ner_datasets
+    min_dups = args.min_dups
+    assert dataset_files and len(dataset_files) >= 2
+
+    ner_datasets = [NerDataset(f"{i}") for i in range(len(dataset_files))]
+    for dataset, filename in zip(ner_datasets, dataset_files):
+        if not os.path.exists(filename):
+            local_id = filename
+            guess_filename = f"{args.output_dir}/{local_id}/{args.dataset_name}_reviews_{local_id}.json"
+            if not os.path.exists(guess_filename):
+                raise Exception(f"NerDataset {filename} does not exists.")
+            filename = guess_filename
+        #  dataset.load_from_file(filename)
+        logger.info(f"{filename}")
+        dataset.load(reviews_data_generator, filename)
+
+    from theta.modeling import merge_ner_datasets as do_merge_ner_datasets
+    merged_dataset = do_merge_ner_datasets(ner_datasets, min_dups=min_dups)
+
+    merged_dataset_file = args.dataset_file
+    merged_dataset.save(merged_dataset_file, format='json')
+    logger.info(f"Saved {merged_dataset_file}")
+
+
+def build_deepcode(args, theta_src=False):
+    """
+    构建完整可复现的模型训练代码Docker容器环境。
+    """
+    import os, shutil
+
+    # -------- Check Dockerfile.deepcode --------
+    if not os.path.exists("Dockerfile.deepcode"):
+        logger.error(f"Dockerfile.deepcode does not exists.")
+        return
+    training_args_file = "outputs/latest/training_args.json"
+    if not os.path.exists(training_args_file):
+        logger.error(f"{training_args_file} does not exists.")
+        return
+
+    # -------- deepcode路径 --------
+    deepcode_dir = "deepcode"
+    if os.path.exists(deepcode_dir):
+        shutil.rmtree(deepcode_dir)
+    os.makedirs(deepcode_dir)
+    os.system(f"cp Dockerfile.deepcode ./{deepcode_dir}/")
+
+    # -------- Copy theta source --------
+    if theta_src:
+        # -------- 检查THETA_SRC环工--------
+        if not "THETA_SRC" in os.environ:
+            logger.error(
+                f"THETA_SRC environment variable must be set to theta src path."
+            )
+            return
+        theta_src_path = os.environ['THETA_SRC']
+        if not os.path.exists(os.path.join(theta_src_path, "__init__.py")):
+            logger.error(
+                f"Ensure theta source must be located in THETA_SRC({theta_src_path})"
+            )
+            return
+
+        os.system(
+            f"rsync -arv --exclude examples --exclude __pycache__ --exclude *.pyc  $THETA_SRC ./{deepcode_dir}/"
+        )
+
+    # -------- Copy model src --------
+    if os.path.exists("README.md"):
+        os.system(f"cp README.md *.py {deepcode_dir}/")
+    os.system(f"rsync -arv --exclude rawdata data {deepcode_dir}/")
+    os.system(f"cp *.py Makefile.* *.sh requirements.txt {deepcode_dir}/")
+    home_dir = os.environ['HOME']
+    if os.path.exists(f"{home_dir}/.pip/pip.conf"):
+        os.system(f"cp {home_dir}/.pip/pip.conf  {deepcode_dir}/")
+
+    # -------- 构建Docker镜像 --------
+    with open(training_args_file, 'r') as rd:
+        training_args = json.load(open(training_args_file, 'r'))
+
+    for k, v in training_args.items():
+        if not k.startswith('_'):
+            print(f"{k}: {v}")
+    dataset_name = training_args['dataset_name']
+    local_id = training_args['local_id']
+    cmd = f"docker build -f Dockerfile.deepcode -t {dataset_name}:{local_id} {deepcode_dir}"
+    logger.info(f"cmd: {cmd}")
+    os.system(cmd)
+
+
+def run_deepcode(args, gpus="device=0"):
+    training_args_file = "outputs/latest/training_args.json"
+    if not os.path.exists(training_args_file):
+        logger.error(f"{training_args_file} does not exists.")
+        return
+
+    with open(training_args_file, 'r') as rd:
+        training_args = json.load(open(training_args_file, 'r'))
+
+    for k, v in training_args.items():
+        if not k.startswith('_'):
+            print(f"{k}: {v}")
+    dataset_name = training_args['dataset_name']
+    local_id = training_args['local_id']
+    model_path = training_args['model_path']
+
+    cmd = f"docker run --gpus {gpus} -it --rm -v {model_path}:{model_path} {dataset_name}:{local_id} /bin/bash"
+    logger.info(f"cmd: {cmd}")
+    os.system(cmd)
 
 
 def main(args):
@@ -444,6 +597,14 @@ def main(args):
         json_to_brat(args)
     elif args.brat_to_json:
         brat_to_json(args)
+    elif args.diff_ner_datasets:
+        diff_ner_datasets(args)
+    elif args.merge_ner_datasets:
+        merge_ner_datasets(args)
+    elif args.build_deepcode:
+        build_deepcode(args, theta_src=True)
+    elif args.run_deepcode:
+        run_deepcode(args)
     else:
         print("Usage: theta [list|diff]")
 
@@ -474,6 +635,37 @@ def get_args():
     parser.add_argument("--json_to_brat", action='store_true')
     parser.add_argument("--brat_to_json", action='store_true')
     parser.add_argument("--dataset_file", default=None)
+
+    parser.add_argument("--diff_ner_datasets",
+                        nargs=2,
+                        help='Check difference of 2 datasets')
+    parser.add_argument("--max_pages",
+                        type=int,
+                        default=20,
+                        help="Max pages of brat export.")
+
+    parser.add_argument("--merge_ner_datasets",
+                        nargs="+",
+                        help='Merge datasets')
+    parser.add_argument("--min_dups",
+                        type=int,
+                        default=2,
+                        help="Min duplicates of merge tags.")
+
+    parser.add_argument("--build_deepcode",
+                        action="store_true",
+                        help="Build deep code docker image.")
+    parser.add_argument("--run_deepcode",
+                        action="store_true",
+                        help="Run deep code docker.")
+
+    # -------- ner dataset file --------
+    subparsers = parser.add_subparsers(help="Commands")
+    ner_dataset_parser = subparsers.add_parser("ner_dataset",
+                                               help="NerDataset")
+    ner_dataset_parser.add_argument("--show",
+                                    action="store_true",
+                                    help="Show info of NerDataset file.")
 
     args = parser.parse_args()
 

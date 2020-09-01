@@ -1,38 +1,47 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json, copy
+import copy
+import json
 from pathlib import Path
-from tqdm import tqdm
-from loguru import logger
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-from torch.utils.data import RandomSampler, SequentialSampler
-from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
+from loguru import logger
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset)
+from tqdm import tqdm
+
 from ...utils import seg_generator
+from ...utils.multiprocesses import (barrier_leader_process,
+                                     barrier_member_processes,
+                                     is_multi_processes)
 from ..ner_utils import InputExample
+from ..trainer import common_batch_encode, common_to_tensors
 
 
 class InputFeature(object):
     """A single set of features of data."""
-    def __init__(self, input_ids, input_mask, input_len, segment_ids,
-                 start_ids, end_ids, subjects):
+    def __init__(self, input_ids, attention_mask, token_type_ids, input_len, token_offsets,
+                 start_ids, end_ids, subjects,  text):
         self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.start_ids = start_ids
+        self.attention_mask = attention_mask
+        self.token_type_ids = token_type_ids
         self.input_len = input_len
+        self.token_offsets = token_offsets
+
+        self.start_ids = start_ids
         self.end_ids = end_ids
         self.subjects = subjects
+        self.text = text
 
     def __repr__(self):
         return str(self.to_json_string())
 
     def __eq__(self, other):
         return self.input_ids == other.input_ids and \
-            self.input_mask == other.input_mask and \
-            self.segment_ids == other.segment_ids and \
+            self.attention_mask == other.attention_mask and \
+            self.token_type_ids == other.token_type_ids and \
             self.start_ids == other.start_ids and \
             self.end_ids == other.end_ids and \
             self.subjects == other.subjects and \
@@ -48,30 +57,135 @@ class InputFeature(object):
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
-#  def load_examples(args,
-#                    data_generator,
-#                    examples_file,
-#                    seg_len=0,
-#                    seg_backoff=0):
-#
-#      examples = []
-#
-#      for guid, text_a, text_b, labels in data_generator(
-#              args, examples_file, seg_len=seg_len, seg_backoff=seg_backoff):
-#          assert text_a is not None
-#          #  for (seg_text_a, seg_text_b) in seg_generator((text_a, text_b),
-#          #                                                seg_len, seg_backoff):
-#          #      seg_words_a = [w for w in seg_text_a]
-#          #
-#          #      examples.append(
-#          #          InputExample(guid=guid, text_a=seg_words_a, labels=labels))
-#          examples.append(InputExample(guid=guid, text_a=text_a, labels=labels))
-#      logger.info(f"Loaded {len(examples)} examples.")
-#
-#      return examples
+
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
+
+    #  num_labels = len(label2id)
+    #  texts = [e.text_a[:max_seq_length - 2] for e in examples]
+    #
+    #  all_encodes = tokenizer.batch_encode(texts, add_special_tokens=True)
+    #  all_tokens = all_encodes['tokens']
+    #  all_token_offsets = all_encodes['offsets']
+    #  all_token2char = all_encodes['token2char']
+    #  all_char2token = all_encodes['char2token']
+    #
+    #  all_input_ids = all_encodes['ids']
+    #  all_attention_mask = all_encodes['attention_mask']
+    #  all_token_type_ids = all_encodes['type_ids']
+    #
+    #  all_input_lens = [len(tokens) for tokens in all_tokens]
+    #
+    #  all_padding_lens = [max_seq_length - n for n in all_input_lens]
+    #  for i, (input_ids, attention_mask, token_type_ids, token2char,
+    #          token_offsets, padding_length) in enumerate(
+    #              zip(all_input_ids, all_attention_mask, all_token_type_ids,
+    #                  all_token2char, all_token_offsets, all_padding_lens)):
+    #      all_input_ids[i] = input_ids + [0] * padding_length
+    #      all_attention_mask[i] = attention_mask + [0] * padding_length
+    #      all_token_type_ids[i] = token_type_ids + [0] * padding_length
+    #      all_token2char[i] = token2char + [0] * padding_length
+    #      all_token_offsets[i] = token_offsets + [(0, 0)] * padding_length
+
+    num_labels = len(label2id)
+    texts = [e.text_a[:max_seq_length - 2] for e in examples]
+
+    all_tokens, all_token2char, all_char2token, all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_batch_encode(
+        texts, label2id, tokenizer, max_seq_length)
+
+    def encode_subjects(subjects, num_tokens, char2token):
+        #  logger.warning(f"num_tokens: {num_tokens}")
+        start_ids = [label2id['[unused1]']] * num_tokens
+        end_ids = [label2id['[unused1]']] * num_tokens
+        subjects_id = []
+        if subjects:
+            for subject in subjects:
+                #  logger.debug(f"subject: {subject}")
+                label = subject[0]
+                start = subject[1]
+                end = subject[2]
+
+                if start < 0 or start >= len(char2token):
+                    continue
+                if end < 0 or end >= len(char2token):
+                    continue
+                start = char2token[start]
+                end = char2token[end]
+
+                start_ids[start] = label2id[label]
+                end_ids[end] = label2id[label]
+                subjects_id.append((label2id[label], start, end))
+        return subjects_id, start_ids, end_ids
+
+    all_subjects_ids = []
+    all_start_ids = []
+    all_end_ids = []
+    all_subjects = [e.labels for e in examples]
+    for input_ids, attention_mask, token_type_ids, subjects, char2token in zip(
+            all_input_ids, all_attention_mask, all_token_type_ids,
+            all_subjects, all_char2token):
+        num_tokens = len(input_ids)
+        subjects_id, start_ids, end_ids = encode_subjects(
+            subjects, num_tokens, char2token)
+
+        assert len(input_ids) == max_seq_length
+        assert len(attention_mask) == max_seq_length
+        assert len(token_type_ids) == max_seq_length
+        assert len(start_ids) == max_seq_length
+        assert len(end_ids) == max_seq_length
+
+        all_subjects_ids.append(subjects_id)
+        all_start_ids.append(start_ids)
+        all_end_ids.append(end_ids)
+
+    logger.debug(f"all_input_ids.shape: {np.array(all_input_ids).shape}")
+    logger.debug(
+        f"all_attention_mask.shape: {np.array(all_attention_mask).shape}")
+    logger.debug(
+        f"all_token_type_ids.shape: {np.array(all_token_type_ids).shape}")
+    logger.debug(f"all_start_ids.shape: {np.array(all_start_ids).shape}")
+    logger.debug(f"all_end_ids.shape: {np.array(all_end_ids).shape}")
+    logger.debug(f"all_subjects_ids.shape: {np.array(all_subjects_ids).shape}")
+    logger.debug(f"all_input_lens.shape: {np.array(all_input_lens).shape}")
+    assert np.array(all_input_ids).shape[1] == max_seq_length
+    assert np.array(all_attention_mask).shape[1] == max_seq_length
+    assert np.array(all_token_type_ids).shape[1] == max_seq_length
+
+    #  all_input_ids = torch.from_numpy(np.array(all_input_ids, dtype=np.int64))
+    #  all_attention_mask = torch.from_numpy(
+    #      np.array(all_attention_mask, dtype=np.int64))
+    #  all_token_type_ids = torch.from_numpy(
+    #      np.array(all_token_type_ids, dtype=np.int64))
+    #  all_input_lens = torch.from_numpy(np.array(all_input_lens, dtype=np.int64))
+    #  all_token_offsets = torch.from_numpy(
+    #      np.array(all_token_offsets, dtype=np.int64))
+    all_input_ids, all_attention_mask, all_token_type_ids,, all_input_lens, all_token_offsets = common_to_tensors(all_input_ids, all_attention_mask, all_token_type_ids,, all_input_lens, all_token_offsets)
+
+    all_start_ids = torch.from_numpy(np.array(all_start_ids, dtype=np.int64))
+    all_end_ids = torch.from_numpy(np.array(all_end_ids, dtype=np.int64))
+
+    all_features = [
+        InputFeature(input_ids=input_ids,
+                     attention_mask=attention_mask,
+                     token_type_ids=token_type_ids,
+                     input_len=input_len,
+                     token_offsets=token_offsets,
+                     start_ids=start_ids,
+                     end_ids=end_ids,
+                     subjects=subjects_ids,
+                     text=text)
+        for input_ids, attention_mask, token_type_ids, start_ids, end_ids,
+        subjects_ids, input_len, token_offsets, text in zip(
+            all_input_ids, all_attention_mask, all_token_type_ids,
+            all_start_ids, all_end_ids, all_subjects_ids, all_input_lens,
+            all_token_offsets, texts)
+    ]
+
+    return all_features
+
+
+def encode_examples_old(examples, label2id, tokenizer, max_seq_length):
 
     #  texts = [''.join(e.text_a) for e in examples]
     texts = [e.text_a[:max_seq_length - 2] for e in examples]
@@ -168,10 +282,13 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
                      start_ids=start_ids,
                      end_ids=end_ids,
                      subjects=subjects_ids,
-                     input_len=input_len) for input_ids, attention_mask,
-        token_type_ids, start_ids, end_ids, subjects_ids, input_len in zip(
+                     input_len=input_len,
+                     token_offsets=token_offsets)
+        for input_ids, attention_mask, token_type_ids, start_ids,
+        end_ids, subjects_ids, input_len, token_offsets in zip(
             all_input_ids, all_attention_mask, all_token_type_ids,
-            all_start_ids, all_end_ids, all_subjects_ids, all_input_lens)
+            all_start_ids, all_end_ids, all_subjects_ids, all_input_lens,
+            all_token_offsets)
     ]
     return (all_features, {
         'input_ids':

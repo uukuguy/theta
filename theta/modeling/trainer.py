@@ -1,23 +1,27 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, json, copy
+import copy
+import json
+import os
 from pathlib import Path
-from loguru import logger
-import numpy as np
 
+import numpy as np
 import torch
+from loguru import logger
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+
 from ..utils import init_theta
+from ..utils.multiprocesses import (barrier_leader_process,
+                                    barrier_member_processes,
+                                    is_master_process, is_multi_processes)
+from ..utils.progbar import Progbar
 
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
     from tensorboardX import SummaryWriter
-
-from ..utils.progbar import Progbar
-from ..utils.multiprocesses import is_master_process, is_multi_processes, barrier_leader_process, barrier_member_processes
 
 
 def get_default_optimizer_parameters(model, weight_decay):
@@ -49,11 +53,66 @@ def generate_dataloader(args,
     Sampler = SequentialSampler if keep_order else RandomSampler
     sampler = DistributedSampler(dataset) if is_multi_processes(
         args) else Sampler(dataset)
-    dataloader = DataLoader(dataset,
-                            sampler=sampler,
-                            batch_size=batch_size,
-                            collate_fn=collate_fn)
+    dataloader = DataLoader(
+        dataset,
+        sampler=sampler,
+        batch_size=batch_size,
+        #  collate_fn=None)
+        collate_fn=collate_fn)
     return dataloader
+
+
+def common_batch_encode(texts, label2id, tokenizer, max_seq_length):
+    all_encodes = tokenizer.batch_encode(texts, add_special_tokens=True)
+    all_tokens = all_encodes['tokens']
+    all_token_offsets = all_encodes['offsets']
+    all_token2char = all_encodes['token2char']
+    all_char2token = all_encodes['char2token']
+
+    all_input_ids = all_encodes['ids']
+    all_attention_mask = all_encodes['attention_mask']
+    all_token_type_ids = all_encodes['type_ids']
+
+    all_input_lens = [len(tokens) for tokens in all_tokens]
+
+    all_padding_lens = [max_seq_length - n for n in all_input_lens]
+    for i, (input_ids, attention_mask, token_type_ids, token2char,
+            token_offsets, padding_length) in enumerate(
+                zip(all_input_ids, all_attention_mask, all_token_type_ids,
+                    all_token2char, all_token_offsets, all_padding_lens)):
+
+        all_input_ids[i] = input_ids + [0] * padding_length
+        all_attention_mask[i] = attention_mask + [0] * padding_length
+        all_token_type_ids[i] = token_type_ids + [0] * padding_length
+        all_token2char[i] = token2char + [0] * padding_length
+        all_token_offsets[i] = token_offsets + [(0, 0)] * padding_length
+
+    all_input_ids = torch.from_numpy(np.array(all_input_ids, dtype=np.int64))
+    all_attention_mask = torch.from_numpy(
+        np.array(all_attention_mask, dtype=np.int64))
+    all_token_type_ids = torch.from_numpy(
+        np.array(all_token_type_ids, dtype=np.int64))
+    all_input_lens = torch.from_numpy(np.array(all_input_lens, dtype=np.int64))
+    all_token_offsets = torch.from_numpy(
+        np.array(all_token_offsets, dtype=np.int64))
+
+    return (all_tokens, all_token2char, all_char2token, all_input_ids,
+            all_attention_mask, all_token_type_ids, all_input_lens,
+            all_token_offsets)
+
+
+def common_to_tensors(all_input_ids, all_attention_mask, all_token_type_ids,
+                      all_input_lens, all_token_offsets):
+    all_input_ids = torch.from_numpy(np.array(all_input_ids, dtype=np.int64))
+    all_attention_mask = torch.from_numpy(
+        np.array(all_attention_mask, dtype=np.int64))
+    all_token_type_ids = torch.from_numpy(
+        np.array(all_token_type_ids, dtype=np.int64))
+    all_input_lens = torch.from_numpy(np.array(all_input_lens, dtype=np.int64))
+    all_token_offsets = torch.from_numpy(
+        np.array(all_token_offsets, dtype=np.int64))
+
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets
 
 
 class Trainer:
@@ -69,7 +128,10 @@ class Trainer:
     def batch_to_inputs(self, args, batch, known_labels=True):
         raise NotImplementedError
 
-    def examples_to_dataset(self, examples, max_seq_length):
+    #  def examples_to_dataset(self, examples, max_seq_length):
+    #      raise NotImplementedError
+
+    def encode_examples(self, examples, max_seq_length):
         raise NotImplementedError
 
     #  def generate_dataloader(self, args, dataset, batch_size, keep_order=True):
@@ -77,6 +139,7 @@ class Trainer:
     #      return generate_dataloader(args, dataset, batch_size, keep_order)
 
     def on_train_step(self, args, model, step, batch):
+
         inputs = self.batch_to_inputs(args, batch)
         outputs = model(**inputs)
         return outputs
@@ -88,12 +151,13 @@ class Trainer:
     #      results = {}
     #      return results
 
-    def on_eval_step(self, args, model, step, batch, batch_features):
+    #  def on_eval_step(self, args, model, step, batch, batch_features):
+    def on_eval_step(self, args, model, step, batch):
         inputs = self.batch_to_inputs(args, batch)
         outputs = model(**inputs)
         return outputs, {}
 
-    def on_eval_end(self, args, eval_dataset):
+    def on_eval_end(self, args, eval_examples):
         results = {}
         return results
 
@@ -150,11 +214,16 @@ class Trainer:
         #  if is_master_process(args):
         #      tb_writer = SummaryWriter()
 
-        train_dataset, _ = self.examples_to_dataset(train_examples,
-                                                    args.train_max_seq_length)
+        #  _, all_features = self.examples_to_dataset(train_examples,
+        #                                             args.train_max_seq_length)
+        all_features = self.encode_examples(train_examples,
+                                            args.train_max_seq_length)
+
+        logger.warning(f"Generate dataloader...")
         train_dataloader = generate_dataloader(
             args,
-            train_dataset,
+            #  train_dataset,
+            all_features,
             batch_size=args.per_gpu_train_batch_size,
             keep_order=False,
             collate_fn=self.collate_fn)
@@ -299,7 +368,9 @@ class Trainer:
                     continue
 
                 model.train()
-                batch = tuple(t.to(args.device) for t in batch)
+                batch = tuple(
+                    t.to(args.device) if isinstance(t, torch.Tensor) else t
+                    for t in batch)
 
                 outputs = self.on_train_step(args, model, step, batch)
                 #  inputs = self.batch_to_inputs(args, batch)
@@ -354,6 +425,7 @@ class Trainer:
                     loss = loss.mean()
                 if args.gradient_accumulation_steps > 1:
                     loss = loss / args.gradient_accumulation_steps
+                #  logger.info(f"loss: {loss}")
 
                 if args.fp16:
                     with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -455,6 +527,9 @@ class Trainer:
                         #  best_index = 'f1'  # ['f1', 'acc', 'recall', 'loss']
                         best_index = args.best_index
                         eval_value = eval_results[best_index]
+                        #  logger.warning(
+                        #      f"best_index: {best_index}, best_value: {best_value:.6f}, eval_value: {eval_value:.6f}"
+                        #  )
                         is_best = False
                         if best_index in ['loss']:
                             if eval_value < best_value:
@@ -545,13 +620,16 @@ class Trainer:
         return trained_steps, train_loss / trained_steps
 
     def evaluate(self, args, model, eval_examples):
-        eval_dataset, eval_features = self.examples_to_dataset(
-            eval_examples, args.eval_max_seq_length)
+        #  _, eval_features = self.examples_to_dataset(eval_examples,
+        #                                              args.eval_max_seq_length)
+        eval_features = self.encode_examples(eval_examples,
+                                             args.eval_max_seq_length)
 
-        self.on_eval_start(args, eval_dataset)
+        self.on_eval_start(args, eval_features)
         eval_dataloader = generate_dataloader(
             args,
-            eval_dataset,
+            #  eval_dataset,
+            eval_features,
             batch_size=args.per_gpu_eval_batch_size,
             keep_order=True,
             collate_fn=self.collate_fn)
@@ -572,16 +650,19 @@ class Trainer:
                        desc=f"Evaluating")
         for step, batch in enumerate(eval_dataloader):
             model.eval()
-            batch = tuple(t.to(args.device) for t in batch)
+            batch = tuple(
+                t.to(args.device) if isinstance(t, torch.Tensor) else t
+                for t in batch)
             with torch.no_grad():
                 #  inputs = self.batch_to_inputs(args, batch)
                 #  outputs = model(**inputs)
-                batch_features = eval_features[args.per_gpu_eval_batch_size *
-                                               step:args.
-                                               per_gpu_eval_batch_size *
-                                               (step + 1)]
-                outputs, results = self.on_eval_step(args, model, step, batch,
-                                                     batch_features)
+                outputs, results = self.on_eval_step(args, model, step, batch)
+                #  batch_features = eval_features[args.per_gpu_eval_batch_size *
+                #                                 step:args.
+                #                                 per_gpu_eval_batch_size *
+                #                                 (step + 1)]
+                #  outputs, results = self.on_eval_step(args, model, step, batch,
+                #                                       batch_features)
 
                 # -------- loss --------
                 loss = outputs[0]
@@ -600,7 +681,7 @@ class Trainer:
             values += [('loss', loss.item())]
             pbar.update(step + 1, values=values)
 
-        results = self.on_eval_end(args, eval_dataset)
+        results = self.on_eval_end(args, eval_features)
 
         self.eval_loss = eval_loss / eval_steps
         results['loss'] = self.eval_loss
@@ -614,11 +695,13 @@ class Trainer:
         if is_multi_processes(args) and not pred_output_dir.exists():
             os.makedirs(pred_output_dir)
 
-        test_dataset, _ = self.examples_to_dataset(test_examples,
-                                                   args.eval_max_seq_length)
+        #  test_dataset, _ = self.examples_to_dataset(test_examples,
+        #                                             args.eval_max_seq_length)
+        test_features = self.encode_examples(test_examples,
+                                             args.eval_max_seq_length)
         test_dataloader = generate_dataloader(
             args,
-            test_dataset,
+            test_features,
             batch_size=args.per_gpu_predict_batch_size,
             keep_order=True,
             collate_fn=self.collate_fn)
@@ -629,10 +712,12 @@ class Trainer:
         logger.info(f"  Batch size = {args.per_gpu_predict_batch_size}")
 
         pbar = Progbar(target=len(test_dataloader), desc=f"Predicting")
-        self.on_predict_start(args, test_dataset)
+        self.on_predict_start(args, test_features)
         for step, batch in enumerate(test_dataloader):
             model.eval()
-            batch = tuple(t.to(args.device) for t in batch)
+            batch = tuple(
+                t.to(args.device) if isinstance(t, torch.Tensor) else t
+                for t in batch)
             with torch.no_grad():
                 #  inputs = self.package_inputs_from_batch(args,
                 #                                          batch,
@@ -644,5 +729,5 @@ class Trainer:
 
             pbar.update(step + 1)
 
-        results = self.on_predict_end(args, test_dataset)
+        results = self.on_predict_end(args, test_features)
         return results

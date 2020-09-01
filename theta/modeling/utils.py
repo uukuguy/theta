@@ -6,16 +6,17 @@ from dataclasses import dataclass, field
 from typing import List
 from tqdm import tqdm
 from loguru import logger
-import mlflow
+#  import mlflow
 
 
 class Params:
     def log(self):
-        for k, v in self.__dict__.items():
-            if isinstance(v, Params):
-                v.log()
-            else:
-                mlflow.log_param(k, v)
+        pass
+        #  for k, v in self.__dict__.items():
+        #      if isinstance(v, Params):
+        #          v.log()
+        #      else:
+        #          mlflow.log_param(k, v)
 
     def debug(self):
         for k, v in self.__dict__.items():
@@ -90,6 +91,8 @@ class CommonParams(Params):
     max_train_examples: int = 0
     confidence: float = 0.5
     enable_nested_entities: bool = False
+    emotion_words_file: str = None
+    cc: str = None
 
     def __post_init__(self):
         tracking_uri = self.tracking_uri
@@ -112,6 +115,11 @@ class NerParams(Params):
 
 
 @dataclass
+class SpoParams(Params):
+    predicate_labels: List[str] = field(default_factory=list)
+
+
+@dataclass
 class GlueParams(Params):
     glue_labels: List[str] = field(default_factory=list)
 
@@ -123,31 +131,39 @@ class NerAppParams(Params):
 
 
 @dataclass
+class SpoAppParams(Params):
+    common_params: CommonParams = field(default_factory=CommonParams)
+    spo_params: SpoParams = field(default_factory=SpoParams)
+
+
+@dataclass
 class GlueAppParams(Params):
     common_params: CommonParams = field(default_factory=CommonParams)
     glue_params: GlueParams = field(default_factory=GlueParams)
 
 
 def log_global_params(args, experiment_params):
-    if args.do_experiment:
-        run_id = mlflow.active_run().info.run_id
-        mlflow.log_param("run_id", run_id)
-        mlflow.log_param("local_id", args.local_id)
-        mlflow.log_param("args", args)
-        mlflow.log_param("latest_dir", args.latest_dir)
-        mlflow.log_param("local_dir", args.local_dir)
-
-        mlflow.log_param("experiment_params", experiment_params)
-        experiment_params.log()
+    pass
+    #  if args.do_experiment:
+    #      run_id = mlflow.active_run().info.run_id
+    #      mlflow.log_param("run_id", run_id)
+    #      mlflow.log_param("local_id", args.local_id)
+    #      mlflow.log_param("args", args)
+    #      mlflow.log_param("latest_dir", args.latest_dir)
+    #      mlflow.log_param("local_dir", args.local_dir)
+    #
+    #      mlflow.log_param("experiment_params", experiment_params)
+    #      experiment_params.log()
 
 
 def archive_local_model(args, submission_file):
-    if args.do_experiment:
-        mlflow.log_param(f"{args.dataset_name}_submission_file",
-                         submission_file)
-        if submission_file:
-            mlflow.log_artifact(submission_file)
-        logger.info(f"Log {submission_file} to tracking.mlflow.")
+    #  if args.do_experiment:
+    #      if submission_file:
+    #          mlflow.log_param(f"{args.dataset_name}_submission_file",
+    #                           submission_file)
+    #          if os.path.exists(submission_file):
+    #              mlflow.log_artifact(submission_file)
+    #          logger.info(f"Log {submission_file} to tracking.mlflow.")
 
     if os.path.exists(args.local_dir):
         shutil.rmtree(args.local_dir)
@@ -208,3 +224,11 @@ def augement_entities(all_text_entities, labels_map):
                     (f"{guid}-a{ai}", text, copy.deepcopy(entities)))
 
     return aug_tokens
+
+
+def tensor_to_numpy(t):
+    return t.detach().cpu().numpy()
+
+
+def tensor_to_list(t):
+    return t.detach().cpu().numpy().to_list()

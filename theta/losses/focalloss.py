@@ -17,14 +17,15 @@ from torch.autograd import Variable
 #
 #          cross_entropy = F.cross_entropy(output, target)
 #          cross_entropy_log = torch.log(cross_entropy)
-#          logpt = - F.cross_entropy(output, target)
-#          pt    = torch.exp(logpt)
+#          logpt = -F.cross_entropy(output, target)
+#          pt = torch.exp(logpt)
 #
-#          focal_loss = -((1 - pt) ** self.gamma) * logpt
+#          focal_loss = -((1 - pt)**self.gamma) * logpt
 #
 #          focal_loss = self.alpha * focal_loss
 #
 #          return focal_loss
+
 
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2.0, alpha=None, size_average=True):
@@ -66,6 +67,33 @@ class FocalLoss(nn.Module):
         if self.size_average: return loss.mean()
         else: return loss.sum()
 
+
+#  class FocalLoss(nn.Module):
+#      def __init__(self, gamma=2.0, alpha=None, reduction='mean'):
+#          super(FocalLoss, self).__init__()
+#          self.gamma = gamma
+#          self.alpha = alpha
+#          self.reduction = reduction
+#
+#      def forward(self, output, target):
+#          # convert output to pseudo probability
+#          out_target = torch.stack([output[i, t] for i, t in enumerate(target)])
+#          probs = torch.sigmoid(out_target)
+#          focal_weight = torch.pow(1 - probs, self.gamma)
+#
+#          # add focal weight to cross entropy
+#          ce_loss = F.cross_entropy(output,
+#                                    target,
+#                                    weight=self.alpha,
+#                                    reduction='none')
+#          focal_loss = focal_weight * ce_loss
+#
+#          if self.reduction == 'mean':
+#              focal_loss = (focal_loss / focal_weight.sum()).sum()
+#          elif self.reduction == 'sum':
+#              focal_loss = focal_loss.sum()
+#
+#          return focal_loss
 
 #  class FocalLoss(nn.Module):
 #      '''Multi-class Focal loss implementation'''
