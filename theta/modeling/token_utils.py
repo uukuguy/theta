@@ -115,7 +115,7 @@ class HFTokenizer:
         return batch_encodes
 
     def save_vocabulary(self, model_path):
-        self._tokenizer.save(model_path)
+        self._tokenizer.save(model_path + "/vocab.txt")
 
 
 from transformers import BertTokenizer

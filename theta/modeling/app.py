@@ -1,10 +1,41 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
+
 from loguru import logger
 from tqdm import tqdm
 
 #  from rich import print
+
+
+def do_new(args):
+    logger.warning(f"do_new")
+    latest_dir = args.latest_dir
+
+    import shutil
+    if os.path.exists(latest_dir):
+        shutil.rmtree(latest_dir)
+    os.makedirs(latest_dir)
+
+    import uuid
+    local_id = str(uuid.uuid1()).replace('-', '')[:8]
+    local_id_file = os.path.join(latest_dir, "local_id")
+    with open(local_id_file, 'w') as wt:
+        wt.write(f"{local_id}")
+    logger.warning(f"New model id: {local_id}")
+
+    args.local_id = local_id
+    args.local_dir = os.path.join(args.saved_models_path, args.local_id)
+    from .utils import save_args
+    save_args(args, latest_dir)
+
+    logger.warning(f"dataset_name: {args.dataset_name}")
+    logger.warning(f"experiment_name: {args.experiment_name}")
+    logger.warning(f"local_id: {args.local_id}")
+    logger.warning(f"local_dir: {args.local_dir}")
+    logger.warning(f"latest_dir: {args.latest_dir}")
+    logger.warning(f"saved_models_path: {args.saved_models_path}")
 
 
 class GlueApp:
@@ -57,8 +88,8 @@ class GlueApp:
 
         assert train_data_generator is not None
         assert test_data_generator is not None
-        if eval_data_generator is None:
-            eval_data_generator = train_data_generator
+        #  if eval_data_generator is None:
+        #      eval_data_generator = train_data_generator
 
         def do_eda(args):
             from .glue_utils import show_glue_datainfo
@@ -85,7 +116,10 @@ class GlueApp:
                                     reviews_file=args.dataset_file,
                                     submission_file=args.submission_file)
 
-        if args.do_eda:
+        if args.do_new:
+            do_new(args)
+
+        elif args.do_eda:
             do_eda(args)
 
         elif args.do_submit:
@@ -101,14 +135,52 @@ class GlueApp:
             from .glue_utils import load_train_val_examples, load_test_examples
 
             def do_train(args):
-                train_examples, val_examples = load_train_val_examples(
-                    args, train_data_generator, self.glue_labels)
+                if eval_data_generator is None:
+                    train_examples, val_examples = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.glue_labels,
+                        shuffle=True,
+                        train_rate=args.train_rate,
+                        num_augments=args.num_augments)
+                else:
+                    train_examples, _ = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.glue_labels,
+                        shuffle=True,
+                        train_rate=1.0,
+                        num_augments=args.num_augments)
+
+                    _, val_examples = load_train_val_examples(
+                        args,
+                        eval_data_generator,
+                        self.glue_labels,
+                        shuffle=False,
+                        train_rate=0.0,
+                        num_augments=0)
                 trainer.train(args, train_examples, val_examples)
 
             def do_eval(args):
                 args.model_path = args.best_model_path
-                _, eval_examples = load_train_val_examples(
-                    args, train_data_generator, self.glue_labels)
+
+                if args.eval_data_generator is None:
+                    _, eval_examples = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.glue_labels,
+                        shuffle=True,
+                        train_rate=args.train_rate,
+                        num_augments=args.num_augments)
+                else:
+                    _, eval_examples = load_train_val_examples(
+                        args,
+                        eval_data_generator,
+                        self.glue_labels,
+                        shuffle=False,
+                        train_rate=0.0,
+                        num_augments=0)
+
                 model = self.load_model()
                 trainer.evaluate(args, model, eval_examples)
 
@@ -220,8 +292,9 @@ class NerApp:
 
         assert train_data_generator is not None
         assert test_data_generator is not None
-        if eval_data_generator is None:
-            eval_data_generator = train_data_generator
+
+        #  if eval_data_generator is None:
+        #      eval_data_generator = train_data_generator
 
         def do_eda(args):
             from .ner_utils import show_ner_datainfo
@@ -248,7 +321,10 @@ class NerApp:
                                     reviews_file=args.dataset_file,
                                     submission_file=args.submission_file)
 
-        if args.do_eda:
+        if args.do_new:
+            do_new(args)
+
+        elif args.do_eda:
             do_eda(args)
 
         elif args.do_submit:
@@ -281,14 +357,52 @@ class NerApp:
             from .ner_utils import load_train_val_examples, load_test_examples
 
             def do_train(args):
-                train_examples, val_examples = load_train_val_examples(
-                    args, train_data_generator, self.ner_labels)
+                if eval_data_generator is None:
+                    train_examples, val_examples = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.ner_labels,
+                        shuffle=True,
+                        train_rate=args.train_rate,
+                        num_augments=args.num_augments)
+                else:
+                    train_examples, _ = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.ner_labels,
+                        shuffle=True,
+                        train_rate=1.0,
+                        num_augments=args.num_augments)
+
+                    _, val_examples = load_train_val_examples(
+                        args,
+                        eval_data_generator,
+                        self.ner_labels,
+                        shuffle=False,
+                        train_rate=0.0,
+                        num_augments=0)
                 trainer.train(args, train_examples, val_examples)
 
             def do_eval(args):
                 args.model_path = args.best_model_path
-                _, eval_examples = load_train_val_examples(
-                    args, train_data_generator, self.ner_labels)
+
+                if eval_data_generator is None:
+                    _, eval_examples = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.ner_labels,
+                        shuffle=True,
+                        train_rate=args.train_rate,
+                        num_augments=args.num_augments)
+                else:
+                    _, eval_examples = load_train_val_examples(
+                        args,
+                        eval_data_generator,
+                        self.ner_labels,
+                        shuffle=False,
+                        train_rate=0.0,
+                        num_augments=0)
+
                 model = self.load_model()
                 trainer.evaluate(args, model, eval_examples)
 
@@ -306,13 +420,13 @@ class NerApp:
             if args.do_train:
                 do_train(args)
 
-            elif args.do_eval:
+            if args.do_eval:
                 do_eval(args)
 
-            elif args.do_predict:
+            if args.do_predict:
                 do_predict(args)
 
-            elif args.do_experiment:
+            if args.do_experiment:
                 #  import mlflow
                 #  from .utils import log_global_params
                 #  if args.tracking_uri:
@@ -385,8 +499,9 @@ class SpoApp:
 
         assert train_data_generator is not None
         assert test_data_generator is not None
-        if eval_data_generator is None:
-            eval_data_generator = train_data_generator
+
+        #  if eval_data_generator is None:
+        #      eval_data_generator = train_data_generator
 
         def do_eda(args):
             from .spo_utils import show_spo_datainfo
@@ -401,7 +516,10 @@ class SpoApp:
             from .utils import archive_local_model
             archive_local_model(args, submission_file)
 
-        if args.do_eda:
+        if args.do_new:
+            do_new(args)
+
+        elif args.do_eda:
             do_eda(args)
 
         elif args.do_submit:
@@ -414,14 +532,53 @@ class SpoApp:
             from .spo_utils import load_train_val_examples, load_test_examples
 
             def do_train(args):
-                train_examples, val_examples = load_train_val_examples(
-                    args, train_data_generator, self.predicate_labels)
+                if eval_data_generator is None:
+                    train_examples, val_examples = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.predicate_labels,
+                        shuffle=True,
+                        train_rate=args.train_rate,
+                        num_augments=args.num_augments)
+                else:
+                    train_examples, _ = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.predicate_labels,
+                        shuffle=True,
+                        train_rate=1.0,
+                        num_augments=args.num_augments)
+
+                    _, val_examples = load_train_val_examples(
+                        args,
+                        eval_data_generator,
+                        self.predicate_labels,
+                        shuffle=False,
+                        train_rate=0.0,
+                        num_augments=0)
+
                 trainer.train(args, train_examples, val_examples)
 
             def do_eval(args):
                 args.model_path = args.best_model_path
-                _, eval_examples = load_train_val_examples(
-                    args, train_data_generator, self.predicate_labels)
+
+                if eval_data_generator is None:
+                    _, eval_examples = load_train_val_examples(
+                        args,
+                        train_data_generator,
+                        self.predicate_labels,
+                        shuffle=True,
+                        train_rate=args.train_rate,
+                        num_augments=args.num_augments)
+                else:
+                    _, eval_examples = load_train_val_examples(
+                        args,
+                        eval_data_generator,
+                        self.predicate_labels,
+                        shuffle=False,
+                        train_rate=0.0,
+                        num_augments=0)
+
                 model = self.load_model()
                 trainer.evaluate(args, model, eval_examples)
 

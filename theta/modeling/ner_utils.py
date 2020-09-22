@@ -124,6 +124,8 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
                 logger.warning(
                     f"pos overflow [{guid}]:({c},{x0},{x1}) text: ({len(text)}) {text}"
                 )
+            if x0 < 0 or x1 < 0 or x0 > x1:
+                logger.warning(f"Invalid x0({x0}) and x1({x1})")
 
             labeled_text.add_entity(c, x0, x1)
             if c not in category_mentions:
@@ -153,6 +155,11 @@ def get_ner_preds_reviews(preds, examples, seg_len, seg_backoff):
                 m = x['mention']
                 #  e = s + len(m) - 1
                 #  m = text[s:e + 1]
+
+                #  if not m:
+                #      logger.warning(
+                #          f"Mention is None. guid: {guid}, text: {text}, c: {c}, s: {s}, m: {m}"
+                #      )
                 reviews_tags.append({'category': c, 'start': s, 'mention': m})
 
         reviews_tags = sorted(reviews_tags, key=lambda x: x['start'])
@@ -198,10 +205,10 @@ def save_ner_preds(args, preds, test_examples):
     return reviews_file, category_mentions_file
 
 
-def augement_entities(all_text_entities, labels_map, num_augements):
+def augment_entities(all_text_entities, labels_map, num_augments):
     aug_tokens = []
     for i, (guid, text, entities) in enumerate(
-            tqdm(all_text_entities, desc=f"Augement {num_augements}X")):
+            tqdm(all_text_entities, desc=f"Augement {num_augments}X")):
 
         #  print(f"-------------------{json_file}--------------------")
         #  print(text)
@@ -212,7 +219,7 @@ def augement_entities(all_text_entities, labels_map, num_augements):
         #      print(f"{entity['label_type']}: {text[s:e]}")
         #  print("----------------------------------------")
         if entities:
-            for ai in range(num_augements):
+            for ai in range(num_augments):
                 e_idx = random.randint(0, len(entities) - 1)
                 entity = entities[e_idx]
 
@@ -269,7 +276,7 @@ def data_seg_generator(lines,
                        ner_labels,
                        seg_len=0,
                        seg_backoff=0,
-                       num_augements=0,
+                       num_augments=0,
                        allow_overlap=False):
     assert seg_backoff >= 0 and seg_backoff <= int(seg_len * 3 / 4)
     all_text_entities = []
@@ -303,6 +310,24 @@ def data_seg_generator(lines,
                     overlap = True
                     logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
                     break
+
+                #  if s >= us[0] and s <= us[1]:  # and e > us[1]:
+                #      overlap = True
+                #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
+                #      break
+                #  if e >= us[0] and e <= us[1]:  # and s < us[0]:
+                #      overlap = True
+                #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
+                #      break
+                #  if us[0] >= s and us[0] <= e:  # and e > us[1]:
+                #      overlap = True
+                #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
+                #      break
+                #  if us[1] >= s and us[1] <= e:  # and s < us[0]:
+                #      overlap = True
+                #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
+                #      break
+
                 #  if s >= us[0] and s <= us[1]:
                 #      overlap = True
                 #      logger.warning(f"Overlap: ({s},{e}) vs ({us[0],us[1]})")
@@ -343,7 +368,7 @@ def data_seg_generator(lines,
             if labels:
                 yield guid, text_a, None, labels, seg_offset
 
-                if num_augements > 0:
+                if num_augments > 0:
                     seg_entities = [
                         {
                             'start': x.start - seg_offset,
@@ -381,10 +406,10 @@ def data_seg_generator(lines,
 
     logger.warning(f"num_overlap: {num_overlap}")
 
-    if num_augements > 0:
-        aug_tokens = augement_entities(all_text_entities,
-                                       labels_map,
-                                       num_augements=num_augements)
+    if num_augments > 0:
+        aug_tokens = augment_entities(all_text_entities,
+                                      labels_map,
+                                      num_augments=num_augments)
         for guid, text, entities in aug_tokens:
             text_a = text
             for entity in entities:
@@ -451,7 +476,7 @@ def load_ner_labeled_examples(lines,
                               ner_labels,
                               seg_len=0,
                               seg_backoff=0,
-                              num_augements=0,
+                              num_augments=0,
                               allow_overlap=False):
 
     examples = []
@@ -460,7 +485,7 @@ def load_ner_labeled_examples(lines,
             ner_labels,
             seg_len=seg_len,
             seg_backoff=seg_backoff,
-            num_augements=num_augements,
+            num_augments=num_augments,
             allow_overlap=allow_overlap):
         assert text_a is not None
         examples.append(
@@ -501,12 +526,12 @@ def show_ner_datainfo(ner_labels, train_data_generator, train_file,
     logger.info(f"****** ner_labels ******")
     logger.info(f"{len(ner_labels)} labels: {ner_labels}")
     logger.info(f"label_counts: {label_counts}")
-    logger.info(
-        f"num train examples: {len(train_lengths)}, num test examples: {len(test_lengths)}"
-    )
     logger.info(f"label_examples: {label_examples}")
     logger.info(f"")
     import numpy as np
+    logger.warning(
+        f"num train examples: {len(train_lengths)}, num test examples: {len(test_lengths)}"
+    )
     logger.info(f"****** train lengths ******")
     logger.info(f"mean: {np.mean(train_lengths):.2f}")
     logger.info(f"std: {np.std(train_lengths):.2f}")
@@ -841,7 +866,15 @@ def to_reviews_poplar(args,
     logger.info(f"Saved {poplar_data_file}")
 
 
-def load_train_val_examples(args, train_data_generator, ner_labels):
+def load_train_val_examples(args,
+                            train_data_generator,
+                            ner_labels,
+                            shuffle=True,
+                            train_rate=0.9,
+                            num_augments=0):
+    logger.warning(
+        f"shuffle: {shuffle}, train_rate: {train_rate:.2f}, num_augments: {num_augments}"
+    )
     #  from theta.modeling import LabeledText, load_ner_labeled_examples
     lines = []
     #  for guid, text, _, entities in train_data_generator(args.train_file):
@@ -863,23 +896,27 @@ def load_train_val_examples(args, train_data_generator, ner_labels):
             break
 
     allow_overlap = args.allow_overlap
-    if args.num_augements > 0:
+    if num_augments > 0:
         allow_overlap = False
+
+    logger.warning(f"len(lines): {len(lines)}")
 
     train_base_examples = load_ner_labeled_examples(
         lines,
         ner_labels,
         seg_len=args.seg_len,
         seg_backoff=args.seg_backoff,
-        num_augements=args.num_augements,
+        num_augments=num_augments,
         allow_overlap=allow_overlap)
+
+    logger.warning(f"len(train_base_examples): {len(train_base_examples)}")
 
     from ..utils import split_train_eval_examples
     train_examples, val_examples = split_train_eval_examples(
         train_base_examples,
-        train_rate=args.train_rate,
+        train_rate=train_rate,
         fold=args.fold,
-        shuffle=True)
+        shuffle=shuffle)
 
     logger.info(f"Loaded {len(train_examples)} train examples, "
                 f"{len(val_examples)} val examples.")
@@ -895,3 +932,67 @@ def load_test_examples(args, test_data_generator):
 
     logger.info(f"Loaded {len(test_base_examples)} test examples.")
     return test_base_examples
+
+
+def ner_evaluate(dev_file, reviews_file, eval_data_generator):
+    dev_data = []
+    for guid, text, _, tags in eval_data_generator(dev_file):
+        pos = [(x['start'], x['start'] + len(x['mention'])) for x in tags]
+        pos = sorted(pos)
+        #  logger.info(f"{pos}")
+        dev_data.append(pos)
+
+    reviews_data = []
+    from theta.modeling import ner_data_generator
+    for guid, text, _, tags in ner_data_generator(reviews_file):
+        pos = [(x['start'], x['start'] + len(x['mention'])) for x in tags]
+        pos = sorted(pos)
+        #  logger.info(f"{pos}")
+        reviews_data.append(pos)
+
+    total_right = 0
+    total_preds = 0
+    total_targets = 0
+    P = 0.0
+    R = 0.0
+    F1 = 0.0
+    for pred, target in tqdm(zip(reviews_data, dev_data)):
+        num_preds = len(pred)
+        num_targets = len(target)
+        right = set(pred) & set(target)
+        num_right = len(right)
+
+        total_right += num_right
+        total_preds += num_preds
+        total_targets += num_targets
+
+        if num_preds == 0:
+            p = 0.0
+            r = 0.0
+        else:
+            p = num_right / len(pred)
+            r = num_right / len(target)
+        if p == 0.0 and r == 0.0:
+            f1 = 0.0
+        else:
+            f1 = 2 * p * r / (p + r)
+        P += p
+        R += r
+        F1 += f1
+    logger.info(
+        f"total_right: {total_right}, total_preds: {total_preds}, total_targets: {total_targets}"
+    )
+    micro_f1 = F1 / len(dev_data)
+    micro_p = P / len(dev_data)
+    micro_r = R / len(dev_data)
+
+    logger.warning(
+        f"Micro: P: {micro_p:.6f}, R: {micro_r:.6f}, F1: {micro_f1:.6f}")
+
+    macro_p = total_right / total_preds
+    macro_r = total_right / total_targets
+    macro_f1 = 2 * macro_p * macro_r / (macro_p + macro_r)
+    logger.warning(
+        f"Macro: P: {macro_p:.6f}, R: {macro_r:.6f}, F1: {macro_f1:.6f}")
+
+    return macro_p, macro_r, macro_f1, micro_p, micro_r, micro_f1

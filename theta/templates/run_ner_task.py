@@ -59,4 +59,4 @@ if __name__ == '__main__':
     app.run(train_data_generator,
             test_data_generator,
             generate_submission=generate_submission,
-            eval_data_generator=None)
+            eval_data_generator=train_data_generator)

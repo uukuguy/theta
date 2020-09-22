@@ -8,6 +8,7 @@ from loguru import logger
 def add_common_args(parser):
 
     # --------------- Command arguments ---------------
+    parser.add_argument("--do_new", action="store_true", help="New project")
     parser.add_argument("--do_train",
                         action="store_true",
                         help="Whether to run training.")
@@ -351,7 +352,7 @@ def add_common_args(parser):
     parser.add_argument("--seg_len", type=int, default=256, help="")
     parser.add_argument("--seg_backoff", type=int, default=64, help="")
     parser.add_argument("--max_span_len", type=int, default=32, help="")
-    parser.add_argument("--num_augements", type=int, default=0, help="")
+    parser.add_argument("--num_augments", type=int, default=0, help="")
     parser.add_argument(
         "--loss_type",
         type=str,
@@ -373,6 +374,8 @@ def add_common_args(parser):
     parser.add_argument("--to_reviews_poplar", action="store_true")
     parser.add_argument("--start_page", type=int, default=0)
     parser.add_argument("--max_pages", type=int, default=100)
+
+    parser.add_argument("--reviews_file", type=str, default=None)
 
     parser.add_argument("--emotion_words_file",
                         type=str,
@@ -457,8 +460,11 @@ def get_main_args(
         #  os.symlink(local_id, args.latest_dir)
 
     ensure_latest_dir(args)
-    args.local_dir = os.path.join(args.output_dir, args.local_id)
+    args.saved_models_path = os.path.join(args.output_dir, "saved_models")
+    if not os.path.exists(args.saved_models_path):
+        os.makedirs(args.saved_models_path)
     args.best_model_path = os.path.join(args.latest_dir, "best")
+    args.local_dir = os.path.join(args.saved_models_path, args.local_id)
 
     logname = args.task_name
     logger.add(os.path.join(args.latest_dir, f"{logname}.log"))
@@ -470,5 +476,6 @@ def get_main_args(
     logger.warning(f"local_id: {args.local_id}")
     logger.warning(f"local_dir: {args.local_dir}")
     logger.warning(f"latest_dir: {args.latest_dir}")
+    logger.warning(f"saved_models_path: {args.saved_models_path}")
 
     return args

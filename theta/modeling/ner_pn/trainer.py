@@ -68,6 +68,7 @@ class BertPnForNer(BertPreTrainedModel):
         sequence_output = self.dropout(sequence_output)
 
         logits = self.classifier(sequence_output)
+
         outputs = (logits,
                    )  # add hidden states and attention if they are here
 
@@ -80,7 +81,8 @@ class BertPnForNer(BertPreTrainedModel):
         if labels is not None:
 
             #  active_logits = get_active_logits(logits, self.num_labels)
-            active_labels = labels.view(-1, self.num_labels * 2).float()
+            #  active_labels = labels.view(-1, self.num_labels * 2).float()
+            active_labels = labels.reshape(-1, self.num_labels * 2).float()
 
             #  logger.warning(f"active_logits.shape: {active_logits.shape}")
             #  logger.warning(f"active_labels.shape: {active_labels.shape}")
@@ -472,6 +474,10 @@ class NerTrainer(Trainer):
                     args.id2label[x[0]], token_offsets[x[1]][0].item(),
                     token_offsets[x[2]][-1].item() - 1
                 ] for x in R]
+                label_entities = [
+                    x for x in label_entities
+                    if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0
+                ]
             else:
                 label_entities = []
 

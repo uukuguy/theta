@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, shutil, random
+import os, shutil, random, json
 from dataclasses import dataclass, field
 from typing import List
 from tqdm import tqdm
@@ -63,7 +63,7 @@ class CommonParams(Params):
     seg_backoff: int = 64
     num_train_epochs: int = 5
     fold: int = 0
-    num_augements: int = 0
+    num_augments: int = 0
     enable_kd: bool = False
     kd_coeff: float = 1.0
     kd_decay: float = 0.995
@@ -178,52 +178,52 @@ def archive_local_model(args, submission_file):
     #  )
 
 
-def augement_entities(all_text_entities, labels_map):
-    aug_tokens = []
-    for i, (guid, text, entities) in enumerate(
-            tqdm(all_text_entities, desc=f"Augement {num_augements}X")):
-
-        #  print(f"-------------------{json_file}--------------------")
-        #  print(text)
-        #  print(entities)
-        #  for entity in entities:
-        #      s = entity['start_pos']
-        #      e = entity['end_pos']
-        #      print(f"{entity['label_type']}: {text[s:e]}")
-        #  print("----------------------------------------")
-        if entities:
-            for ai in range(num_augements):
-                e_idx = random.randint(0, len(entities) - 1)
-                entity = entities[e_idx]
-
-                label_type = entity['label_type']
-                s = entity['start_pos']
-                e = entity['end_pos']
-
-                labels = labels_map[label_type]
-                idx = random.randint(0, len(labels) - 1)
-                new_entity_text = labels[idx]
-
-                text = text[:s] + new_entity_text + text[e:]
-
-                assert len(new_entity_text) >= 0
-                delta = len(new_entity_text) - (e - s)
-
-                entity['end_pos'] = entity['start_pos'] + len(new_entity_text)
-                entity['mention'] = new_entity_text
-
-                assert text[
-                    entity['start_pos']:entity['end_pos']] == new_entity_text
-
-                for n, e in enumerate(entities):
-                    if n > e_idx:
-                        e['start_pos'] += delta
-                        e['end_pos'] += delta
-
-                aug_tokens.append(
-                    (f"{guid}-a{ai}", text, copy.deepcopy(entities)))
-
-    return aug_tokens
+#  def augement_entities(all_text_entities, labels_map):
+#      aug_tokens = []
+#      for i, (guid, text, entities) in enumerate(
+#              tqdm(all_text_entities, desc=f"Augement {num_augements}X")):
+#
+#          #  print(f"-------------------{json_file}--------------------")
+#          #  print(text)
+#          #  print(entities)
+#          #  for entity in entities:
+#          #      s = entity['start_pos']
+#          #      e = entity['end_pos']
+#          #      print(f"{entity['label_type']}: {text[s:e]}")
+#          #  print("----------------------------------------")
+#          if entities:
+#              for ai in range(num_augements):
+#                  e_idx = random.randint(0, len(entities) - 1)
+#                  entity = entities[e_idx]
+#
+#                  label_type = entity['label_type']
+#                  s = entity['start_pos']
+#                  e = entity['end_pos']
+#
+#                  labels = labels_map[label_type]
+#                  idx = random.randint(0, len(labels) - 1)
+#                  new_entity_text = labels[idx]
+#
+#                  text = text[:s] + new_entity_text + text[e:]
+#
+#                  assert len(new_entity_text) >= 0
+#                  delta = len(new_entity_text) - (e - s)
+#
+#                  entity['end_pos'] = entity['start_pos'] + len(new_entity_text)
+#                  entity['mention'] = new_entity_text
+#
+#                  assert text[
+#                      entity['start_pos']:entity['end_pos']] == new_entity_text
+#
+#                  for n, e in enumerate(entities):
+#                      if n > e_idx:
+#                          e['start_pos'] += delta
+#                          e['end_pos'] += delta
+#
+#                  aug_tokens.append(
+#                      (f"{guid}-a{ai}", text, copy.deepcopy(entities)))
+#
+#      return aug_tokens
 
 
 def tensor_to_numpy(t):
@@ -232,3 +232,19 @@ def tensor_to_numpy(t):
 
 def tensor_to_list(t):
     return t.detach().cpu().numpy().to_list()
+
+
+def save_args(args, model_path):
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
+    #  torch.save(args, os.path.join(model_path, "training_args.bin"))
+    logger.info(f"Save args in {model_path}/training_args.json")
+    json.dump(
+        {
+            k: v
+            for k, v in args.__dict__.items() if v is None
+            or type(v) in [bool, str, int, float, dict, list, tuple]
+        },
+        open(os.path.join(model_path, "training_args.json"), 'w'),
+        ensure_ascii=False,
+        indent=2)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import numpy as np
 from loguru import logger
 #  import mlflow
@@ -439,13 +440,17 @@ MODEL_CLASSES = {
 
 
 def load_pretrained_tokenizer(args):
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-    tokenizer = tokenizer_class.from_pretrained(
-        args.model_path,
-        do_lower_case=args.do_lower_case,
-        is_english=args.is_english,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
+    #  config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    #  tokenizer = tokenizer_class.from_pretrained(
+    #      args.model_path,
+    #      do_lower_case=args.do_lower_case,
+    #      is_english=args.is_english,
+    #      cache_dir=args.cache_dir if args.cache_dir else None,
+    #  )
+    from ..token_utils import HFTokenizer
+    tokenizer = HFTokenizer(os.path.join(args.model_path, 'vocab.txt'),
+                            lowercase=args.do_lower_case,
+                            cc=args.cc)
 
     return tokenizer
 
@@ -501,14 +506,22 @@ def collate_fn(batch):
     batch should be a list of (sequence, target, length) tuples...
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
-    all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens = map(
-        torch.stack, zip(*batch))
-    max_len = max(all_lens).item()
+    #  all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens = map(
+    #      torch.stack, zip(*batch))
+    all_input_ids = torch.stack([e.input_ids for e in batch])
+    all_attention_mask = torch.stack([e.attention_mask for e in batch])
+    all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
+    all_labels = torch.stack([e.labels for e in batch])
+    all_input_lens = torch.stack([e.input_len for e in batch])
+    all_token_offsets = torch.stack([e.token_offsets for e in batch])
+
+    max_len = max(all_input_lens).item()
     all_input_ids = all_input_ids[:, :max_len]
     all_attention_mask = all_attention_mask[:, :max_len]
     all_token_type_ids = all_token_type_ids[:, :max_len]
     all_labels = all_labels[:, :max_len]
-    return all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_lens
+
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_labels
 
 
 def load_model(args):
@@ -547,13 +560,24 @@ def build_default_model(args):
     return model, optimizer, scheduler
 
 
-def preds_to_entities(preds, id2label, markup='bios', autofix=False):
+def preds_to_entities(preds,
+                      id2label,
+                      token_offsets,
+                      markup='bios',
+                      autofix=False):
     #  logger.debug(f"{preds}")
     preds = [id2label[x] for x in preds]
     label_entities = get_entities(preds,
                                   id2label=id2label,
                                   markup=markup,
                                   autofix=autofix)
+
+    label_entities = [(c, token_offsets[s + 1][0],
+                       token_offsets[e + 1][-1] - 1)
+                      for c, s, e in label_entities]
+    label_entities = [
+        x for x in label_entities if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0
+    ]
     return label_entities
 
 
@@ -591,8 +615,8 @@ class NerTrainer(Trainer):
         inputs = {
             "input_ids": batch[0],
             "attention_mask": batch[1],
-            "labels": batch[3] if known_labels else None,
-            'input_lens': batch[4]
+            "labels": batch[5] if known_labels else None,
+            'input_lens': batch[3]
         }
         if args.model_type != "distilbert":
             # XLM and RoBERTa don"t use segment_ids
@@ -628,7 +652,7 @@ class NerTrainer(Trainer):
         self.error_entities = []
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
-    def on_eval_step(self, args, model, step, batch, batch_features):
+    def on_eval_step(self, args, model, step, batch):
         #  outputs = self.on_train_step(args, model, step, batch)
 
         inputs = self.batch_to_inputs(args, batch)
@@ -771,6 +795,9 @@ class NerTrainer(Trainer):
     #  def on_predict_step(self, args, test_dataset, step, model, inputs,
     #                      outputs):
     def on_predict_step(self, args, model, step, batch):
+
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_labels = batch
+
         inputs = self.batch_to_inputs(args, batch, known_labels=False)
         attention_mask = inputs['attention_mask']
 
@@ -837,7 +864,7 @@ class NerTrainer(Trainer):
 
         #  batch_preds = model.crf.decode(logits)
 
-        def to_entities(args, preds):
+        def to_entities(args, preds, token_offsets):
             #  logger.debug(f"{preds}")
 
             #  preds = [args.id2label[x] for x in preds]
@@ -845,7 +872,9 @@ class NerTrainer(Trainer):
             #                                args.id2label,
             #                                args.markup,
             #                                autofix=args.autofix)
-            label_entities = preds_to_entities(preds, id2label=args.id2label)
+            label_entities = preds_to_entities(preds,
+                                               id2label=args.id2label,
+                                               token_offsets=token_offsets)
 
             #  logger.debug(f"{label_entities}")
             json_d = {}
@@ -862,9 +891,10 @@ class NerTrainer(Trainer):
         #  json_d = to_entities(args, preds)
         #  self.pred_results.append(json_d)
 
-        for preds in batch_preds:
+        for i, preds in enumerate(batch_preds):
+            token_offsets = all_token_offsets[i]
             preds = preds[1:-1]  # [CLS]XXXX[SEP]
-            json_d = to_entities(args, preds)
+            json_d = to_entities(args, preds, token_offsets)
             self.pred_results.append(json_d)
 
     def on_predict_end(self, args, test_dataset):

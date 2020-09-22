@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# NER数据集持久化，与标注文件之间的互转。
+# SPO数据集持久化，与标注文件之间的互转。
 
 import json
 import os
@@ -42,21 +42,52 @@ class EntityTag:
         return self
 
 
+# 关系标签
+@dataclass
+class RelTag:
+    predicate: str = None
+    sub: EntityTag = None
+    obj: EntityTag = None
+
+    def clear(self):
+        self.predicate = None
+        self.sub = None
+        self.obj = None
+
+    def to_dict(self):
+        return {
+            'predicate': self.predicate,
+            'sub': self.sub.to_dict(),
+            'obj': self.obj.to_dict()
+        }
+
+    def from_dict(self, dict_data):
+        self.clear()
+        self.predicate = dict_data.get('predicate', None)
+        self.sub = dict_data.get('sub', None)
+        if self.sub:
+            self.sub = EntityTag().from_dict(self.sub)
+        self.obj = dict_data.get('obj', None)
+        if self.obj:
+            self.obj = EntityTag().from_dict(self.obj)
+        return self
+
+
 # 打过标签的文本
 @dataclass
 class TaggedText:
     guid: str
     text: str
-    tags: List[EntityTag] = field(default_factory=list)
+    spo_list: List[RelTag] = field(default_factory=list)
 
     def clear(self):
-        self.tags = []
+        self.spo_list = []
 
     def to_dict(self):
         return {
             'guid': self.guid,
             'text': self.text,
-            'tags': [x.to_dict() for x in self.tags]
+            'spo_list': [x.to_dict() for x in self.spo_list]
         }
 
     def from_dict(self, dict_data):
@@ -66,21 +97,20 @@ class TaggedText:
         elif 'text' in dict_data:
             self.text = dict_data['text']
         elif 'tags' in dict_data:
-            for x in dict_data['tags']:
-                self.tags.append(EntityTag().from_dict(x))
+            for x in dict_data['spo_list']:
+                self.spo_list.append(RelTag().from_dict(x))
 
         return self
 
-    def add_tag(self, tag: EntityTag):
-        self.tags.append(tag)
+    def add_tag(self, tag: RelTag):
+        self.spo_list.append(tag)
 
 
-# 实体标签数据集
-class NerDataset:
-    def __init__(self, name=None, ner_labels=None, ner_connections=None):
+# 实体关系标签数据集
+class SpoDataset:
+    def __init__(self, name=None, predicate_labels=None):
         self.name = name
-        self.ner_labels = ner_labels
-        self.ner_connections = ner_connections
+        self.predicate_labels = predicate_labels
         self.tagged_text_list: List[TaggedText] = []
 
     def __len__(self):
@@ -102,9 +132,9 @@ class NerDataset:
     def extend(self, other_dataset):
         self.tagged_text_list.extend(other_dataset)
 
-    def save(self, filename: str, format="lines"):
+    def save(self, filename: str, format=None):
         """
-        {'guid': '0000', 'text': "sample text", 'tags': [{'category': "实体类别1", start: 10, mention: "实体文本"}, ...]}
+        {'guid': '0000', 'text': "sample text", 'spo_list': [{'category': "实体类别1", start: 10, mention: "实体文本"}, ...]}
         """
 
         if format == "json":
@@ -113,16 +143,12 @@ class NerDataset:
                       open(filename, 'w'),
                       ensure_ascii=False,
                       indent=2)
-        elif format == 'lines':
+        else:
             with open(filename, 'w') as wt:
                 for tagged_text in tqdm(self.tagged_text_list,
                                         desc="Save tagged text list."):
                     data_dict = tagged_text.to_dict()
                     wt.write(f"{json.dumps(data_dict, ensure_ascii=False)}\n")
-        else:
-            raise ValueError(
-                f"Bad format: {format}. Format must be one of ['json', 'lines']"
-            )
         logger.info(f"Saved {filename}")
 
     def load_from_file(self, filename: str):
@@ -153,23 +179,13 @@ class NerDataset:
         return self.load(brat_data_generator, brat_data_dir)
 
     def load(self, data_generator, data_source=None):
-        categories = []
         for guid, text, _, json_tags in data_generator(data_source):
             tagged_text = TaggedText(guid, text)
             for json_tag in json_tags:
-                entity_tag = EntityTag().from_dict(json_tag)
+                logger.info(f"json_tag: {json_tag}")
+                entity_tag = RelTag().from_dict(json_tag)
                 tagged_text.add_tag(entity_tag)
-
-                category = entity_tag.category
-                if category not in categories:
-                    categories.append(category)
-
             self.tagged_text_list.append(tagged_text)
-
-        logger.info(f"Loaded categories: {categories}")
-        if not self.ner_labels:
-            self.ner_labels = categories
-
         return self
 
     def export_to_brat(self, brat_data_dir, max_pages=10):
@@ -179,6 +195,10 @@ class NerDataset:
                           self.ner_connections,
                           brat_data_dir,
                           max_pages=max_pages)
+
+    def import_from_brat(self, brat_data_dir):
+        from .brat import import_brat_files
+        import_brat_files(self.tagged_text_list, brat_data_dir)
 
     def export_to_poplar(self, poplar_file, max_pages=100, start_page=0):
         from .poplar import save_poplar_file
@@ -234,84 +254,38 @@ class NerDataset:
         return identical_tags_list, a_only_tags_list, b_only_tags_list
 
 
-def merge_ner_datasets(ner_dataset_list, min_dups=2):
-    if len(ner_dataset_list) == 0:
+def merge_spo_datasets(spo_dataset_list, min_dups=2):
+    if len(spo_dataset_list) == 0:
         return None
     from copy import deepcopy
-    merged_dataset = deepcopy(ner_dataset_list[0])
-    if len(ner_dataset_list) > 1:
-        for i, X in enumerate(zip(*ner_dataset_list)):
-            tags_list = [x.tags for x in X]
+    merged_dataset = deepcopy(spo_dataset_list[0])
+    if len(spo_dataset_list) > 1:
+        for i, X in enumerate(zip(*spo_dataset_list)):
+            spo_list_list = [x.spo_list for x in X]
             from ..utils import merge_entities
-            new_tags = merge_entities(
-                tags_list,
+            new_spo_list = merge_entities(
+                spo_list_list,
                 key=lambda x: x.start * 1000 + len(x.mention),
                 min_dups=min_dups)
-            merged_dataset[i].tags = new_tags
+            merged_dataset[i].spo_list = new_spo_list
 
     return merged_dataset
 
 
-def mix_ner_datasets(ner_dataset_list):
-    """
-    以ner_data_list[0]为基准，只保留实体文本区间不重叠的部分
-    """
-    if len(ner_dataset_list) == 0:
-        return None
-    from copy import deepcopy
-    mixed_dataset = deepcopy(ner_dataset_list[0])
-    for i, X in enumerate(zip(*ner_dataset_list)):
-        mixed_tags = mixed_dataset[i].tags
-        #  logger.info(f"mixed_tags: {mixed_tags}")
-        tags_list = [x.tags for x in X]
-        for tags in tags_list:
-            for tag in tags:
-                c = tag.category
-                s = tag.start
-                m = tag.mention
-                e = s + len(m) - 1
-                overlap = False
-                for tag0 in mixed_tags:
-                    #  logger.info(f"tag0: {tag0}")
-                    c0 = tag0.category
-                    s0 = tag0.start
-                    m0 = tag0.mention
-                    e0 = s0 + len(m0) - 1
-                    if s >= s0 and s <= e0:
-                        overlap = True
-                        break
-                    if e >= s0 and e <= e0:
-                        overlap = True
-                        break
-                    if s0 >= s and s0 <= e:
-                        overlap = True
-                        break
-                    if e0 >= s and e0 <= e:
-                        overlap = True
-                        break
-                if not overlap:
-                    mixed_tags.append(EntityTag(c, s, m))
-        mixed_dataset[i].tags = mixed_tags
-    return mixed_dataset
-
-
-def ner_data_generator(train_file,
-                       dataset_name=None,
-                       ner_labels=None,
-                       ner_connections=None):
-    ner_dataset = NerDataset("kgcs_entities", ner_labels, ner_connections)
-    ner_dataset.load_from_file(train_file)
-    for tagged_text in tqdm(ner_dataset):
+def spo_data_generator(train_file, dataset_name=None, predicate_labels=None):
+    spo_dataset = SpoDataset(dataset_name, predicate_labels)
+    spo_dataset.load_from_file(train_file)
+    for tagged_text in tqdm(spo_dataset):
         guid = tagged_text.guid
         text = tagged_text.text
-        tags = [x.to_dict() for x in tagged_text.tags]
-        yield guid, text, None, tags
+        spo_list = [x.to_dict() for x in tagged_text.spo_list]
+        yield guid, text, None, spo_list
 
 
-def load_ner_dataset(filename):
-    ner_dataset = NerDataset()
-    ner_dataset.load_from_file(filename)
-    return ner_dataset
+def load_spo_dataset(filename):
+    spo_dataset = SpoDataset()
+    spo_dataset.load_from_file(filename)
+    return spo_dataset
 
 
 if __name__ == '__main__':

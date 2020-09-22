@@ -1,36 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from loguru import logger
 from tqdm import tqdm
+from loguru import logger
 
-# -------------------- Parameters and data --------------------
-from ner_task import (generate_submission, ner_connections, ner_labels,
-                      train_data_generator, test_data_generator)
-from ner_params import experiment_params
-experiment_params.ner_params.ner_labels = ner_labels
+# -------------------- Data --------------------
+from spo_task import predicate_labels, train_data_generator, test_data_generator, generate_submission
+from spo_params import experiment_params
+experiment_params.spo_params.predicate_labels = predicate_labels
 
-# -------------------- NerApp --------------------
-from theta.modeling.app import NerApp
+# -------------------- SpoApp --------------------
+from theta.modeling.app import SpoApp
 
 
-class MyApp(NerApp):
+class MyApp(SpoApp):
     def __init__(self,
                  experiment_params,
-                 ner_labels: list,
-                 ner_connections: list,
+                 predicate_labels,
                  add_special_args=None):
+        super(MyApp, self).__init__(experiment_params, predicate_labels,
+                                    add_special_args)
 
-        super(MyApp, self).__init__(experiment_params, ner_labels,
-                                    ner_connections, add_special_args)
-
-    def run(
-        self,
-        train_data_generator,
-        test_data_generator,
-        generate_submission=None,
-        eval_data_generator=None,
-    ):
+    def run(self,
+            train_data_generator,
+            test_data_generator,
+            generate_submission=None,
+            eval_data_generator=None):
 
         args = self.args
 
@@ -52,11 +47,10 @@ if __name__ == '__main__':
         return parser
 
     app = MyApp(experiment_params,
-                ner_labels=ner_labels,
-                ner_connections=ner_connections,
+                predicate_labels,
                 add_special_args=add_special_args)
 
     app.run(train_data_generator,
             test_data_generator,
             generate_submission=generate_submission,
-            eval_data_generator=None)
+            eval_data_generator=train_data_generator)

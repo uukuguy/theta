@@ -2,26 +2,29 @@
 # -*- coding: utf-8 -*-
 
 import os
-import numpy as np
-from loguru import logger
 from collections import Counter
-#  import mlflow
 
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
-
-from ...losses import FocalLoss, DiceLoss, LabelSmoothingCrossEntropy
-
-from .utils import CNerTokenizer, SeqEntityScore, get_entities
-from ..models.linears import PoolerStartLogits, PoolerEndLogits
-from ..trainer import Trainer, get_default_optimizer_parameters
-from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
-
+from loguru import logger
+from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import AutoConfig, BertConfig, BertTokenizer, BertTokenizerFast, AutoModelForTokenClassification
-from transformers.modeling_bert import BertPreTrainedModel, BertModel
+
+from transformers import (AutoConfig, AutoModelForTokenClassification,
+                          BertConfig, BertTokenizer, BertTokenizerFast)
+from transformers.modeling_bert import BertModel, BertPreTrainedModel
+
+from ...losses import DiceLoss, FocalLoss, LabelSmoothingCrossEntropy
+from ...utils.multiprocesses import (barrier_leader_process,
+                                     barrier_member_processes,
+                                     is_multi_processes)
+from ..models.linears import PoolerEndLogits, PoolerStartLogits
+from ..trainer import Trainer, get_default_optimizer_parameters
+from .utils import CNerTokenizer, SeqEntityScore, get_entities
+
+#  import mlflow
 
 
 class BertSpanForNer(BertPreTrainedModel):
@@ -282,13 +285,13 @@ def collate_fn(batch):
     batch should be a list of (sequence, target, length) tuples...
     Returns a padded tensor of sequences sorted from longest to shortest,
     """
-    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens = map(
+    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_input_lens = map(
     #      torch.stack, zip(*batch))
     #  from .dataset import batch_to_input_data
-    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_lens, all_subjects, all_token_offsets = batch_to_input_data(
+    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_input_lens, all_subjects, all_token_offsets = batch_to_input_data(
     #      batch)
     all_input_ids = torch.stack([e.input_ids for e in batch])
-    all_attention_mask = torch.stack([e.all_attention_mask for e in batch])
+    all_attention_mask = torch.stack([e.attention_mask for e in batch])
     all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
     all_input_lens = torch.stack([e.input_len for e in batch])
     all_token_offsets = torch.stack([e.token_offsets for e in batch])
@@ -297,7 +300,7 @@ def collate_fn(batch):
     all_end_ids = torch.stack([e.end_ids for e in batch])
     all_subjects = [e.subjects for e in batch]
 
-    max_len = max(all_lens).item()
+    max_len = max(all_input_lens).item()
     all_input_ids = all_input_ids[:, :max_len]
     all_attention_mask = all_attention_mask[:, :max_len]
     all_token_type_ids = all_token_type_ids[:, :max_len]
@@ -306,7 +309,7 @@ def collate_fn(batch):
     all_start_ids = all_start_ids[:, :max_len]
     all_end_ids = all_end_ids[:, :max_len]
 
-    return all_input_ids, all_attention_mask, all_token_type_ids, all_start_ids, all_end_ids, all_input_lens, all_subjects, all_token_offsets
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects
 
 
 def bert_extract_item(start_logits, end_logits, lens):
@@ -328,6 +331,10 @@ def bert_extract_item(start_logits, end_logits, lens):
                 break
             if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
                 break
+    S = [x for x in S if x[1] <= x[2]]
+
+    for x in S:
+        assert x[1] >= 0 and x[2] > 0 and x[1] <= x[2], f"S: {S}"
 
     return S
 
@@ -422,8 +429,8 @@ class NerTrainer(Trainer):
         inputs = {
             "input_ids": batch[0],
             "attention_mask": batch[1],
-            "start_positions": batch[3],
-            "end_positions": batch[4],
+            "start_positions": batch[5],
+            "end_positions": batch[6],
         }
         if args.model_type != "distilbert":
             # XLM and RoBERTa don"t use segment_ids
@@ -448,7 +455,7 @@ class NerTrainer(Trainer):
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
     def on_eval_step(self, args, model, step, batch):
-        all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
 
         eval_loss = 0.0
         num_eval_steps = 0
@@ -496,7 +503,7 @@ class NerTrainer(Trainer):
         self.pred_results = []
 
     def on_predict_step(self, args, model, step, batch):
-        all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
 
         for i in range(all_input_ids.size()[0]):
             inputs = {
@@ -521,6 +528,10 @@ class NerTrainer(Trainer):
                     args.id2label[x[0]], token_offsets[x[1]][0].item(),
                     token_offsets[x[2]][-1].item() - 1
                 ] for x in R]
+                label_entities = [
+                    x for x in label_entities
+                    if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0
+                ]
 
             else:
                 label_entities = []

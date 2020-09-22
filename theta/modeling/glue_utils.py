@@ -6,6 +6,7 @@ from tqdm import tqdm
 from loguru import logger
 from theta.utils import seg_generator
 from dataclasses import dataclass, field
+import numpy as np
 #  import mlflow
 
 from ..utils import seg_generator
@@ -54,7 +55,12 @@ def load_glue_examples(data_generator, examples_file):
     return examples
 
 
-def load_train_val_examples(args, train_data_generator, glue_labels):
+def load_train_val_examples(args,
+                            train_data_generator,
+                            glue_labels,
+                            shuffle=True,
+                            train_rate=0.9,
+                            num_augments=0):
     all_train_examples = load_glue_examples(train_data_generator,
                                             args.train_file)
 
@@ -65,7 +71,7 @@ def load_train_val_examples(args, train_data_generator, glue_labels):
         all_train_examples,
         train_rate=args.train_rate,
         fold=args.fold,
-        shuffle=True)
+        shuffle=shuffle)
 
     #  random.shuffle(all_train_examples)
     #  num_train_examples = int(len(all_train_examples) * args.train_rate)
@@ -133,7 +139,11 @@ def save_glue_preds(args, preds, test_examples):
         guid = input_example.guid
         text_a = input_example.text_a or ""
         text_b = input_example.text_b or ""
-        label = args.id2label[v]
+        if isinstance(v, list) or isinstance(v, np.ndarray):
+            label = [args.id2label[i] for i, x in enumerate(v) if x]
+        else:
+            label = args.id2label[v]
+
         reviews[guid] = {
             'guid': guid,
             'text_a': text_a,

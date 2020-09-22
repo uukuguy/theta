@@ -180,7 +180,7 @@ def load_spo_labeled_examples(data_generator,
                               predicate_labels,
                               seg_len=0,
                               seg_backoff=0,
-                              num_augements=0,
+                              num_augments=0,
                               allow_overlap=False):
 
     examples = []
@@ -240,7 +240,12 @@ def load_spo_labeled_examples(data_generator,
     return examples
 
 
-def load_train_val_examples(args, train_data_generator, predicate_labels):
+def load_train_val_examples(args,
+                            train_data_generator,
+                            predicate_labels,
+                            shuffle=True,
+                            train_rate=0.9,
+                            num_augments=0):
     lines = []
 
     train_base_examples = load_spo_labeled_examples(
@@ -248,15 +253,15 @@ def load_train_val_examples(args, train_data_generator, predicate_labels):
         predicate_labels,
         seg_len=args.seg_len,
         seg_backoff=args.seg_backoff,
-        num_augements=args.num_augements,
+        num_augments=num_augments,
         allow_overlap=args.allow_overlap)
 
     from ..utils import split_train_eval_examples
     train_examples, val_examples = split_train_eval_examples(
         train_base_examples,
-        train_rate=args.train_rate,
+        train_rate=train_rate,
         fold=args.fold,
-        shuffle=True)
+        shuffle=shuffle)
 
     logger.info(f"Loaded {len(train_examples)} train examples, "
                 f"{len(val_examples)} val examples.")

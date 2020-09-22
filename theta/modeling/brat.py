@@ -178,10 +178,6 @@ def export_brat_files(tagged_text_list,
                        max_pages=max_pages)
 
 
-def import_brat_files(tagged_text_list, brat_data_dir):
-    pass
-
-
 def brat_data_generator(brat_data_dir):
 
     import glob
@@ -200,9 +196,9 @@ def brat_data_generator(brat_data_dir):
             ann_line = ann_line.strip()
             if len(ann_line) == 0:
                 continue
-            logger.info(f"ann_line: {ann_line}")
+            #  logger.info(f"ann_line: {ann_line}")
             toks = ann_line.split('\t')
-            logger.info(f"toks: {toks}")
+            #  logger.info(f"toks: {toks}")
             tid, label, mention = ann_line.split('\t')
             c, s, e = label.split(' ')
             s = int(s)
@@ -222,7 +218,7 @@ def brat_data_generator(brat_data_dir):
         pages = [(x_b[2], x_b[0], x_b[1], x_e[0], x_e[1])
                  for x_b, x_e in zip(b_list, e_list)]
 
-        logger.warning(f"pages: {pages}")
+        #  logger.warning(f"pages: {pages}")
 
         for i, page in enumerate(pages):
             guid, head_x0, head_x1, tail_x0, tail_x1 = page

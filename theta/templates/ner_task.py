@@ -1,14 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json
-import os
-import re
-
+import os, json, re
 import numpy as np
 import pandas as pd
-from loguru import logger
 from tqdm import tqdm
+from loguru import logger
 
 ner_labels = []
 ner_connections = []
@@ -22,7 +19,7 @@ def clean_text(text):
 
 def train_data_generator(train_file):
     if train_file is None:
-        train_file = 'data/train.json'
+        train_file = 'data/task2_train_reformat.tsv'
 
     # 标准theta ner文件格式
     from theta.modeling import ner_data_generator
@@ -56,45 +53,52 @@ def train_data_generator(train_file):
 
 def test_data_generator(test_file):
     if test_file is None:
-        test_file = 'data/test.json'
+        test_file = 'data/test.tsv',
 
     from theta.modeling import ner_data_generator
     for guid, text, _, _ in ner_data_generator(train_file):
         # 逐行输出guid, text
         yield guid, text, None, None
 
+    #  df_test = pd.read_csv(test_file, sep='\t')
+    #  df_test = df_test.fillna("")
+    #
+    #  for i, row in tqdm(df_test.iterrows(), desc="Load test"):
+    #      guid = f"{i}"
+    #      text = clean_text(row.context)
+    #
+    #      yield guid, text, None, None
+    #
 
-def generate_submission(args, reviews_file=None, submission_file=None):
-    if reviews_file is None:
-        reviews_file = args.reviews_file
-    reviews = json.load(open(reviews_file, 'r'))
 
-    if submission_file is None:
-        submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json"
+def generate_submission(args):
+    reviews = json.load(open(args.reviews_file, 'r'))
 
-    json.dump(reviews,
+    submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json"
+
+    final_result = {}
+    for guid, json_data in reviews.items():
+        entities = []
+        for json_entity in json_data['tags']:
+            c = json_entity['category']
+            s = json_entity['start']
+            m = json_entity['mention']
+            e = s + len(m)
+
+            entities.append({
+                'label_type': c,
+                'overlap': 0,
+                'start_pos': s,
+                'end_pos': e
+            })
+
+        final_result[guid] = entities
+
+    json.dump(final_result,
               open(submission_file, 'w'),
               ensure_ascii=False,
               indent=2)
 
     logger.info(f"Saved {len(reviews)} lines in {submission_file}")
 
-
-def eval_data_generator(eval_file):
-    if eval_file is None:
-        eval_file = 'data/eval.json'
-    raise NotImplementedError
-
-
-def evaluate(dev_file, reviews_file):
-    from theta.modeling import ner_evaluate
-    macro_acc, macro_recall, macro_f1, micro_acc, micro_recall, micro_f1 = ner_evaluate(
-        dev_file, reviews_file, eval_data_generator)
-
-
-if __name__ == '__main__':
-    import sys
-    dev_file = sys.argv[1]
-    reviews_file = sys.argv[2]
-
-    evaluate(dev_file, reviews_file)
+    return submission_file

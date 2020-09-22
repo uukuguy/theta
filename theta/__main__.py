@@ -12,7 +12,7 @@ from loguru import logger
 from rich.console import Console
 from tqdm import tqdm
 
-from .modeling import NerDataset
+from .modeling import NerDataset, SpoDataset
 
 console = Console()
 
@@ -24,6 +24,7 @@ def find_models(args):
 
     output_dir = args.output_dir
     files = glob.glob(os.path.join(output_dir, "*/local_id"))
+    files += glob.glob(os.path.join(output_dir, "saved_models", "*/local_id"))
 
     for file in files:
         local_id = None
@@ -289,32 +290,48 @@ def export_train_data(args):
     if 'ner_connections' in dataset_module.__dict__:
         ner_connections = dataset_module.ner_connections
 
-    #  logger.info(f"ner_labels: {ner_labels}")
-    #  logger.info(f"ner_connections: {ner_connections}")
-    console.log("[bold cyan]ner_labels:[/bold cyan]", ner_labels)
-    console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
+    predicate_labels = None
+    if 'predicate_labels' in dataset_module.__dict__:
+        predicate_labels = dataset_module.predicate_labels
 
-    ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
-    ner_dataset.load(train_data_generator)
-    ner_dataset.info()
+    if predicate_labels:
+        console.log("[bold cyan]predicate_labels:[/bold cyan]",
+                    predicate_labels)
+        spo_dataset = SpoDataset(dataset_name, predicate_labels)
+        spo_dataset.load(train_data_generator)
+        spo_dataset.info()
+        export_format = args.format
+        if export_format == "json":
+            dataset_file = args.dataset_file
+            ner_dataset.save(dataset_file)
+        else:
+            raise Exception(
+                f"Bad export format {export_format}. Only available ['json']")
+    elif ner_labels:
+        console.log("[bold cyan]ner_labels:[/bold cyan]", ner_labels)
+        console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
 
-    export_format = args.format
-    if export_format == "json":
-        dataset_file = args.dataset_file
-        ner_dataset.save(dataset_file)
-    elif export_format == "brat":
-        brat_data_dir = args.brat_data_dir
-        if not brat_data_dir:
-            brat_data_dir = "brat_data"
-        if not os.path.exists(brat_data_dir):
-            os.makedirs(brat_data_dir)
-        ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
-    elif export_format == "poplar":
-        pass
-    else:
-        raise Exception(
-            f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
-        )
+        ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
+        ner_dataset.load(train_data_generator)
+        ner_dataset.info()
+
+        export_format = args.format
+        if export_format == "json":
+            dataset_file = args.dataset_file
+            ner_dataset.save(dataset_file)
+        elif export_format == "brat":
+            brat_data_dir = args.brat_data_dir
+            if not brat_data_dir:
+                brat_data_dir = "brat_data"
+            if not os.path.exists(brat_data_dir):
+                os.makedirs(brat_data_dir)
+            ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
+        elif export_format == "poplar":
+            pass
+        else:
+            raise Exception(
+                f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
+            )
 
 
 def reviews_data_generator(reviews_file):
@@ -354,9 +371,11 @@ def export_test_data(args):
     if args.local_id:
         local_id = args.local_id[0]
     else:
-        local_id = 'latest'
+        args_path = get_model_args_path(None)
+        training_args = json.load(open(args_path))
+        local_id = training_args['local_id']
 
-    reviews_file = os.path.join(args.output_dir, local_id,
+    reviews_file = os.path.join(args.output_dir, 'saved_models', local_id,
                                 f"{dataset_name}_reviews_{local_id}.json")
 
     ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
@@ -365,7 +384,7 @@ def export_test_data(args):
 
     export_format = args.format
     if export_format == "json":
-        data_file = "tmp.json"
+        data_file = args.dataset_file
         ner_dataset.save(data_file)
     elif export_format == "brat":
         brat_data_dir = args.brat_data_dir
@@ -417,6 +436,7 @@ def json_to_brat(args):
     ner_dataset.info()
 
     brat_data_dir = args.brat_data_dir
+    logger.warning(f"brat_data_dir: {brat_data_dir}")
     if not brat_data_dir:
         brat_data_dir = "brat_data"
     if not os.path.exists(brat_data_dir):
@@ -427,6 +447,22 @@ def json_to_brat(args):
 def brat_to_json(args):
     dataset_file = args.dataset_file
     brat_data_dir = args.brat_data_dir
+
+    dataset = NerDataset()
+
+    dataset.load_from_brat_data(brat_data_dir)
+    dataset.save(dataset_file)
+
+    logger.info(f"Brat {brat_data_dir} to {dataset_file}")
+
+
+def run_brat(args):
+    brat_collections_dir = os.path.abspath(args.brat_collections_dir)
+    brat_port = args.brat_port
+
+    os.system(
+        f" docker run -it --rm -p {brat_port}:8001 -v {brat_collections_dir}:/brat/data/collections  ootb/brat:latest"
+    )
 
 
 def diff_ner_datasets(args):
@@ -487,6 +523,56 @@ def merge_ner_datasets(args):
     logger.info(f"Saved {merged_dataset_file}")
 
 
+def mix_ner_datasets(args):
+    dataset_files = args.mix_ner_datasets
+    assert dataset_files and len(dataset_files) >= 2
+
+    ner_datasets = [NerDataset(f"{i}") for i in range(len(dataset_files))]
+    for dataset, filename in zip(ner_datasets, dataset_files):
+        if not os.path.exists(filename):
+            local_id = filename
+            guess_filename = f"{args.output_dir}/{local_id}/{args.dataset_name}_reviews_{local_id}.json"
+            if not os.path.exists(guess_filename):
+                raise Exception(f"NerDataset {filename} does not exists.")
+            filename = guess_filename
+        #  dataset.load_from_file(filename)
+        logger.info(f"{filename}")
+        dataset.load(reviews_data_generator, filename)
+
+    from theta.modeling import mix_ner_datasets as do_mix_ner_datasets
+    mixed_dataset = do_mix_ner_datasets(ner_datasets)
+
+    mixed_dataset_file = args.dataset_file
+    mixed_dataset.save(mixed_dataset_file, format='json')
+    logger.info(f"Saved {mixed_dataset_file}")
+
+
+def get_theta_src_path():
+    # -------- 检查THETA_SRC环工--------
+    if not "THETA_SRC" in os.environ:
+        logger.error(
+            f"THETA_SRC environment variable must be set to theta src path.")
+        return None
+    theta_src_path = os.environ['THETA_SRC']
+    if not os.path.exists(os.path.join(theta_src_path, "__init__.py")):
+        logger.error(
+            f"Ensure theta source must be located in THETA_SRC({theta_src_path})"
+        )
+        return None
+
+    return theta_src_path
+
+
+def init(args):
+    theta_src_path = get_theta_src_path()
+    if theta_src_path:
+        app_type = args.app_type
+        dataset_name = args.dataset_name
+        os.system(f"cp {theta_src_path}/templates/{app_type}/* .")
+        os.system(
+            f"bash {theta_src_path}/templates/theta_{app_type}_init.sh {dataset_name}")
+
+
 def build_deepcode(args, theta_src=False):
     """
     构建完整可复现的模型训练代码Docker容器环境。
@@ -499,8 +585,10 @@ def build_deepcode(args, theta_src=False):
         return
     training_args_file = "outputs/latest/training_args.json"
     if not os.path.exists(training_args_file):
-        logger.error(f"{training_args_file} does not exists.")
-        return
+        os.system(f"python run_{args.dataset_name}.py --do_new")
+        if not os.path.exists(training_args_file):
+            logger.error(f"{training_args_file} does not exists.")
+            return
 
     # -------- deepcode路径 --------
     deepcode_dir = "deepcode"
@@ -512,27 +600,38 @@ def build_deepcode(args, theta_src=False):
     # -------- Copy theta source --------
     if theta_src:
         # -------- 检查THETA_SRC环工--------
-        if not "THETA_SRC" in os.environ:
-            logger.error(
-                f"THETA_SRC environment variable must be set to theta src path."
-            )
-            return
-        theta_src_path = os.environ['THETA_SRC']
-        if not os.path.exists(os.path.join(theta_src_path, "__init__.py")):
-            logger.error(
-                f"Ensure theta source must be located in THETA_SRC({theta_src_path})"
-            )
-            return
+        #  if not "THETA_SRC" in os.environ:
+        #      logger.error(
+        #          f"THETA_SRC environment variable must be set to theta src path."
+        #      )
+        #      return
+        #  theta_src_path = os.environ['THETA_SRC']
+        #  if not os.path.exists(os.path.join(theta_src_path, "__init__.py")):
+        #      logger.error(
+        #          f"Ensure theta source must be located in THETA_SRC({theta_src_path})"
+        #      )
+        #      return
+        theta_src_path = get_theta_src_path()
 
-        os.system(
-            f"rsync -arv --exclude examples --exclude __pycache__ --exclude *.pyc  $THETA_SRC ./{deepcode_dir}/"
-        )
+        if theta_src_path:
+            os.system(
+                f"rsync -arv --exclude examples --exclude __pycache__ --exclude *.pyc  $THETA_SRC ./{deepcode_dir}/"
+            )
 
     # -------- Copy model src --------
     if os.path.exists("README.md"):
         os.system(f"cp README.md *.py {deepcode_dir}/")
-    os.system(f"rsync -arv --exclude rawdata data {deepcode_dir}/")
-    os.system(f"cp *.py Makefile.* *.sh requirements.txt {deepcode_dir}/")
+    #  cmd = f"rsync -rLptgoDv --exclude rawdata data {deepcode_dir}/"
+    cmd = f"rsync -rLptgoDv data {deepcode_dir}/"
+    logger.info(cmd)
+    os.system(cmd)
+    cmd = f"rsync -rLptgoDv --exclude best outputs/latest {deepcode_dir}/outputs/"
+    logger.info(cmd)
+    os.makedirs(f"{deepcode_dir}/outputs/latest")
+    os.system(cmd)
+    cmd = f"cp *.py Makefile.* *.sh *.json requirements.txt {deepcode_dir}/"
+    logger.info(cmd)
+    os.system(cmd)
     home_dir = os.environ['HOME']
     if os.path.exists(f"{home_dir}/.pip/pip.conf"):
         os.system(f"cp {home_dir}/.pip/pip.conf  {deepcode_dir}/")
@@ -552,6 +651,75 @@ def build_deepcode(args, theta_src=False):
 
 
 def run_deepcode(args, gpus="device=0"):
+    if args.dataset_name and args.local_id:
+        dataset_name = args.dataset_name
+        local_id = args.local_id[0]
+        model_path = args.model_path
+    else:
+        training_args_file = "outputs/latest/training_args.json"
+        if not os.path.exists(training_args_file):
+            logger.error(f"{training_args_file} does not exists.")
+            return
+
+        with open(training_args_file, 'r') as rd:
+            training_args = json.load(open(training_args_file, 'r'))
+
+        for k, v in training_args.items():
+            if not k.startswith('_'):
+                print(f"{k}: {v}")
+        dataset_name = training_args['dataset_name']
+        if args.local_id:
+            local_id = args.local_id[0]
+        else:
+            local_id = training_args['local_id']
+        if args.model_path:
+            model_path = args.model_path
+        else:
+            model_path = training_args['model_path']
+
+    pwd = os.environ['PWD']
+    cmd = f"docker run --gpus {gpus} -it --rm -v {pwd}/outputs/saved_models:/deepcode/outputs/saved_models -v {pwd}/submissions:/deepcode/submissions -v {model_path}:{model_path} {dataset_name}:{local_id} /bin/bash"
+    logger.info(f"cmd: {cmd}")
+    os.system(cmd)
+
+
+def pull_deepcode(args):
+    if not "THETA_REGISTRY_URL" in os.environ:
+        logger.error(
+            f"THETA_REGISTRY_URL environment variable must be set to docker registry."
+        )
+        return
+    theta_registry_url = os.environ['THETA_REGISTRY_URL']
+
+    local_id = args.local_id[0]
+    dataset_name = args.dataset_name
+    pwd = os.environ['PWD']
+    deepcode_name = f"{dataset_name}:{local_id}"
+    cmd = f"docker pull {theta_registry_url}/{deepcode_name} && docker tag {theta_registry_url}/{deepcode_name} {deepcode_name}"
+    logger.info(f"cmd: {cmd}")
+    os.system(cmd)
+
+
+def exec_deepcode(args):
+
+    gpus = args.gpus
+    local_id = args.local_id[0]
+    dataset_name = args.dataset_name
+    model_path = args.model_path
+    pwd = os.environ['PWD']
+    cmd = f"docker run --gpus {gpus} -it --rm -v {pwd}:/deepcode/outputs/saved_models -v {pwd}:/deepcode/submissions -v {model_path}:{model_path} {dataset_name}:{local_id} /bin/bash"
+    logger.info(f"cmd: {cmd}")
+    os.system(cmd)
+
+
+def push_deepcode(args, gpus="device=0"):
+    if not "THETA_REGISTRY_URL" in os.environ:
+        logger.error(
+            f"THETA_REGISTRY_URL environment variable must be set to docker registry."
+        )
+        return
+    theta_registry_url = os.environ['THETA_REGISTRY_URL']
+
     training_args_file = "outputs/latest/training_args.json"
     if not os.path.exists(training_args_file):
         logger.error(f"{training_args_file} does not exists.")
@@ -567,15 +735,27 @@ def run_deepcode(args, gpus="device=0"):
     local_id = training_args['local_id']
     model_path = training_args['model_path']
 
-    cmd = f"docker run --gpus {gpus} -it --rm -v {model_path}:{model_path} {dataset_name}:{local_id} /bin/bash"
+    #  registry_url = "registry.cn-shanghai.aliyuncs.com/upside-down"
+    remote_image = f"{theta_registry_url}/{dataset_name}:{local_id}"
+
+    cmd = f"docker tag {dataset_name}:{local_id} {remote_image} && docker push {remote_image}"
     logger.info(f"cmd: {cmd}")
     os.system(cmd)
+
+
+def version(args):
+    from theta.__version__ import __version__
+    print(f"Version: {__version__}")
 
 
 def main(args):
     find_models(args)
 
-    if args.list:
+    if args.version:
+        version(args)
+    elif args.init:
+        init(args)
+    elif args.list:
         list_models(args)
     elif args.diff:
         diff_models(args)
@@ -595,16 +775,26 @@ def main(args):
         import_poplar_data(args)
     elif args.json_to_brat:
         json_to_brat(args)
+    elif args.run_brat:
+        run_brat(args)
     elif args.brat_to_json:
         brat_to_json(args)
     elif args.diff_ner_datasets:
         diff_ner_datasets(args)
     elif args.merge_ner_datasets:
         merge_ner_datasets(args)
+    elif args.mix_ner_datasets:
+        mix_ner_datasets(args)
     elif args.build_deepcode:
         build_deepcode(args, theta_src=True)
     elif args.run_deepcode:
         run_deepcode(args)
+    elif args.push_deepcode:
+        push_deepcode(args)
+    elif args.pull_deepcode:
+        pull_deepcode(args)
+    elif args.exec_deepcode:
+        exec_deepcode(args)
     else:
         print("Usage: theta [list|diff]")
 
@@ -613,6 +803,8 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("--version", action='store_true')
+    parser.add_argument("--init", action='store_true')
     parser.add_argument("--new", action='store_true')
     parser.add_argument("--use", action='store_true')
     parser.add_argument("--diff", action='store_true')
@@ -621,9 +813,21 @@ def get_args():
     parser.add_argument("--detail", action='store_true')
     parser.add_argument("--output_dir", default="./outputs")
     parser.add_argument("--local_id", action='append')
+    parser.add_argument("--gpus", default="device=0")
 
+    parser.add_argument("--run_brat", action='store_true')
+
+    parser.add_argument("--app_type",
+                        default='ner',
+                        choices=['ner', 'glue', 'spo'])
     parser.add_argument("--dataset_name", default=None)
-    parser.add_argument("--brat_data_dir", default="brat_data")
+    parser.add_argument("--brat_data_dir", default=None)
+    parser.add_argument("--brat_collections_dir",
+                        default="brat_data/collections")
+    parser.add_argument("--brat_port", default=8001)
+    parser.add_argument(
+        "--model_path",
+        default="/opt/share/pretrained/pytorch/bert-base-chinese")
     parser.add_argument("--format",
                         default='json',
                         choices=['json', 'brat', 'poplar'])
@@ -646,16 +850,30 @@ def get_args():
 
     parser.add_argument("--merge_ner_datasets",
                         nargs="+",
-                        help='Merge datasets')
+                        help='Merge NER datasets')
     parser.add_argument("--min_dups",
                         type=int,
                         default=2,
                         help="Min duplicates of merge tags.")
 
+    parser.add_argument("--mix_ner_datasets",
+                        nargs="+",
+                        help='Mix NER datasets')
+
     parser.add_argument("--build_deepcode",
                         action="store_true",
                         help="Build deep code docker image.")
     parser.add_argument("--run_deepcode",
+                        action="store_true",
+                        help="Run deep code docker.")
+    parser.add_argument("--push_deepcode",
+                        action="store_true",
+                        help="Push deep code docker.")
+    parser.add_argument("--pull_deepcode",
+                        action="store_true",
+                        help="Pull deep code docker.")
+
+    parser.add_argument("--exec_deepcode",
                         action="store_true",
                         help="Run deep code docker.")
 

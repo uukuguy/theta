@@ -1,27 +1,36 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json, copy
+import copy
+import json
 from pathlib import Path
-from tqdm import tqdm
-from loguru import logger
+
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-from torch.utils.data import RandomSampler, SequentialSampler
-from ...utils.multiprocesses import barrier_leader_process, barrier_member_processes, is_multi_processes
+from loguru import logger
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset)
+from tqdm import tqdm
+
+from ...utils.multiprocesses import (barrier_leader_process,
+                                     barrier_member_processes,
+                                     is_multi_processes)
 from ..ner_utils import InputExample
+from ..trainer import common_batch_encode, common_to_tensors
 
 
-class InputFeatures(object):
+class InputFeature(object):
     """A single set of features of data."""
-    def __init__(self, input_ids, input_mask, input_len, segment_ids,
-                 label_ids):
+    def __init__(self, input_ids, attention_mask, token_type_ids, input_len,
+                 token_offsets, labels, text):
         self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.label_ids = label_ids
+        self.attention_mask = attention_mask
+        self.token_type_ids = token_type_ids
         self.input_len = input_len
+        self.token_offsets = token_offsets
+
+        self.labels = labels
+        self.text = text
 
     def __repr__(self):
         return str(self.to_json_string())
@@ -38,11 +47,16 @@ class InputFeatures(object):
                           sort_keys=True) + "\n"
 
 
-def to_BIOS(labels, num_tokens):
+def to_BIOS(labels, num_tokens, char2token):
     bios_labels = ['O'] * num_tokens
     #  logger.debug(f"num_tokens: {num_tokens}, labels: {labels}")
     for c, s, e in labels:
         assert s <= e
+        if s < 0 or e < 0:
+            logger.warning(f"num_tokens: {num_tokens}, labels: {labels}")
+            continue
+        s = char2token[s] - 1
+        e = char2token[e] - 1
         if s == e:
             bios_labels[s] = f"S-{c}"
         else:
@@ -54,6 +68,65 @@ def to_BIOS(labels, num_tokens):
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
+
+    num_labels = len(label2id)
+    texts = [e.text_a[:max_seq_length - 2] for e in examples]
+
+    all_tokens, all_token2char, all_char2token, all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_batch_encode(
+        texts, label2id, tokenizer, max_seq_length)
+
+    def encode_labels(example, labels, input_len, char2token):
+        #  logger.warning(f"text: {example.text_a}")
+        if labels is not None:
+            #  logger.debug(f"input_len: {input_len}, labels: {labels}")
+            label_ids = [
+                label2id[x] for x in to_BIOS(labels, input_len, char2token)
+            ]
+        else:
+            label_ids = [label2id['O']] * input_len
+        return label_ids
+
+    all_labels = [[label2id['[CLS]']] +
+                  encode_labels(e, e.labels, input_len - 2, char2token) +
+                  [label2id['[SEP]']] + [0] * (max_seq_length - input_len)
+                  for e, input_len, char2token in zip(examples, all_input_lens,
+                                                      all_char2token)]
+    #  logger.warning(f"all_labels[0]: {all_labels[0]}")
+
+    logger.debug(f"all_input_ids.shape: {np.array(all_input_ids).shape}")
+    logger.debug(
+        f"all_attention_mask.shape: {np.array(all_attention_mask).shape}")
+    logger.debug(
+        f"all_token_type_ids.shape: {np.array(all_token_type_ids).shape}")
+    logger.debug(f"all_labels.shape: {np.array(all_labels).shape}")
+    logger.debug(f"all_input_lens.shape: {np.array(all_input_lens).shape}")
+    assert np.array(all_input_ids).shape[1] == max_seq_length
+    assert np.array(all_attention_mask).shape[1] == max_seq_length
+    assert np.array(all_token_type_ids).shape[1] == max_seq_length
+
+    all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_to_tensors(
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens,
+        all_token_offsets)
+
+    all_labels = torch.from_numpy(np.array(all_labels, dtype=np.int64))
+
+    all_features = [
+        InputFeature(input_ids=input_ids,
+                     attention_mask=attention_mask,
+                     token_type_ids=token_type_ids,
+                     input_len=input_len,
+                     token_offsets=token_offsets,
+                     labels=labels,
+                     text=text) for input_ids, attention_mask,
+        token_type_ids, input_len, token_offsets, text, labels in zip(
+            all_input_ids, all_attention_mask, all_token_type_ids,
+            all_input_lens, all_token_offsets, texts, all_labels)
+    ]
+
+    return all_features
+
+
+def encode_examples_old(examples, label2id, tokenizer, max_seq_length):
 
     texts = [e.text_a[:max_seq_length - 2] for e in examples]
 
@@ -123,11 +196,11 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     assert np.array(all_token_type_ids).shape[1] == max_seq_length
 
     all_features = [
-        InputFeatures(input_ids=input_ids,
-                      input_mask=attention_mask,
-                      segment_ids=token_type_ids,
-                      label_ids=label_ids,
-                      input_len=input_len)
+        InputFeature(input_ids=input_ids,
+                     input_mask=attention_mask,
+                     segment_ids=token_type_ids,
+                     label_ids=label_ids,
+                     input_len=input_len)
         for input_ids, attention_mask, token_type_ids, label_ids, input_len in
         zip(all_input_ids, all_attention_mask, all_token_type_ids, all_labels,
             all_input_lens)
@@ -147,20 +220,19 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     })
 
 
-def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
-    all_features, outputs = encode_examples(examples, label2id, tokenizer,
-                                            max_seq_length)
-
-    dataset = TensorDataset(
-        outputs['input_ids'],
-        outputs['attention_mask'],
-        outputs['token_type_ids'],
-        outputs['labels'],
-        outputs['input_lens'],
-    )
-
-    return dataset, all_features
-
+#  def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
+#      all_features, outputs = encode_examples(examples, label2id, tokenizer,
+#                                              max_seq_length)
+#
+#      dataset = TensorDataset(
+#          outputs['input_ids'],
+#          outputs['attention_mask'],
+#          outputs['token_type_ids'],
+#          outputs['labels'],
+#          outputs['input_lens'],
+#      )
+#
+#      return dataset, all_features
 
 #  def convert_examples_to_features(
 #      examples,
@@ -265,7 +337,7 @@ def examples_to_dataset(examples, label2id, tokenizer, max_seq_length):
 #              logger.debug(f"label_ids: {' '.join([str(x) for x in label_ids])}")
 #
 #          features.append(
-#              InputFeatures(input_ids=input_ids,
+#              InputFeature(input_ids=input_ids,
 #                            input_mask=input_mask,
 #                            input_len=input_len,
 #                            segment_ids=segment_ids,

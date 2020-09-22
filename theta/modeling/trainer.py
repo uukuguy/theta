@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from tqdm import tqdm
 from loguru import logger
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -78,8 +79,9 @@ def common_batch_encode(texts, label2id, tokenizer, max_seq_length):
     all_padding_lens = [max_seq_length - n for n in all_input_lens]
     for i, (input_ids, attention_mask, token_type_ids, token2char,
             token_offsets, padding_length) in enumerate(
-                zip(all_input_ids, all_attention_mask, all_token_type_ids,
-                    all_token2char, all_token_offsets, all_padding_lens)):
+                tqdm(zip(all_input_ids, all_attention_mask, all_token_type_ids,
+                         all_token2char, all_token_offsets, all_padding_lens),
+                     desc="common_batch_encode")):
 
         all_input_ids[i] = input_ids + [0] * padding_length
         all_attention_mask[i] = attention_mask + [0] * padding_length
@@ -173,16 +175,8 @@ class Trainer:
         return []
 
     def save_args(self, args, model_path):
-        #  torch.save(args, os.path.join(model_path, "training_args.bin"))
-        json.dump(
-            {
-                k: v
-                for k, v in args.__dict__.items() if v is None
-                or type(v) in [bool, str, int, float, dict, list, tuple]
-            },
-            open(os.path.join(model_path, "training_args.json"), 'w'),
-            ensure_ascii=False,
-            indent=2)
+        from .utils import save_args
+        save_args(args, model_path)
 
     def save_model(self, args, model, tokenizer, optimizer, scheduler,
                    model_path):
@@ -259,6 +253,9 @@ class Trainer:
             optimizer.load_state_dict(torch.load(optimizer_saved_file))
             scheduler.load_state_dict(torch.load(scheduler_saved_file))
 
+        model = model.to(args.device)
+        #  logger.warning(
+        #      f"model.named_parameters(): {list(model.named_parameters())}")
         if args.fp16:
             try:
                 from apex import amp

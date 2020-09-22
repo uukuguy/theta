@@ -373,6 +373,12 @@ def split_train_eval_examples(examples: [list, np.array],
                               fold=0,
                               shuffle=False,
                               random_type=None):
+    if train_rate == 0.0:
+        return [], examples
+    if train_rate == 1.0:
+        return examples, []
+    assert train_rate > 0.0 and train_rate < 1.0
+
     examples = list(examples)
     num_examples = len(examples)
 

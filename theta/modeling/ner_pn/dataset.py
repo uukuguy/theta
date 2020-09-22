@@ -68,6 +68,7 @@ class InputFeature(object):
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
+    logger.info(f"Encoding examples...")
 
     num_labels = len(label2id)
     texts = [e.text_a[:max_seq_length - 2] for e in examples]
@@ -105,9 +106,10 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     all_subjects_ids = []
     all_labels = []
     all_subjects = [e.labels for e in examples]
-    for input_ids, attention_mask, token_type_ids, subjects, char2token, input_len in zip(
-            all_input_ids, all_attention_mask, all_token_type_ids,
-            all_subjects, all_char2token, all_input_lens):
+    for input_ids, attention_mask, token_type_ids, subjects, char2token, input_len in tqdm(
+            zip(all_input_ids, all_attention_mask, all_token_type_ids,
+                all_subjects, all_char2token, all_input_lens),
+            desc="encode_subjects"):
         num_tokens = len(input_ids)
         subjects_id, labels = encode_subjects(subjects, num_tokens, char2token,
                                               input_len)
@@ -120,17 +122,26 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
         all_subjects_ids.append(subjects_id)
         all_labels.append(labels)
 
-    logger.debug(f"all_input_ids.shape: {np.array(all_input_ids).shape}")
-    logger.debug(
-        f"all_attention_mask.shape: {np.array(all_attention_mask).shape}")
-    logger.debug(
-        f"all_token_type_ids.shape: {np.array(all_token_type_ids).shape}")
-    logger.debug(f"all_labels.shape: {np.array(all_labels).shape}")
-    logger.debug(f"all_subjects_ids.shape: {np.array(all_subjects_ids).shape}")
-    logger.debug(f"all_input_lens.shape: {np.array(all_input_lens).shape}")
-    assert np.array(all_input_ids).shape[1] == max_seq_length
-    assert np.array(all_attention_mask).shape[1] == max_seq_length
-    assert np.array(all_token_type_ids).shape[1] == max_seq_length
+    logger.debug(f"all_input_ids.shape: {all_input_ids.shape}")
+    logger.debug(f"all_attention_mask.shape: {all_attention_mask.shape}")
+    logger.debug(f"all_token_type_ids.shape: {all_token_type_ids.shape}")
+    logger.debug(f"all_input_lens.shape: {all_input_lens.shape}")
+    logger.debug(f"all_labels.shape: {len(all_labels)}")
+    logger.debug(f"all_subjects_ids.shape: {len(all_subjects_ids)}")
+    assert all_input_ids.shape[1] == max_seq_length
+    assert all_attention_mask.shape[1] == max_seq_length
+    assert all_token_type_ids.shape[1] == max_seq_length
+    #  logger.debug(f"all_input_ids.shape: {np.array(all_input_ids).shape}")
+    #  logger.debug(
+    #      f"all_attention_mask.shape: {np.array(all_attention_mask).shape}")
+    #  logger.debug(
+    #      f"all_token_type_ids.shape: {np.array(all_token_type_ids).shape}")
+    #  logger.debug(f"all_labels.shape: {np.array(all_labels).shape}")
+    #  logger.debug(f"all_subjects_ids.shape: {np.array(all_subjects_ids).shape}")
+    #  logger.debug(f"all_input_lens.shape: {np.array(all_input_lens).shape}")
+    #  assert np.array(all_input_ids).shape[1] == max_seq_length
+    #  assert np.array(all_attention_mask).shape[1] == max_seq_length
+    #  assert np.array(all_token_type_ids).shape[1] == max_seq_length
 
     all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_to_tensors(
         all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens,
@@ -157,10 +168,11 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
                      labels=labels,
                      subjects=subjects_ids)
         for input_ids, attention_mask, token_type_ids, input_len,
-        token_offsets, text, labels, subjects_ids in zip(
-            all_input_ids, all_attention_mask, all_token_type_ids,
-            all_input_lens, all_token_offsets, texts, all_labels,
-            all_subjects_ids)
+        token_offsets, text, labels, subjects_ids in tqdm(
+            zip(all_input_ids, all_attention_mask, all_token_type_ids,
+                all_input_lens, all_token_offsets, texts, all_labels,
+                all_subjects_ids),
+            desc="build all_features")
     ]
 
     return all_features

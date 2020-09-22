@@ -748,10 +748,10 @@ class SpoTrainer(Trainer):
         else:
             self.tokenizer = load_pretrained_tokenizer(args)
 
-        from bert4keras.tokenizers import Tokenizer
-        self.tokenizer_k = Tokenizer(os.path.join(args.model_path,
-                                                  'vocab.txt'),
-                                     do_lower_case=True)
+        #  from bert4keras.tokenizers import Tokenizer
+        #  self.tokenizer_k = Tokenizer(os.path.join(args.model_path,
+        #                                            'vocab.txt'),
+        #                               do_lower_case=True)
 
         if build_model is None:
             self.build_model = build_default_model

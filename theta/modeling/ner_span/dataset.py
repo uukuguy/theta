@@ -22,8 +22,8 @@ from ..trainer import common_batch_encode, common_to_tensors
 
 class InputFeature(object):
     """A single set of features of data."""
-    def __init__(self, input_ids, attention_mask, token_type_ids, input_len, token_offsets,
-                 start_ids, end_ids, subjects,  text):
+    def __init__(self, input_ids, attention_mask, token_type_ids, input_len,
+                 token_offsets, start_ids, end_ids, subjects, text):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
         self.token_type_ids = token_type_ids
@@ -55,9 +55,6 @@ class InputFeature(object):
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
-
-
-
 
 
 def encode_examples(examples, label2id, tokenizer, max_seq_length):
@@ -160,7 +157,9 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     #  all_input_lens = torch.from_numpy(np.array(all_input_lens, dtype=np.int64))
     #  all_token_offsets = torch.from_numpy(
     #      np.array(all_token_offsets, dtype=np.int64))
-    all_input_ids, all_attention_mask, all_token_type_ids,, all_input_lens, all_token_offsets = common_to_tensors(all_input_ids, all_attention_mask, all_token_type_ids,, all_input_lens, all_token_offsets)
+    all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets = common_to_tensors(
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens,
+        all_token_offsets)
 
     all_start_ids = torch.from_numpy(np.array(all_start_ids, dtype=np.int64))
     all_end_ids = torch.from_numpy(np.array(all_end_ids, dtype=np.int64))

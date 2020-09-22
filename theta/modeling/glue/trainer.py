@@ -32,7 +32,7 @@ def logits_to_preds(logits):
     #      1 if x == 0 and prob[1] < 0.90 else x for prob, x in zip(probs, preds)
     #  ])
 
-    return preds
+    return preds, probs
 
 
 from transformers import BertTokenizer
@@ -647,7 +647,7 @@ class GlueTrainer(Trainer):
         #      0 if x == 1 and prob[1] < 0.60 else x
         #      for prob, x in zip(self.probs, self.preds)
         #  ])
-        self.preds = logits_to_preds(self.logits)
+        self.preds, probs = logits_to_preds(self.logits)
         #  logger.debug(f"self.preds: {self.preds.shape}, {self.preds}")
         #  logger.debug(
         #      f"self.out_label_ids: {self.out_label_ids.shape}, {self.out_label_ids}, {np.argmax(self.out_label_ids, axis=1)}"
@@ -715,14 +715,27 @@ class GlueTrainer(Trainer):
                                     axis=0)
 
     def on_predict_end(self, args, test_dataset):
-        self.pred_results = np.argmax(self.logits, axis=1)
-        self.probs = softmax(self.logits)
+        logger.warning(f"self.logits.shape: {self.logits.shape}")
+        #  self.pred_results = np.argmax(self.logits, axis=1)
+        #  self.probs = softmax(self.logits)
 
         #  self.pred_results = np.array([
         #      0 if x == 1 and prob[1] < 0.60 else x
         #      for prob, x in zip(self.probs, self.pred_results)
         #  ])
-        self.pred_results = logits_to_preds(self.logits)
+
+#          if self.logits.shape[1] > 1:
+        #      threshold = 5.0 / len(self.label2id)
+        #      #  logger.info(f"self.probs > threshold: {self.probs > threshold}")
+        #      #  logger.info(
+        #      #      f"np.sum(self.probs > threshold: {np.sum(self.probs > threshold)}")
+        #      self.probs = softmax(self.logits)
+        #      self.pred_results = np.array(self.probs > threshold,
+        #                                   dtype=np.int64)
+        #  else:
+        #      self.pred_results, probs = logits_to_preds(self.logits)
+#
+        self.pred_results, probs = logits_to_preds(self.logits)
 
         logger.debug(f"pred_results: {self.pred_results}")
         logger.debug(f"probs: {self.probs}")
