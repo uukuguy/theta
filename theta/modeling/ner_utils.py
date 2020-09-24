@@ -909,6 +909,10 @@ def load_train_val_examples(args,
         num_augments=num_augments,
         allow_overlap=allow_overlap)
 
+    if args.train_sample_rate < 1.0:
+        num_samples = int(len(train_base_examples) * args.train_sample_rate)
+        train_base_examples = train_base_examples[:num_samples]
+
     logger.warning(f"len(train_base_examples): {len(train_base_examples)}")
 
     from ..utils import split_train_eval_examples

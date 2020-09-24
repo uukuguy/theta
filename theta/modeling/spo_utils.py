@@ -201,11 +201,24 @@ def load_spo_labeled_examples(data_generator,
             #  ]
             seg_tags = []
             for x in tags:
-                s_start, s_mention = x[0]
-                predicate = x[1]
-                o_start, o_mention = x[2]
+                #  s_start, s_mention = x[0]
+                #  predicate = x[1]
+                #  o_start, o_mention = x[2]
+
+                s_category = x['sub']['category']
+                s_start = x['sub']['start']
+                s_mention = x['sub']['mention']
+                predicate = x['predicate']
+                o_category = x['obj']['category']
+                o_start = x['obj']['start']
+                o_mention = x['obj']['mention']
+
+                #  logger.warning(
+                #      f"({s_category}, {s_start}, {s_mention}), {predicate}, ({o_category}, {o_start}, {o_mention})"
+                #  )
                 #  for seg_tag in seg_tags:
                 #  (s_start, s_mention), predicate, (o_start, o_mention) = seg_tag
+
                 s_start, s_mention = fix_mention_with_blank(s_start, s_mention)
                 if s_start < 0:
                     continue
@@ -255,6 +268,10 @@ def load_train_val_examples(args,
         seg_backoff=args.seg_backoff,
         num_augments=num_augments,
         allow_overlap=args.allow_overlap)
+
+    if args.train_sample_rate < 1.0:
+        num_samples = int(len(train_base_examples) * args.train_sample_rate)
+        train_base_examples = train_base_examples[:num_samples]
 
     from ..utils import split_train_eval_examples
     train_examples, val_examples = split_train_eval_examples(

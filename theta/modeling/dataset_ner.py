@@ -291,6 +291,7 @@ def mix_ner_datasets(ner_dataset_list):
                         break
                 if not overlap:
                     mixed_tags.append(EntityTag(c, s, m))
+        mixed_tags = sorted(mixed_tags, key=lambda x: x.start)
         mixed_dataset[i].tags = mixed_tags
     return mixed_dataset
 

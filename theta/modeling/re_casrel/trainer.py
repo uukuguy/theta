@@ -5,7 +5,6 @@ import json
 import os
 from collections import Counter
 
-import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -85,9 +84,9 @@ class BertCasrelForRE(BertPreTrainedModel):
 
         self.obj_classifier = nn.Linear(config.hidden_size,
                                         self.num_labels * 2)
-        self.sub_pos_emb = nn.Embedding(256, 768)
+        self.sub_pos_emb = nn.Embedding(256, config.hidden_size)
         self.relu = nn.ReLU()
-        self.linear = nn.Linear(768, 768)
+        self.linear = nn.Linear(config.hidden_size, config.hidden_size)
 
         self.init_weights()
 
@@ -231,6 +230,14 @@ class BertCasrelForRE(BertPreTrainedModel):
         subject_end_1 = subject_end_1.cuda()
         subject_start = subject_start.cuda()
         subject_end = subject_end.cuda()
+
+        #  logger.info(
+        #      f"sub_pos_start.shape: {sub_pos_start.shape}, sub_pos_end.shape: {sub_pos_end.shape}, subject_start.shape: {subject_start.shape}, subject_end.shape: {subject_end.shape}"
+        #  )
+        #  logger.info(f"subject_start_last.shape: {subject_start_last.shape}")
+        #  logger.info(
+        #      f"subject_start_1.shape: {subject_start_1.shape}, subject_end_1.shape: {subject_end_1.shape}"
+        #  )
         subject = (sub_pos_start + subject_start + sub_pos_end + subject_end +
                    subject_start_last + subject_start_1 + subject_end_1 +
                    subject_end_1).cuda()

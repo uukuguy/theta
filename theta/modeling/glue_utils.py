@@ -64,6 +64,10 @@ def load_train_val_examples(args,
     all_train_examples = load_glue_examples(train_data_generator,
                                             args.train_file)
 
+    if args.train_sample_rate < 1.0:
+        num_samples = int(len(all_train_examples) * args.train_sample_rate)
+        all_train_examples = all_train_examples[:num_samples]
+
     # 切分训练集和验证集
     # theta 提供split_train_eval_examples辅助函数
     from theta.utils import split_train_eval_examples

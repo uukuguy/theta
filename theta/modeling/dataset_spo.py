@@ -182,7 +182,7 @@ class SpoDataset:
         for guid, text, _, json_tags in data_generator(data_source):
             tagged_text = TaggedText(guid, text)
             for json_tag in json_tags:
-                logger.info(f"json_tag: {json_tag}")
+                #  logger.info(f"json_tag: {json_tag}")
                 entity_tag = RelTag().from_dict(json_tag)
                 tagged_text.add_tag(entity_tag)
             self.tagged_text_list.append(tagged_text)

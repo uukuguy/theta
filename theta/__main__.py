@@ -303,7 +303,7 @@ def export_train_data(args):
         export_format = args.format
         if export_format == "json":
             dataset_file = args.dataset_file
-            ner_dataset.save(dataset_file)
+            spo_dataset.save(dataset_file)
         else:
             raise Exception(
                 f"Bad export format {export_format}. Only available ['json']")
@@ -570,7 +570,8 @@ def init(args):
         dataset_name = args.dataset_name
         os.system(f"cp {theta_src_path}/templates/{app_type}/* .")
         os.system(
-            f"bash {theta_src_path}/templates/theta_{app_type}_init.sh {dataset_name}")
+            f"bash {theta_src_path}/templates/theta_{app_type}_init.sh {dataset_name}"
+        )
 
 
 def build_deepcode(args, theta_src=False):

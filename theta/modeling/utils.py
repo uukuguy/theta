@@ -80,6 +80,7 @@ class CommonParams(Params):
     model_type: str = "bert"
     model_path: str = None
     train_rate: float = 0.9
+    train_sample_rate: float = 1.0
     fp16: bool = True
     seed: int = 8864
     best_index: str = "f1"
