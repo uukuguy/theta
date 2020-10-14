@@ -334,7 +334,7 @@ def bert_extract_item(start_logits, end_logits, lens):
     S = [x for x in S if x[1] <= x[2]]
 
     for x in S:
-        assert x[1] >= 0 and x[2] > 0 and x[1] <= x[2], f"S: {S}"
+        assert x[1] >= 0 and x[2] >= 0 and x[1] <= x[2], f"S: {S}"
 
     return S
 

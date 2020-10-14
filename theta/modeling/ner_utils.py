@@ -286,7 +286,7 @@ def data_seg_generator(lines,
     for i, s in enumerate(tqdm(lines)):
         #  logger.debug(f"s: {s}")
         guid = str(i)
-        text = s['text'].strip()
+        text = s['text']
         entities = s['entities']
 
         new_entities = []
@@ -339,9 +339,9 @@ def data_seg_generator(lines,
             if overlap:
                 num_overlap += 1
                 if not allow_overlap:
-                    #  logger.warning(
-                    #      f"Overlap! {i} mention: {entity.mention}({s}:{e}), used_span: {used_span}"
-                    #  )
+                    logger.warning(
+                        f"Overlap! {i} mention: {entity.mention}({s}:{e}), used_span: {used_span}"
+                    )
                     continue
             used_span.append((s, e))
 

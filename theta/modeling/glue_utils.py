@@ -115,8 +115,9 @@ def show_glue_datainfo(glue_labels, train_data_generator, train_file,
 
     logger.info(f"****** glue_labels ******")
     logger.info(f"{glue_labels}")
-    from collections import Counter
-    logger.info(f"{Counter(all_labels).most_common()}")
+    if isinstance(all_labels[0], str):
+        from collections import Counter
+        logger.info(f"{Counter(all_labels).most_common()}")
     logger.info(f"")
     import numpy as np
     logger.info(f"****** train lengths ******")

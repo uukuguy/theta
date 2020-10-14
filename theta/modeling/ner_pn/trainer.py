@@ -476,7 +476,7 @@ class NerTrainer(Trainer):
                 ] for x in R]
                 label_entities = [
                     x for x in label_entities
-                    if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0
+                    if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0 
                 ]
             else:
                 label_entities = []

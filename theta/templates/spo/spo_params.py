@@ -39,6 +39,42 @@ experiment_params = SpoAppParams(
     SpoParams(),
 )
 
+# @gpu.huawei
+# docker pull spo_task:
+"""
+python -m theta --pull_deepcode \
+    --dataset_name spo_task \
+    --local_id 
+
+python -m theta --exec_deepcode \
+    --dataset_name spo_task \
+    --local_id 
+"""
+
+conf_common_params = {
+    'dataset_name': "spo_task",
+    'experiment_name': "Theta",
+    'fold': 0,
+    'num_augments': 0,
+    'num_train_epochs': 5,
+    'train_max_seq_length': 256,
+    'eval_max_seq_length': 256,
+    'per_gpu_train_batch_size': 4,
+    'per_gpu_eval_batch_size': 4,
+    'per_gpu_predict_batch_size': 4,
+    'seg_len': 254,
+    'seg_backoff': 127,
+    'model_path': "/opt/share/pretrained/pytorch/bert-base-chinese",
+    'confidence': 0.3,
+    'seed': 8864
+}
+
+conf_spo_params = {}
+
+for k, v in conf_common_params.items():
+    setattr(experiment_params.common_params, k, v)
+for k, v in conf_spo_params.items():
+    setattr(experiment_params.spo_params, k, v)
 experiment_params.debug()
 
 if __name__ == '__main__':

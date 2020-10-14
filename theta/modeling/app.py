@@ -88,6 +88,7 @@ class GlueApp:
 
         assert train_data_generator is not None
         assert test_data_generator is not None
+
         #  if eval_data_generator is None:
         #      eval_data_generator = train_data_generator
 
@@ -223,6 +224,27 @@ class GlueApp:
                     do_submit(args)
 
 
+class MultiLabelsApp(GlueApp):
+    def get_trainer(self):
+        # -------------------- Model --------------------
+        if self.trainer is None:
+            args = self.args
+
+            from .glue.trainer_multilabels import GlueTrainer
+
+            class AppTrainer(GlueTrainer):
+                def __init__(self, args, glue_labels):
+                    super(AppTrainer, self).__init__(args,
+                                                     glue_labels,
+                                                     build_model=None)
+
+                #  def on_predict_end(self, args, test_dataset):
+                #      super(Trainer, self).on_predict_end(args, test_dataset)
+
+            self.trainer = AppTrainer(args, self.glue_labels)
+
+        return self.trainer
+
 class NerApp:
     def __init__(self,
                  experiment_params,
@@ -303,11 +325,11 @@ class NerApp:
                               args.test_file)
 
         def do_submit(args):
+            from .utils import archive_local_model
+            archive_local_model(args)
             submission_file = None
             if generate_submission:
                 submission_file = generate_submission(args)
-            from .utils import archive_local_model
-            archive_local_model(args, submission_file)
 
         def do_generate_submission(args):
             if generate_submission is not None:

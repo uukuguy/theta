@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json
-import os
-import re
+import json, os, re
 from copy import deepcopy
 
 from loguru import logger

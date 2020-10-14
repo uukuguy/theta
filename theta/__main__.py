@@ -616,17 +616,17 @@ def build_deepcode(args, theta_src=False):
 
         if theta_src_path:
             os.system(
-                f"rsync -arv --exclude examples --exclude __pycache__ --exclude *.pyc  $THETA_SRC ./{deepcode_dir}/"
+                f"rsync -ar --exclude examples --exclude __pycache__ --exclude *.pyc  $THETA_SRC ./{deepcode_dir}/"
             )
 
     # -------- Copy model src --------
     if os.path.exists("README.md"):
         os.system(f"cp README.md *.py {deepcode_dir}/")
     #  cmd = f"rsync -rLptgoDv --exclude rawdata data {deepcode_dir}/"
-    cmd = f"rsync -rLptgoDv data {deepcode_dir}/"
+    cmd = f"rsync -rLptgoD data {deepcode_dir}/"
     logger.info(cmd)
     os.system(cmd)
-    cmd = f"rsync -rLptgoDv --exclude best outputs/latest {deepcode_dir}/outputs/"
+    cmd = f"rsync -rLptgoD --exclude best outputs/latest {deepcode_dir}/outputs/"
     logger.info(cmd)
     os.makedirs(f"{deepcode_dir}/outputs/latest")
     os.system(cmd)
@@ -651,7 +651,8 @@ def build_deepcode(args, theta_src=False):
     os.system(cmd)
 
 
-def run_deepcode(args, gpus="device=0"):
+def run_deepcode(args):
+    gpus = args.gpus
     if args.dataset_name and args.local_id:
         dataset_name = args.dataset_name
         local_id = args.local_id[0]
@@ -678,8 +679,9 @@ def run_deepcode(args, gpus="device=0"):
         else:
             model_path = training_args['model_path']
 
+    brat_collections_dir = os.path.abspath(args.brat_collections_dir)
     pwd = os.environ['PWD']
-    cmd = f"docker run --gpus {gpus} -it --rm -v {pwd}/outputs/saved_models:/deepcode/outputs/saved_models -v {pwd}/submissions:/deepcode/submissions -v {model_path}:{model_path} {dataset_name}:{local_id} /bin/bash"
+    cmd = f"docker run --gpus {gpus} -it --rm -v {pwd}/outputs/saved_models:/deepcode/outputs/saved_models -v {pwd}/submissions:/deepcode/submissions -v {model_path}:{model_path} -v {brat_collections_dir}:/deepcode/brat/data/collections {dataset_name}:{local_id} /bin/bash"
     logger.info(f"cmd: {cmd}")
     os.system(cmd)
 

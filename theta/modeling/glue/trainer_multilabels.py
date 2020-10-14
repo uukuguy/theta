@@ -292,9 +292,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
                     loss_fct = BCEWithLogitsLoss()
                     #  logger.debug(f"logits: {logits.shape}, {logits}")
                     #  logger.debug(f"labels: {labels.shape}, {labels}")
-                    #  loss = loss_fct(logits, labels.float())
-                    loss = loss_fct(logits.view(-1, self.num_labels),
-                                    labels.view(-1, self.num_labels).float())
+                    loss = loss_fct(logits, labels.float())
+                    #  loss = loss_fct(logits.view(-1, self.num_labels),
+                    #                  labels.view(-1, self.num_labels).float())
                 else:
                     loss_fct = CrossEntropyLoss()
                     #  logger.warning(f"logits: {logits.shape}")
@@ -579,6 +579,8 @@ class GlueTrainer(Trainer):
         self.preds = None
         self.probs = None
 
+        self.latest_eval_scores = None
+
         self.class_reporter = ClassReporter(
             target_names=[x for x in self.label2id.keys()],
             labels=[x for x in self.label2id.values()])
@@ -607,7 +609,7 @@ class GlueTrainer(Trainer):
         inputs = {
             "input_ids": batch[0],
             "attention_mask": batch[1],
-            "labels": batch[5]
+            "labels": batch[5] if known_labels else None
         }
         if args.model_type != "distilbert":
             # XLM, DistilBERT, RoBERTa, and XLM-RoBERTa don't use segment_ids
@@ -626,8 +628,15 @@ class GlueTrainer(Trainer):
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
     def on_eval_step(self, args, model, step, batch):
         input_ids, attention_mask, _, input_lens, token_offsets, label_ids = batch
-        outputs = self.on_train_step(args, model, step, batch)
+
+        #  outputs = self.on_train_step(args, model, step, batch)
+        inputs = self.batch_to_inputs(args, batch)
+        outputs = model(**inputs)
+
         eval_loss, logits = outputs[:2]
+        #  logits = logits.sigmoid()
+        #  logger.debug(f"logits: {logits.shape}, {logits}")
+        #  logger.debug(f"label_ids: {label_ids.shape}, {label_ids}")
         if self.logits is None:
             self.logits = logits.detach().cpu().numpy()
             self.out_label_ids = label_ids.detach().cpu().numpy()
@@ -639,35 +648,39 @@ class GlueTrainer(Trainer):
                                            label_ids.detach().cpu().numpy(),
                                            axis=0)
 
-        self.preds = np.argmax(self.logits, axis=1)
-        self.probs = softmax(self.logits)
+        #  self.preds = np.argmax(self.logits, axis=1)
+        #  self.probs = softmax(self.logits)
+
+        #  self.probs = sigmoid(self.logits)
+        #  self.preds = np.array(self.probs >= args.confidence, dtype=np.int64)
+
 
         # 调整类别0的判断阈值
         #  self.preds = np.array([
         #      0 if x == 1 and prob[1] < 0.60 else x
         #      for prob, x in zip(self.probs, self.preds)
         #  ])
-        self.preds, probs = logits_to_preds(self.logits)
+        #  self.preds, probs = logits_to_preds(self.logits)
         #  logger.debug(f"self.preds: {self.preds.shape}, {self.preds}")
         #  logger.debug(
         #      f"self.out_label_ids: {self.out_label_ids.shape}, {self.out_label_ids}, {np.argmax(self.out_label_ids, axis=1)}"
         #  )
 
-        if len(self.out_label_ids.shape) == 1:
-            result = acc_and_f1(self.preds, self.out_label_ids)
-        else:
-            #  result = acc_and_f1(self.preds,
-            #                      np.argmax(self.out_label_ids, axis=1))
-            self.preds = np.array([x > args.confidence
-                                   for x in sigmoid(self.logits)]).astype(int)
-            result = acc_and_f1(self.preds, self.out_label_ids)
-
-        #  if args.do_experiment:
-        #      #  mlflow.log_metric('loss', eval_loss.item())
-        #      for key, value in result.items():
-        #          mlflow.log_metric(key, value)
-
-        self.results.update(result)
+        #  if len(self.out_label_ids.shape) == 1:
+        #      result = acc_and_f1(self.preds, self.out_label_ids)
+        #  else:
+        #      result = acc_and_f1(self.preds,
+        #                          np.argmax(self.out_label_ids, axis=1))
+        #      #  self.preds = np.array([x > args.confidence
+        #      #                         for x in sigmoid(self.logits)]).astype(int)
+        #      #  result = acc_and_f1(self.preds, self.out_label_ids)
+        #
+        #  #  if args.do_experiment:
+        #  #      #  mlflow.log_metric('loss', eval_loss.item())
+        #  #      for key, value in result.items():
+        #  #          mlflow.log_metric(key, value)
+        #
+        #  self.results.update(result)
 
         return (eval_loss, ), self.results
 
@@ -675,8 +688,22 @@ class GlueTrainer(Trainer):
         if len(self.out_label_ids.shape) == 1:
             self.preds = np.argmax(self.logits, axis=1)
         else:
-            self.preds = np.array([x > args.confidence
-                                   for x in sigmoid(self.logits)]).astype(int)
+            logger.debug(f"self.logits: {self.logits.shape}, {self.logits}")
+            self.probs = sigmoid(self.logits)
+            logger.debug(f"self.probs: {self.probs.shape}, {self.probs}")
+            #  self.probs= np.array([sigmoid(x)  for x in self.logits])
+            #  self.preds = np.array([x > args.confidence for x in self.probs]).astype(int)
+            #  self.probs = softmax(self.logits)
+            #  threshold = 5.0 / len(self.label2id)
+            #  logger.info(f"self.probs > threshold: {self.probs > threshold}")
+            #  logger.info(
+            #      f"np.sum(self.probs > threshold: {np.sum(self.probs > threshold)}")
+            #  self.pred_results = np.array(self.probs > threshold, dtype=np.int64)
+
+
+            #  self.probs= np.array([x  for x in sigmoid(self.logits)])
+            #  self.probs = self.logits
+            #  self.preds = np.array([x > args.confidence for x in self.probs]).astype(int)
         # for regessions
         #  self.preds = np.squeeze(self.preds)
 
@@ -684,13 +711,60 @@ class GlueTrainer(Trainer):
         #  logger.debug(
         #      f"self.out_label_ids: {self.out_label_ids.shape}, {self.out_label_ids}"
         #  )
-        self.class_reporter(self.preds, self.out_label_ids)
+        #  self.class_reporter(self.preds, self.out_label_ids)
+
+        eval_scores = []
+        for label, i in self.label2id.items():
+            #  logger.debug(f"y_score:{self.probs[:, i]}, y_true: {self.out_label_ids[:, i]}")
+            try:
+                prob_a = torch.Tensor(self.probs[:,i])
+                target_a = torch.Tensor(self.out_label_ids[:,i])
+                #  logger.warning(f"prob_a: {prob_a.shape}, {prob_a}")
+                #  logger.warning(f"target_a: {target_a.shape}, {target_a}")
+
+                #  auc = roc_auc_score(y_score=self.probs[:, i], y_true=self.out_label_ids[:, i])
+                #  auc = roc_auc_score(prob_a, target_a)
+                #  #  print(f"label:{label} - auc: {auc:.4f}")
+                #  eval_scores.append((label, auc))
+
+                from .metrics import F1Score
+                f1_score = F1Score(thresh=args.confidence, average='micro')
+                f1_score(prob_a, target_a)
+                f1 = f1_score.value()
+
+                #  from .metrics import AccuracyThresh
+                #  acc_thresh = AccuracyThresh(0.5)
+                #  acc_thresh(torch.Tensor(self.probs[:,i]), torch.Tensor(self.out_label_ids[:,i]))
+                #  acc_thresh(prob_a, target_a)
+                #  acc = acc_thresh.value()
+                acc = 0.0
+
+                eval_scores.append((label, f1, acc))
+
+            except ValueError:
+                #  print(f"label:{label} - ")
+                pass
+        eval_scores = sorted(eval_scores, key=lambda x: x[1], reverse=True)
+        for ii, (label, auc, acc) in enumerate(eval_scores):
+            #  if auc >= args.confidence:
+            if auc > 0.0:
+                print(f"{label}：{auc:.4f}, {acc:.4f}")
+            if ii > 10:
+                break
+        if self.latest_eval_scores is None:
+            from copy import deepcopy
+            self.latest_eval_scores = deepcopy(eval_scores)
+        else:
+            logger.warning(f"Compare to latest eval scores: is equal: {self.latest_eval_scores == eval_scores}")
+            from copy import deepcopy
+            self.latest_eval_scores = deepcopy(eval_scores)
+
 
         logger.info(f"  Num examples = {len(eval_dataset)}")
         logger.info(f"  Batch size = {args.eval_batch_size}")
-        logger.info(f"******** Eval results ********")
-        for key in self.results.keys():
-            logger.info(f" dev: {key} = {self.results[key]:.6f}")
+        #  logger.info(f"******** Eval results ********")
+        #  for key in self.results.keys():
+        #      logger.info(f" dev: {key} = {self.results[key]:.6f}")
 
         return self.results
 
@@ -719,11 +793,17 @@ class GlueTrainer(Trainer):
 
     def on_predict_end(self, args, test_dataset):
         logger.warning(f"self.logits.shape: {self.logits.shape}")
+        threshold = args.confidence
         #  self.pred_results = np.argmax(self.logits, axis=1)
         #  self.probs = softmax(self.logits)
+        self.probs = sigmoid(self.logits)
 
+        #  self.probs= np.array([sigmoid(x)  for x in self.logits])
+        #  self.preds = np.array([x > args.confidence for x in self.probs]).astype(int)
+
+        #  self.probs = sigmoid(self.logits)
         #  self.pred_results = np.array([
-        #      0 if x == 1 and prob[1] < 0.60 else x
+        #      0 if x == 1 and prob[1] < args.confidence else x
         #      for prob, x in zip(self.probs, self.pred_results)
         #  ])
 
@@ -732,9 +812,23 @@ class GlueTrainer(Trainer):
         #  logger.info(f"self.probs > threshold: {self.probs > threshold}")
         #  logger.info(
         #      f"np.sum(self.probs > threshold: {np.sum(self.probs > threshold)}")
-        threshold = args.confidence
-        self.probs = sigmoid(self.logits)
         self.pred_results = np.array(self.probs > threshold, dtype=np.int64)
+
+        #  self.probs = self.logits
+        #  self.probs = self.logits.sigmoid()
+        #  self.probs = softmax(self.logits)
+        #  self.probs = sigmoid(self.logits)
+
+        #  self.probs = np.array([x  for x in sigmoid(self.logits)])
+        # 按概率阈值
+        #  self.pred_results = np.array(self.probs > threshold, dtype=np.int64)
+        # 按概率排序
+        #  self.pred_results = np.zeros(self.probs.shape)
+        #  for i in tqdm(range(self.probs.shape[0])):
+        #      sorted_probs = sorted([(x,i) for i, x in enumerate(self.probs[i])], reverse=True)
+        #      for j in range(10):
+        #          idx = sorted_probs[j][1]
+        #          self.pred_results[i][idx] = 1
 
         # multi classes
         #  self.pred_results, self.probs = logits_to_preds(self.logits)

@@ -3,6 +3,10 @@ all:
 	python run_${DATASET_NAME}.py \
 		--do_experiment \
 
+new:
+	python run_${DATASET_NAME}.py \
+		--do_new
+
 train:
 	python run_${DATASET_NAME}.py \
 		--do_train \
@@ -28,3 +32,53 @@ json_to_brat:
 
 brat_to_json:
 	python -m theta --brat_to_json --dataset_name ${DATASET_NAME} --dataset_file ${DATASET_NAME}.json --brat_data_dir brat_${DATASET_NAME}
+
+build_deepcode:
+	python -m theta --build_deepcode --dataset_name ${DATASET_NAME}
+
+run_deepcode:
+	python -m theta --run_deepcode --dataset_name ${DATASET_NAME} \
+		--model_path "/opt/share/pretrained/pytorch/bert-base-chinese"
+		# --model_path "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese"
+
+
+push_deepcode:
+	python -m theta --push_deepcode --dataset_name ${DATASET_NAME}
+
+export_train_json_data: 
+	python -m theta --export_train_data \
+		--dataset_name ${DATASET_NAME} \
+		--format json \
+		--dataset_file ./data/${DATASET_NAME}_train_data.json 
+
+export_train_brat_data: 
+	python -m theta --export_train_data \
+		--dataset_name ${DATASET_NAME} \
+		--format brat \
+		--max_pages 100 \
+		--brat_data_dir brat_data/collections/${DATASET_NAME}_train
+
+export_test_json_data: 
+	python -m theta --export_test_data \
+		--dataset_name ${DATASET_NAME} \
+		--format json \
+		--dataset_file ./data/${DATASET_NAME}_test_data.json 
+
+export_test_brat_data: 
+	python -m theta --export_test_data \
+		--dataset_name ${DATASET_NAME} \
+		--format brat \
+		--max_pages 100 \
+		--brat_data_dir brat_data/collections/${DATASET_NAME}_test
+
+run_brat:
+	docker run -it --rm -p 8001:8001 \
+		-v ${PWD}/brat_data/collections:/brat/data/collections \
+		ootb/brat:latest
+
+brat_to_json:
+	python -m theta --brat_to_json \
+		--dataset_name ${DATASET_NAME} \
+		--dataset_file ${DATASET_NAME}.json \
+		--brat_data_dir brat_data/collections/brat_${DATASET_NAME}
+

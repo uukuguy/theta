@@ -32,6 +32,7 @@ build_deepcode:
 
 run_deepcode:
 	python -m theta --run_deepcode --dataset_name ${DATASET_NAME} \
+		--gpus device=${CUDA_VISIBLE_DEVICES} \
 		--model_path "/opt/share/pretrained/pytorch/bert-base-chinese"
 		# --model_path "/opt/share/pretrained/pytorch/roberta-wwm-large-ext-chinese"
 

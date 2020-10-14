@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json
-import os
-import re
+import json, os, re
 
 import numpy as np
 import pandas as pd
@@ -72,7 +70,25 @@ def generate_submission(args, reviews_file=None, submission_file=None):
     if submission_file is None:
         submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json"
 
-    json.dump(reviews,
+    #  json.dump(reviews,
+    #            open(submission_file, 'w'),
+    #            ensure_ascii=False,
+    #            indent=2)
+    from collections import defaultdict
+    entities = defaultdict(list)
+    from theta.modeling import ner_data_generator
+    for guid, text, _, tags in tqdm(ner_data_generator(reviews_file)):
+        for tag in tags:
+            c = tag['category']
+            s = tag['start']
+            m = tag['mention']
+            if len(m) <= 32:
+                entities[c].append(m)
+
+    for c, ents in entities.items():
+        entities[c] = sorted(list(set(ents)))
+
+    json.dump({'entities': entities},
               open(submission_file, 'w'),
               ensure_ascii=False,
               indent=2)

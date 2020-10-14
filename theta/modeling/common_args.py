@@ -58,6 +58,8 @@ def add_common_args(parser):
         help=
         "The input data dir. Should contain the training files for the CoNLL-2003 NER task.",
     )
+
+    parser.add_argument("--brat_data_dir", default=None)
     parser.add_argument(
         "--output_dir",
         type=str,
@@ -71,6 +73,25 @@ def add_common_args(parser):
         default="./submissions",
         #  required=True,
         help="The submissions dir.",
+    )
+    parser.add_argument(
+        "--experiments_dir",
+        type=str,
+        default="./experiments",
+        #  required=True,
+        help="The experiments dir.",
+    )
+    parser.add_argument(
+        "--experiment_id",
+        type=str,
+        default=None,
+        help="The experiment ID.",
+    )
+    parser.add_argument(
+        "--model_id",
+        type=str,
+        default=None,
+        help="The model ID.",
     )
     parser.add_argument(
         "--cache_dir",
@@ -428,6 +449,10 @@ def get_main_args(
         if not os.path.exists(args.submissions_dir):
             os.makedirs(args.submissions_dir)
 
+    if args.experiments_dir:
+        if not os.path.exists(args.experiments_dir):
+            os.makedirs(args.experiments_dir)
+
     #  if not os.path.exists(args.local_dir):
     #      os.makedirs(args.local_dir)
 
@@ -460,6 +485,9 @@ def get_main_args(
         #  os.symlink(local_id, args.latest_dir)
 
     ensure_latest_dir(args)
+    if args.model_id is None:
+        args.model_id = args.local_id
+
     args.saved_models_path = os.path.join(args.output_dir, "saved_models")
     if not os.path.exists(args.saved_models_path):
         os.makedirs(args.saved_models_path)
@@ -476,6 +504,7 @@ def get_main_args(
     logger.warning(f"local_id: {args.local_id}")
     logger.warning(f"local_dir: {args.local_dir}")
     logger.warning(f"latest_dir: {args.latest_dir}")
+    logger.warning(f"experiments_dir: {args.experiments_dir}")
     logger.warning(f"saved_models_path: {args.saved_models_path}")
 
     return args

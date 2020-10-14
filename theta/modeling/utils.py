@@ -94,6 +94,7 @@ class CommonParams(Params):
     enable_nested_entities: bool = False
     emotion_words_file: str = None
     cc: str = None
+    brat_data_dir: str = None
 
     def __post_init__(self):
         tracking_uri = self.tracking_uri
@@ -157,7 +158,7 @@ def log_global_params(args, experiment_params):
     #      experiment_params.log()
 
 
-def archive_local_model(args, submission_file):
+def archive_local_model(args, submission_file=None):
     #  if args.do_experiment:
     #      if submission_file:
     #          mlflow.log_param(f"{args.dataset_name}_submission_file",

@@ -128,9 +128,7 @@ class NerDataset:
     def load_from_file(self, filename: str):
         logger.info(f"Loading {filename}")
         try:
-            lines = [
-                json.loads(x.strip()) for x in open(filename, 'r').readlines()
-            ]
+            lines = [json.loads(x) for x in open(filename, 'r').readlines()]
         except:
             logger.warning(
                 f"{filename} is not standard style, try reviews style...")
@@ -149,7 +147,11 @@ class NerDataset:
         return self.load(data_generator)
 
     def load_from_brat_data(self, brat_data_dir):
-        from .brat import brat_data_generator
+        from .brat import brat_data_generator, get_brat_schemas
+        ner_labels, ner_connections = get_brat_schemas(brat_data_dir)
+        self.ner_labels = ner_labels
+        self.ner_connections = ner_connections
+
         return self.load(brat_data_generator, brat_data_dir)
 
     def load(self, data_generator, data_source=None):
@@ -240,7 +242,7 @@ def merge_ner_datasets(ner_dataset_list, min_dups=2):
     from copy import deepcopy
     merged_dataset = deepcopy(ner_dataset_list[0])
     if len(ner_dataset_list) > 1:
-        for i, X in enumerate(zip(*ner_dataset_list)):
+        for i, X in enumerate(tqdm(zip(*ner_dataset_list), desc="Merge ner datasets")):
             tags_list = [x.tags for x in X]
             from ..utils import merge_entities
             new_tags = merge_entities(
@@ -260,7 +262,7 @@ def mix_ner_datasets(ner_dataset_list):
         return None
     from copy import deepcopy
     mixed_dataset = deepcopy(ner_dataset_list[0])
-    for i, X in enumerate(zip(*ner_dataset_list)):
+    for i, X in enumerate(tqdm(zip(*ner_dataset_list), desc="Mix ner datasets")):
         mixed_tags = mixed_dataset[i].tags
         #  logger.info(f"mixed_tags: {mixed_tags}")
         tags_list = [x.tags for x in X]
@@ -306,6 +308,7 @@ def ner_data_generator(train_file,
         guid = tagged_text.guid
         text = tagged_text.text
         tags = [x.to_dict() for x in tagged_text.tags]
+        #  logger.debug(f"tags: {tags}")
         yield guid, text, None, tags
 
 

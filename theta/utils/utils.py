@@ -392,6 +392,7 @@ def split_train_eval_examples(examples: [list, np.array],
 
         s = num_eval_examples * fold
         e = num_eval_examples * (fold + 1)
+        logger.warning(f"Eval examples: [{s}:{e}]")
         eval_examples = examples[s:e]
         train_examples = concatenate_list(examples[:s], examples[e:])
     else:
@@ -409,6 +410,7 @@ def split_train_eval_examples(examples: [list, np.array],
         s = num_examples - num_eval_examples * (fold + 1)
         if s < 0:
             s = 0
+        logger.warning(f"Eval examples: [{s}:{e}]")
         eval_examples = examples[s:e]
         train_examples = concatenate_list(examples[:s], examples[e:])
 
