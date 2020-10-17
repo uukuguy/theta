@@ -1,12 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, random, copy, json
-from tqdm import tqdm
-from loguru import logger
-from theta.utils import seg_generator
+import copy
+import json
+import os
+import random
 from dataclasses import dataclass, field
 from typing import List
+
+from loguru import logger
+from tqdm import tqdm
+
+from theta.utils import seg_generator
+
+from ..utils import DataClassBase
 
 # ----------------------
 # 实体标注规范
@@ -22,8 +29,6 @@ from typing import List
 #          'mention': mention
 #      }]
 #  }
-
-from ..utils import DataClassBase
 
 
 @dataclass(unsafe_hash=True)
@@ -871,7 +876,8 @@ def load_train_val_examples(args,
                             ner_labels,
                             shuffle=True,
                             train_rate=0.9,
-                            num_augments=0):
+                            num_augments=0,
+                            aug_train_only=False):
     logger.warning(
         f"shuffle: {shuffle}, train_rate: {train_rate:.2f}, num_augments: {num_augments}"
     )
@@ -925,6 +931,95 @@ def load_train_val_examples(args,
     logger.info(f"Loaded {len(train_examples)} train examples, "
                 f"{len(val_examples)} val examples.")
     return train_examples, val_examples
+
+
+#  def load_train_val_examples(args,
+#                              train_data_generator,
+#                              ner_labels,
+#                              shuffle=True,
+#                              train_rate=0.9,
+#                              num_augments=0,
+#                              aug_train_only=False):
+#      logger.warning(
+#          f"shuffle: {shuffle}, train_rate: {train_rate:.2f}, num_augments: {num_augments}"
+#      )
+#      #  from theta.modeling import LabeledText, load_ner_labeled_examples
+#      lines = []
+#      #  for guid, text, _, entities in train_data_generator(args.train_file):
+#      #      sl = LabeledText(guid, text, entities)
+#      #      lines.append({'guid': guid, 'text': text, 'entities': entities})
+#
+#      for guid, text, _, tags in train_data_generator(args.train_file):
+#          sl = LabeledText(guid, text)
+#          for tag in tags:
+#              c = tag['category']
+#              s = tag['start']
+#              m = tag['mention']
+#              if len(m) == 0:
+#                  continue
+#              sl.add_entity(c, s, s + len(m) - 1)
+#          lines.append({'guid': guid, 'text': text, 'entities': sl.entities})
+#          if args.max_train_examples > 0 and len(
+#                  lines) >= args.max_train_examples:
+#              break
+#
+#      allow_overlap = args.allow_overlap
+#      if num_augments > 0:
+#          allow_overlap = False
+#
+#      num_lines = len(lines)
+#      num_samples = num_lines
+#      if args.train_sample_rate < 1.0:
+#          num_samples = int(len(train_base_examples) * args.train_sample_rate)
+#          lines = lines[:num_samples]
+#      logger.warning(
+#          f"Train sample rate: {args.train_sample_rate:.2f}, use {num_samples}/{num_lines} examples."
+#      )
+#
+#      from ..utils import split_train_eval_examples
+#      if aug_train_only:
+#          train_lines, val_lines = split_train_eval_examples(
+#              lines, train_rate=train_rate, fold=args.fold, shuffle=shuffle)
+#
+#          train_examples = load_ner_labeled_examples(
+#              train_lines,
+#              ner_labels,
+#              seg_len=args.seg_len,
+#              seg_backoff=args.seg_backoff,
+#              num_augments=num_augments,
+#              allow_overlap=allow_overlap)
+#
+#          val_examples = load_ner_labeled_examples(val_lines,
+#                                                   ner_labels,
+#                                                   seg_len=args.seg_len,
+#                                                   seg_backoff=args.seg_backoff,
+#                                                   num_augments=0,
+#                                                   allow_overlap=allow_overlap)
+#      else:
+#          train_base_examples = load_ner_labeled_examples(
+#              lines,
+#              ner_labels,
+#              seg_len=args.seg_len,
+#              seg_backoff=args.seg_backoff,
+#              num_augments=num_augments,
+#              allow_overlap=allow_overlap)
+#
+#          #  if args.train_sample_rate < 1.0:
+#          #      num_samples = int(
+#          #          len(train_base_examples) * args.train_sample_rate)
+#          #      train_base_examples = train_base_examples[:num_samples]
+#
+#          logger.warning(f"len(train_base_examples): {len(train_base_examples)}")
+#
+#          train_examples, val_examples = split_train_eval_examples(
+#              train_base_examples,
+#              train_rate=train_rate,
+#              fold=args.fold,
+#              shuffle=shuffle)
+#
+#      logger.info(f"Loaded {len(train_examples)} train examples, "
+#                  f"{len(val_examples)} val examples.")
+#      return train_examples, val_examples
 
 
 def load_test_examples(args, test_data_generator):

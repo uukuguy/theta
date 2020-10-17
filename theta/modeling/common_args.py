@@ -374,6 +374,7 @@ def add_common_args(parser):
     parser.add_argument("--seg_backoff", type=int, default=64, help="")
     parser.add_argument("--max_span_len", type=int, default=32, help="")
     parser.add_argument("--num_augments", type=int, default=0, help="")
+    parser.add_argument("--aug_train_only", default=False, help="")
     parser.add_argument(
         "--loss_type",
         type=str,

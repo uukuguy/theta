@@ -245,6 +245,7 @@ class MultiLabelsApp(GlueApp):
 
         return self.trainer
 
+
 class NerApp:
     def __init__(self,
                  experiment_params,
@@ -386,7 +387,8 @@ class NerApp:
                         self.ner_labels,
                         shuffle=True,
                         train_rate=args.train_rate,
-                        num_augments=args.num_augments)
+                        num_augments=args.num_augments,
+                        aug_train_only=args.aug_train_only)
                 else:
                     train_examples, _ = load_train_val_examples(
                         args,
@@ -394,7 +396,8 @@ class NerApp:
                         self.ner_labels,
                         shuffle=True,
                         train_rate=1.0,
-                        num_augments=args.num_augments)
+                        num_augments=args.num_augments,
+                        aug_train_only=args.aug_train_only)
 
                     _, val_examples = load_train_val_examples(
                         args,
@@ -402,7 +405,8 @@ class NerApp:
                         self.ner_labels,
                         shuffle=False,
                         train_rate=0.0,
-                        num_augments=0)
+                        num_augments=0,
+                        aug_train_only=args.aug_train_only)
                 trainer.train(args, train_examples, val_examples)
 
             def do_eval(args):
@@ -415,7 +419,8 @@ class NerApp:
                         self.ner_labels,
                         shuffle=True,
                         train_rate=args.train_rate,
-                        num_augments=args.num_augments)
+                        num_augments=args.num_augments,
+                        aug_train_only=args.aug_train_only)
                 else:
                     _, eval_examples = load_train_val_examples(
                         args,
@@ -423,7 +428,8 @@ class NerApp:
                         self.ner_labels,
                         shuffle=False,
                         train_rate=0.0,
-                        num_augments=0)
+                        num_augments=0,
+                        aug_train_only=args.aug_train_only)
 
                 model = self.load_model()
                 trainer.evaluate(args, model, eval_examples)

@@ -192,10 +192,10 @@ class Trainer:
 
         self.save_args(args, model_path)
 
-        torch.save(optimizer.state_dict(),
-                   os.path.join(model_path, "optimizer.pt"))
-        torch.save(scheduler.state_dict(),
-                   os.path.join(model_path, "scheduler.pt"))
+        #  torch.save(optimizer.state_dict(),
+        #             os.path.join(model_path, "optimizer.pt"))
+        #  torch.save(scheduler.state_dict(),
+        #             os.path.join(model_path, "scheduler.pt"))
 
     def train(self, args, train_examples, eval_examples):
 
@@ -246,12 +246,12 @@ class Trainer:
         tokenizer = self.tokenizer
 
         # Check if saved optimizer or scheduler states exist
-        model_path = Path(args.model_path)
-        optimizer_saved_file = model_path / "optimizer.pt"
-        scheduler_saved_file = model_path / "scheduler.pt"
-        if optimizer_saved_file.exists() and scheduler_saved_file.exists():
-            optimizer.load_state_dict(torch.load(optimizer_saved_file))
-            scheduler.load_state_dict(torch.load(scheduler_saved_file))
+        #  model_path = Path(args.model_path)
+        #  optimizer_saved_file = model_path / "optimizer.pt"
+        #  scheduler_saved_file = model_path / "scheduler.pt"
+        #  if optimizer_saved_file.exists() and scheduler_saved_file.exists():
+        #      optimizer.load_state_dict(torch.load(optimizer_saved_file))
+        #      scheduler.load_state_dict(torch.load(scheduler_saved_file))
 
         model = model.to(args.device)
         #  logger.warning(

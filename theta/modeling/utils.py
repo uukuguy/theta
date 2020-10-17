@@ -95,6 +95,7 @@ class CommonParams(Params):
     emotion_words_file: str = None
     cc: str = None
     brat_data_dir: str = None
+    aug_train_only: bool = False
 
     def __post_init__(self):
         tracking_uri = self.tracking_uri

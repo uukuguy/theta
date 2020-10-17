@@ -179,9 +179,12 @@ class SpanEntityScore(object):
 
     def result(self):
         class_info = {}
-        origin_counter = Counter([self.id2label[x[0]] for x in self.origins])
-        found_counter = Counter([self.id2label[x[0]] for x in self.founds])
-        right_counter = Counter([self.id2label[x[0]] for x in self.rights])
+        origin_counter = Counter(
+            [f"{x[0]}:{self.id2label[x[0]]}" for x in self.origins])
+        found_counter = Counter(
+            [f"{x[0]}:{self.id2label[x[0]]}" for x in self.founds])
+        right_counter = Counter(
+            [f"{x[0]}:{self.id2label[x[0]]}" for x in self.rights])
         for type_, count in origin_counter.items():
             origin = count
             found = found_counter.get(type_, 0)
@@ -190,13 +193,23 @@ class SpanEntityScore(object):
             class_info[type_] = {
                 "acc": round(precision, 4),
                 'recall': round(recall, 4),
-                'f1': round(f1, 4)
+                'f1': round(f1, 4),
+                'right': right,
+                'found': found,
+                'origin': origin
             }
         origin = len(self.origins)
         found = len(self.founds)
         right = len(self.rights)
         recall, precision, f1 = self.compute(origin, found, right)
-        return {'acc': precision, 'recall': recall, 'f1': f1}, class_info
+        return {
+            'acc': precision,
+            'recall': recall,
+            'f1': f1,
+            'right': right,
+            'found': found,
+            'origin': origin
+        }, class_info
 
     def update(self, true_subject, pred_subject):
         self.origins.extend(true_subject)
@@ -318,16 +331,47 @@ def bert_extract_item(start_logits, end_logits, lens):
     starts = torch.argmax(start_logits, -1).cpu().numpy()[0]  #[1:-1]
     ends = torch.argmax(end_logits, -1).cpu().numpy()[0]  #[1:-1]
 
+    #  starts = [starts[0]] + [ x if x != starts[i] else 0 for i, x in enumerate(starts[1:])]
+    #  ends = [ends[0]] + [ x if x != ends[i] else 0 for i, x in enumerate(ends[1:])]
+    def filter_process(starts):
+        new_starts = []
+        for i, x in enumerate(starts):
+            is_dup = False
+            if i < len(starts) - 1 and x == starts[i + 1]:
+                is_dup = True
+            elif i > 0 and starts[i - 1] == x:
+                is_dup = True
+            if is_dup:
+                new_starts.append(0)
+            else:
+                new_starts.append(x)
+        return new_starts
+
+    #  starts = filter_process(starts)
+    #  ends = filter_process(ends)
+
     starts = np.array([x for x in starts if x >= 0 and x < text_len])
     ends = np.array([x for x in ends if x >= 0 and x < text_len])
+
     #  logger.info(f"start_pred: {starts}")
     #  logger.info(f"end_pred: {ends}")
-    for i, s_l in enumerate(starts):
+    #  for i, s_l in enumerate(starts):
+    #      if s_l == 0:
+    #          continue
+    #      for j, e_l in enumerate(ends[i:]):
+    #          if s_l == e_l:
+    #              S.append((s_l, i, i + j))
+    #              break
+    #          if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
+    #              break
+    for i in range(len(starts) - 1):
+        s_l = starts[i]
         if s_l == 0:
             continue
         for j, e_l in enumerate(ends[i:]):
             if s_l == e_l:
                 S.append((s_l, i, i + j))
+                i = j + 1
                 break
             if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
                 break
@@ -477,6 +521,8 @@ class NerTrainer(Trainer):
             eval_loss += tmp_eval_loss
             num_eval_steps += 1
 
+            start_logits = F.softmax(start_logits, -1)
+            end_logits = F.softmax(end_logits, -1)
             R = bert_extract_item(start_logits, end_logits,
                                   all_input_lens[i:i + 1])
 
