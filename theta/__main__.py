@@ -5,6 +5,7 @@ import datetime
 import glob
 import json
 import os
+import shutil
 
 import rich
 from loguru import logger
@@ -104,7 +105,7 @@ def show_model(args):
     logger.debug(f"test_file: {training_args['test_file']}")
 
     logger.info(f"fold: {training_args['fold']}")
-    logger.info(f"num_augements: {training_args['num_augements']}")
+    logger.info(f"num_augments: {training_args['num_augments']}")
     logger.info(f"seg_len: {training_args['seg_len']}")
     logger.info(f"seg_backoff: {training_args['seg_backoff']}")
     logger.info(f"train_rate: {training_args['train_rate']}")
@@ -232,10 +233,18 @@ def diff_models(args):
 
 def new_model(args):
     latest_dir = os.path.join(args.output_dir, "latest")
-    import shutil
     if os.path.exists(latest_dir):
         shutil.rmtree(latest_dir)
     os.makedirs(latest_dir)
+
+    theta_src_path = get_theta_src_path()
+    logger.warning(f"theta_src_path: {theta_src_path}")
+    if theta_src_path:
+        app_type = args.app_type
+        dataset_name = args.dataset_name
+        cmd_cp_params = f"cp {theta_src_path}/templates/{app_type}/{app_type}_params.py {latest_dir}/{dataset_name}_params.py"
+        logger.warning(f"{cmd_cp_params}")
+        os.system(cmd_cp_params)
 
     import uuid
     local_id = str(uuid.uuid1()).replace('-', '')[:8]
@@ -254,7 +263,6 @@ def use_model(args):
             local_id, model_path, ctime = model
 
             latest_dir = os.path.join(args.output_dir, "latest")
-            import shutil
             if os.path.exists(latest_dir):
                 shutil.rmtree(latest_dir)
             shutil.copytree(model_path, latest_dir)
@@ -578,7 +586,6 @@ def build_deepcode(args, theta_src=False):
     """
     构建完整可复现的模型训练代码Docker容器环境。
     """
-    import os, shutil
 
     # -------- Check Dockerfile.deepcode --------
     if not os.path.exists("Dockerfile.deepcode"):
@@ -637,15 +644,28 @@ def build_deepcode(args, theta_src=False):
     if os.path.exists(f"{home_dir}/.pip/pip.conf"):
         os.system(f"cp {home_dir}/.pip/pip.conf  {deepcode_dir}/")
 
-    # -------- 构建Docker镜像 --------
     with open(training_args_file, 'r') as rd:
         training_args = json.load(open(training_args_file, 'r'))
-
-    for k, v in training_args.items():
-        if not k.startswith('_'):
-            print(f"{k}: {v}")
     dataset_name = training_args['dataset_name']
     local_id = training_args['local_id']
+
+    # -------- 备份deepcode至training/local_id --------
+    backup_dir = f"training/{local_id}"
+    #  assert not os.path.exists(backup_dir), f"{backup_dir} exists."
+    if os.path.exists(backup_dir):
+        shutil.rmtree(backup_dir)
+        logger.warning(f"Remove exists backup dir: {backup_dir}.")
+
+    if not os.path.exists("training"):
+        os.makedirs("training")
+
+    shutil.copytree(f"{deepcode_dir}", backup_dir)
+    logger.warning(f"Backup {deepcode_dir} to training/{local_id}")
+
+    # -------- 构建Docker镜像 --------
+    #  for k, v in training_args.items():
+    #      if not k.startswith('_'):
+    #          print(f"{k}: {v}")
     cmd = f"docker build -f Dockerfile.deepcode -t {dataset_name}:{local_id} {deepcode_dir}"
     logger.info(f"cmd: {cmd}")
     os.system(cmd)

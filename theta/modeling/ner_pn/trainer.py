@@ -110,8 +110,9 @@ class BertPnForNer(BertPreTrainedModel):
 
 
 class SpanEntityScore(object):
-    def __init__(self, id2label):
+    def __init__(self, id2label, ignore_categories=None):
         self.id2label = id2label
+        self.ignore_categories = ignore_categories
         self.reset()
 
     def reset(self):
@@ -128,10 +129,17 @@ class SpanEntityScore(object):
 
     def result(self):
         class_info = {}
-        origin_counter = Counter([self.id2label[x[0]] for x in self.origins])
-        found_counter = Counter([self.id2label[x[0]] for x in self.founds])
-        right_counter = Counter([self.id2label[x[0]] for x in self.rights])
+        origin_counter = Counter(
+            [f"{x[0]}:{self.id2label[x[0]]}" for x in self.origins])
+        found_counter = Counter(
+            [f"{x[0]}:{self.id2label[x[0]]}" for x in self.founds])
+        right_counter = Counter(
+            [f"{x[0]}:{self.id2label[x[0]]}" for x in self.rights])
+        total_origin = 0
+        total_found = 0
+        total_right = 0
         for type_, count in origin_counter.items():
+            category = type_.split(':')[1]
             origin = count
             found = found_counter.get(type_, 0)
             right = right_counter.get(type_, 0)
@@ -139,13 +147,35 @@ class SpanEntityScore(object):
             class_info[type_] = {
                 "acc": round(precision, 4),
                 'recall': round(recall, 4),
-                'f1': round(f1, 4)
+                'f1': round(f1, 4),
+                'right': right,
+                'found': found,
+                'origin': origin
             }
-        origin = len(self.origins)
-        found = len(self.founds)
-        right = len(self.rights)
+            if self.ignore_categories and category in self.ignore_categories:
+                pass
+            else:
+                total_origin += origin
+                total_found += found
+                total_right += right
+        if self.ignore_categories:
+            origin = total_origin
+            found = total_found
+            right = total_right
+        else:
+            origin = len(self.origins)
+            found = len(self.founds)
+            right = len(self.rights)
         recall, precision, f1 = self.compute(origin, found, right)
-        return {'acc': precision, 'recall': recall, 'f1': f1}, class_info
+
+        return {
+            'acc': precision,
+            'recall': recall,
+            'f1': f1,
+            'right': right,
+            'found': found,
+            'origin': origin
+        }, class_info
 
     def update(self, true_subject, pred_subject):
         self.origins.extend(true_subject)
@@ -245,9 +275,9 @@ def extract_entity_from_logits(args,
                                confidence=0.5,
                                enable_nested_entities=False):
     num_labels = int(preds.shape[-1] / 2)
-    text_len = lens[0]
+    num_tokens = lens[0]
 
-    #  logger.info(f"preds: (shape: {preds.shape})")  # |{preds})")
+    #  logger.info(f"preds: (shape: {preds.shape}) | {preds}")
     preds = preds.view(1, -1, num_labels * 2)
     preds = preds.detach().cpu().numpy()
 
@@ -257,8 +287,8 @@ def extract_entity_from_logits(args,
         start = np.where(preds[0, :, 2 * i] > confidence)[0]
         end = np.where(preds[0, :, 2 * i + 1] > confidence)[0]
 
-        start = np.array([x for x in start if x >= 0 and x < text_len])
-        end = np.array([x for x in end if x >= 0 and x < text_len])
+        start = np.array([x for x in start if x >= 0 and x < num_tokens])
+        end = np.array([x for x in end if x >= 0 and x < num_tokens])
 
         starts.append(start)
         ends.append(end)
@@ -382,7 +412,8 @@ class NerTrainer(Trainer):
     #      return dataloader
 
     def on_eval_start(self, args, eval_features):
-        self.metric = SpanEntityScore(args.id2label)
+        self.metric = SpanEntityScore(args.id2label,
+                                      ignore_categories=args.ignore_categories)
         pass
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
@@ -413,13 +444,16 @@ class NerTrainer(Trainer):
             #  activae_logits = loss_sig(active_logits)
             #  active_logits = active_logits**2
             #  preds = active_logits
-            preds = get_active_logits(logits, args.num_labels)
+
+            #  active_logits = get_active_logits(logits, args.num_labels)
+            #  preds = active_logits
+            preds = logits
+            num_tokens = int(all_lens[i])
 
             T = all_subjects[i]
             R = extract_entity_from_logits(
                 args,
-                preds,
-                all_lens[i:i + 1],
+                preds, [num_tokens],
                 confidence=args.confidence,
                 enable_nested_entities=args.enable_nested_entities)
             #  logger.info(f"R: {R}")
@@ -459,12 +493,15 @@ class NerTrainer(Trainer):
             #  activae_logits = loss_sig(active_logits)
             #  active_logits = active_logits**2
             #  preds = active_logits
-            preds = get_active_logits(logits, args.num_labels)
+
+            #  active_logits = get_active_logits(logits, args.num_labels)
+            #  preds = active_logits
+            preds = logits
+            num_tokens = int(all_lens[i])
 
             R = extract_entity_from_logits(
                 args,
-                preds,
-                all_lens[i:i + 1],
+                preds, [num_tokens],
                 confidence=args.confidence,
                 enable_nested_entities=args.enable_nested_entities)
 
@@ -474,9 +511,14 @@ class NerTrainer(Trainer):
                     args.id2label[x[0]], token_offsets[x[1]][0].item(),
                     token_offsets[x[2]][-1].item() - 1
                 ] for x in R]
+                if args.ignore_categories:
+                    label_entities = [
+                        x for x in label_entities
+                        if x[0] not in args.ignore_categories
+                    ]
                 label_entities = [
                     x for x in label_entities
-                    if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0 
+                    if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0
                 ]
             else:
                 label_entities = []

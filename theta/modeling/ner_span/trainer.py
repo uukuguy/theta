@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import json
 import os
 from collections import Counter
 
@@ -11,6 +12,7 @@ import torch.nn.functional as F
 from loguru import logger
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from tqdm import tqdm
 
 from transformers import (AutoConfig, AutoModelForTokenClassification,
                           BertConfig, BertTokenizer, BertTokenizerFast)
@@ -161,8 +163,9 @@ class BertSpanForNer(BertPreTrainedModel):
 
 
 class SpanEntityScore(object):
-    def __init__(self, id2label):
+    def __init__(self, id2label, ignore_categories=None):
         self.id2label = id2label
+        self.ignore_categories = ignore_categories
         self.reset()
 
     def reset(self):
@@ -185,7 +188,12 @@ class SpanEntityScore(object):
             [f"{x[0]}:{self.id2label[x[0]]}" for x in self.founds])
         right_counter = Counter(
             [f"{x[0]}:{self.id2label[x[0]]}" for x in self.rights])
+
+        total_origin = 0
+        total_found = 0
+        total_right = 0
         for type_, count in origin_counter.items():
+            category = type_.split(':')[1]
             origin = count
             found = found_counter.get(type_, 0)
             right = right_counter.get(type_, 0)
@@ -198,9 +206,20 @@ class SpanEntityScore(object):
                 'found': found,
                 'origin': origin
             }
-        origin = len(self.origins)
-        found = len(self.founds)
-        right = len(self.rights)
+            if self.ignore_categories and category in self.ignore_categories:
+                pass
+            else:
+                total_origin += origin
+                total_found += found
+                total_right += right
+        if self.ignore_categories:
+            origin = total_origin
+            found = total_found
+            right = total_right
+        else:
+            origin = len(self.origins)
+            found = len(self.founds)
+            right = len(self.rights)
         recall, precision, f1 = self.compute(origin, found, right)
         return {
             'acc': precision,
@@ -325,11 +344,32 @@ def collate_fn(batch):
     return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects
 
 
-def bert_extract_item(start_logits, end_logits, lens):
-    text_len = lens[0]
+def bert_extract_item(start_logits,
+                      end_logits,
+                      lens,
+                      confidence,
+                      overlap=False):
+    num_tokens = lens[0]
     S = []
+
     starts = torch.argmax(start_logits, -1).cpu().numpy()[0]  #[1:-1]
     ends = torch.argmax(end_logits, -1).cpu().numpy()[0]  #[1:-1]
+
+    # start_logits.shape: (1, sentence_length, num_labels)
+    #  logger.debug(f"start_logits: {start_logits.shape}")
+    #  start_max_probs = [
+    #      f"{start_logits[0][i][x]:.4f}" for i, x in enumerate(starts)
+    #  ]
+    #  logger.debug(f"start_max_probs: {start_max_probs}")
+    #  logger.debug(f"starts: {starts.shape} {starts}")
+    #  starts = [
+    #      x if start_logits[0][i][x] >= confidence else 0
+    #      for i, x in enumerate(starts)
+    #  ]
+    #  ends = [
+    #      x if end_logits[0][i][x] >= confidence else 0
+    #      for i, x in enumerate(ends)
+    #  ]
 
     #  starts = [starts[0]] + [ x if x != starts[i] else 0 for i, x in enumerate(starts[1:])]
     #  ends = [ends[0]] + [ x if x != ends[i] else 0 for i, x in enumerate(ends[1:])]
@@ -350,8 +390,10 @@ def bert_extract_item(start_logits, end_logits, lens):
     #  starts = filter_process(starts)
     #  ends = filter_process(ends)
 
-    starts = np.array([x for x in starts if x >= 0 and x < text_len])
-    ends = np.array([x for x in ends if x >= 0 and x < text_len])
+    #  starts = np.array([x for x in starts if x >= 0 and x < num_tokens])
+    #  ends = np.array([x for x in ends if x >= 0 and x < num_tokens])
+    starts = starts[:num_tokens]
+    ends = ends[:num_tokens]
 
     #  logger.info(f"start_pred: {starts}")
     #  logger.info(f"end_pred: {ends}")
@@ -364,21 +406,28 @@ def bert_extract_item(start_logits, end_logits, lens):
     #              break
     #          if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
     #              break
-    for i in range(len(starts) - 1):
+    #  for i in range(len(starts) - 1):
+    for i in range(len(starts)):
         s_l = starts[i]
         if s_l == 0:
             continue
         for j, e_l in enumerate(ends[i:]):
             if s_l == e_l:
-                S.append((s_l, i, i + j))
-                i = j + 1
-                break
+                if not overlap:
+                    #  if sum(starts[i + 1:i + j + 1]) == 0:
+                    S.append((int(s_l), i, i + j))
+                    #  i = j + 1
+                    break
+                else:
+                    if sum(starts[i + 1:i + j + 1]) != 0:
+                        break
+                    S.append((int(s_l), i, i + j))
             if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
                 break
-    S = [x for x in S if x[1] <= x[2]]
+    #  S = [x for x in S if x[1] <= x[2]]
 
-    for x in S:
-        assert x[1] >= 0 and x[2] >= 0 and x[1] <= x[2], f"S: {S}"
+    #  for x in S:
+    #      assert x[1] >= 0 and x[2] >= 0 and x[1] <= x[2], f"S: {S}"
 
     return S
 
@@ -495,7 +544,9 @@ class NerTrainer(Trainer):
     #      return dataloader
 
     def on_eval_start(self, args, eval_dataset):
-        self.metric = SpanEntityScore(args.id2label)
+        self.metric = SpanEntityScore(args.id2label,
+                                      ignore_categories=args.ignore_categories)
+        self.eval_logs = []
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
     def on_eval_step(self, args, model, step, batch):
@@ -523,8 +574,11 @@ class NerTrainer(Trainer):
 
             start_logits = F.softmax(start_logits, -1)
             end_logits = F.softmax(end_logits, -1)
-            R = bert_extract_item(start_logits, end_logits,
-                                  all_input_lens[i:i + 1])
+            num_tokens = int(all_input_lens[i])
+            R = bert_extract_item(start_logits,
+                                  end_logits, [num_tokens],
+                                  args.confidence,
+                                  overlap=args.allow_overlap)
 
             T = all_subjects[i]
 
@@ -532,6 +586,32 @@ class NerTrainer(Trainer):
             #  logger.warning(f"T: {T}")
 
             self.metric.update(true_subject=T, pred_subject=R)
+
+            def calculate_eval(true_subject, pred_subject):
+                origins = true_subject
+                founds = pred_subject
+                rights = [
+                    pre_entity for pre_entity in pred_subject
+                    if pre_entity in true_subject
+                ]
+                origin = len(origins)
+                found = len(founds)
+                right = len(rights)
+                recall = 0 if origin == 0 else (right / origin)
+                precision = 0 if found == 0 else (right / found)
+                f1 = 0. if recall + precision == 0 else (
+                    2 * precision * recall) / (precision + recall)
+                return precision, recall, f1
+
+            precision, recall, f1 = calculate_eval(T, R)
+
+            token_offsets = all_token_offsets[i]
+            #  label_entities = [[
+            #      args.id2label[x[0]], token_offsets[x[1]][0].item(),
+            #      token_offsets[x[2]][-1].item() - 1
+            #  ] for x in R]
+            self.eval_logs.append(
+                (num_tokens, R, token_offsets, (precision, recall, f1)))
 
         eval_loss = eval_loss / num_eval_steps
         eval_info, entity_info = self.metric.result()
@@ -544,6 +624,58 @@ class NerTrainer(Trainer):
         #          mlflow.log_metric(key, value)
 
         return (eval_loss, ), results
+
+    def on_eval_end(self, args, eval_examples):
+        from ...utils.ner_utils import get_ner_results
+        results = get_ner_results(self.metric)
+
+        eval_logs_file = f"{args.latest_dir}/eval_logs_{args.epoch}.json"
+
+        def entity_text(example, token_offsets, m, s, e):
+            s = token_offsets[s][0].item()
+            e = token_offsets[e][-1].item()
+            return f"{args.id2label[m]}|({m}, {s}, {e})|{example.text[s:e]}"
+
+        all_eval_logs = [{
+            'text':
+            example.text,
+            'num_tokens':
+            num_tokens,
+            'subjects': [
+                entity_text(example, token_offsets, m, s, e)
+                for m, s, e in example.subjects
+            ],
+            'right': [
+                entity_text(example, token_offsets, m, s, e)
+                for m, s, e in sorted(list(set(R) & set(example.subjects)),
+                                      key=lambda x: x[1])
+            ],
+            'miss': [
+                entity_text(example, token_offsets, m, s, e)
+                for m, s, e in sorted(list(set(example.subjects) - set(R)),
+                                      key=lambda x: x[1])
+            ],
+            'extra': [
+                entity_text(example, token_offsets, m, s, e)
+                for m, s, e in sorted(list(set(R) - set(example.subjects)),
+                                      key=lambda x: x[1])
+            ],
+            'pred':
+            [entity_text(example, token_offsets, m, s, e) for m, s, e in R],
+            'acc_recall_f1':
+            x
+        } for example, (
+            num_tokens,
+            R, token_offsets,
+            x) in tqdm(zip(eval_examples, self.eval_logs), desc="eval_logs")]
+        json.dump(all_eval_logs,
+                  open(eval_logs_file, 'w'),
+                  ensure_ascii=False,
+                  indent=2)
+
+        logger.warning(f"Saved eval logs in {eval_logs_file}")
+
+        return results
 
     def on_predict_start(self, args, test_features):
         self.pred_results = []
@@ -566,14 +698,24 @@ class NerTrainer(Trainer):
             _, _, start_logits, end_logits = outputs[:4]
             #  _, start_logits, end_logits = outputs[:3]
 
-            R = bert_extract_item(start_logits, end_logits,
-                                  all_input_lens[i:i + 1])
+            #  start_logits = F.softmax(start_logits, -1)
+            #  end_logits = F.softmax(end_logits, -1)
+            num_tokens = int(all_input_lens[i])
+            R = bert_extract_item(start_logits,
+                                  end_logits, [num_tokens],
+                                  args.confidence,
+                                  overlap=args.allow_overlap)
 
             if R:
                 label_entities = [[
                     args.id2label[x[0]], token_offsets[x[1]][0].item(),
                     token_offsets[x[2]][-1].item() - 1
                 ] for x in R]
+                if args.ignore_categories:
+                    label_entities = [
+                        x for x in label_entities
+                        if x[0] not in args.ignore_categories
+                    ]
                 label_entities = [
                     x for x in label_entities
                     if x[1] <= x[2] and x[1] >= 0 and x[2] >= 0
@@ -595,8 +737,3 @@ class NerTrainer(Trainer):
 
     def on_predict_end(self, args, test_dataset):
         return self.pred_results
-
-    def on_eval_end(self, args, eval_dataset):
-        from ...utils.ner_utils import get_ner_results
-        results = get_ner_results(self.metric)
-        return results

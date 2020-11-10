@@ -2,83 +2,55 @@
 # -*- coding: utf-8 -*-
 
 # -------------------- Params --------------------
-from theta.modeling import (CommonParams, NerAppParams, NerParams, Params,
-                            log_global_params)
+from theta.modeling import NerAppParams
+experiment_params = NerAppParams()
 
-experiment_params = NerAppParams(
-    CommonParams(
-        dataset_name="ner_task",
-        experiment_name="Theta",
-        train_file=None,
-        eval_file=None,
-        test_file=None,
-        learning_rate=1e-4,
-        adam_epsilon=1e-6,
-        weight_decay=0.0,
-        train_max_seq_length=128,
-        eval_max_seq_length=128,
-        per_gpu_train_batch_size=16,
-        per_gpu_eval_batch_size=16,
-        per_gpu_predict_batch_size=16,
-        seg_len=128,
-        seg_backoff=64,
-        num_train_epochs=5,
-        fold=0,
-        num_augments=0,
-        enable_kd=False,
-        enable_sda=False,
-        sda_teachers=3,
-        sda_stategy='recent_models',
-        sda_empty_first=False,
-        loss_type="CrossEntropyLoss",
-        #  loss_type="FocalLoss",
-        focalloss_gamma=2.0,
-        model_type="bert",
-        model_path="/opt/share/pretrained/pytorch/bert-base-chinese",
-        fp16=True,
-        best_index="f1",
-        random_type=None,
-        allow_overlap=False,
-        max_train_examples=0,
-        confidence=0.3,
-        enable_nested_entities=False,
-        seed=8864),
-    NerParams(ner_type='pn', ),
-)
+# ----------------------------------------
+LR = 2e-5
+ADAM_EPS = 1e-8
+N_AUGS = 0
+N_EPOCHS = 10
+MAX_SEQ_LENGTH = 256
+BATCH_SIZE = 16
+SEG_LEN = MAX_SEQ_LENGTH - 2
+SEG_BACKOFF = 127
+ENABLE_KD = False
+MODEL_PATH = "/opt/share/pretrained/pytorch/bert-base-chinese"
+CONFIDENCE = 0.0
+LOSS_TYPE = "CrossEntropyLoss"
+FOCALLOSS_GAMMA = 2.0
+ALLOW_OVERLAP = False
+NER_TYPE = "span"
+SOFT_LABEL = False
+CC = None
 
-# @gpu.huawei
-# docker pull ner_task:
-"""
-python -m theta --pull_deepcode \
-    --dataset_name ner_task \
-    --local_id 
+SEED = 8864
+FOLD = 0
 
-python -m theta --exec_deepcode \
-    --dataset_name ner_task \
-    --local_id 
-"""
-
+# ----------------------------------------
 conf_common_params = {
-    'dataset_name': "ner_task",
-    'experiment_name': "Theta",
-    'fold': 0,
-    'num_augments': 2,
-    'num_train_epochs': 10,
-    'train_max_seq_length': 512,
-    'eval_max_seq_length': 512,
-    'per_gpu_train_batch_size': 4,
-    'per_gpu_eval_batch_size': 4,
-    'per_gpu_predict_batch_size': 4,
-    'seg_len': 510,
-    'seg_backoff': 128,
-    'model_path': "/opt/share/pretrained/pytorch/bert-base-chinese",
-    'confidence': 0.3,
-    'seed': 8864
+    'learning_rate': LR,
+    'adam_epsilon': ADAM_EPS,
+    'fold': FOLD,
+    'num_augments': N_AUGS,
+    'enable_kd': ENABLE_KD,
+    'num_train_epochs': N_EPOCHS,
+    'train_max_seq_length': MAX_SEQ_LENGTH,
+    'eval_max_seq_length': MAX_SEQ_LENGTH,
+    'per_gpu_train_batch_size': BATCH_SIZE,
+    'per_gpu_eval_batch_size': BATCH_SIZE,
+    'per_gpu_predict_batch_size': BATCH_SIZE,
+    'seg_len': SEG_LEN,
+    'seg_backoff': SEG_BACKOFF,
+    'model_path': MODEL_PATH,
+    'confidence': CONFIDENCE,
+    'loss_type': LOSS_TYPE,
+    'focalloss_gamma': FOCALLOSS_GAMMA,
+    'allow_overlap': ALLOW_OVERLAP,
+    'cc': CC,
+    'seed': SEED
 }
-
-conf_ner_params = {
-    'ner_type': 'pn',
-}
+conf_ner_params = {'ner_type': NER_TYPE, 'soft_label': SOFT_LABEL}
 
 for k, v in conf_common_params.items():
     setattr(experiment_params.common_params, k, v)

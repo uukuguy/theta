@@ -658,8 +658,9 @@ class GlueTrainer(Trainer):
         else:
             #  result = acc_and_f1(self.preds,
             #                      np.argmax(self.out_label_ids, axis=1))
-            self.preds = np.array([x > args.confidence
-                                   for x in sigmoid(self.logits)]).astype(int)
+            self.preds = np.array([
+                x > args.confidence for x in sigmoid(self.logits)
+            ]).astype(int)
             result = acc_and_f1(self.preds, self.out_label_ids)
 
         #  if args.do_experiment:
@@ -675,8 +676,9 @@ class GlueTrainer(Trainer):
         if len(self.out_label_ids.shape) == 1:
             self.preds = np.argmax(self.logits, axis=1)
         else:
-            self.preds = np.array([x > args.confidence
-                                   for x in sigmoid(self.logits)]).astype(int)
+            self.preds = np.array([
+                x > args.confidence for x in sigmoid(self.logits)
+            ]).astype(int)
         # for regessions
         #  self.preds = np.squeeze(self.preds)
 
@@ -719,8 +721,8 @@ class GlueTrainer(Trainer):
 
     def on_predict_end(self, args, test_dataset):
         logger.warning(f"self.logits.shape: {self.logits.shape}")
-        #  self.pred_results = np.argmax(self.logits, axis=1)
-        #  self.probs = softmax(self.logits)
+        self.pred_results = np.argmax(self.logits, axis=1)
+        self.probs = softmax(self.logits)
 
         #  self.pred_results = np.array([
         #      0 if x == 1 and prob[1] < 0.60 else x
@@ -732,9 +734,9 @@ class GlueTrainer(Trainer):
         #  logger.info(f"self.probs > threshold: {self.probs > threshold}")
         #  logger.info(
         #      f"np.sum(self.probs > threshold: {np.sum(self.probs > threshold)}")
-        threshold = args.confidence
-        self.probs = sigmoid(self.logits)
-        self.pred_results = np.array(self.probs > threshold, dtype=np.int64)
+        #  threshold = args.confidence
+        #  self.probs = sigmoid(self.logits)
+        #  self.pred_results = np.array(self.probs > threshold, dtype=np.int64)
 
         # multi classes
         #  self.pred_results, self.probs = logits_to_preds(self.logits)

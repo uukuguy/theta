@@ -8,10 +8,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from tqdm import tqdm
 from loguru import logger
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from tqdm import tqdm
 
 from ..utils import init_theta
 from ..utils.multiprocesses import (barrier_leader_process,
@@ -83,12 +83,27 @@ def common_batch_encode(texts, label2id, tokenizer, max_seq_length):
                          all_token2char, all_token_offsets, all_padding_lens),
                      desc="common_batch_encode")):
 
-        all_input_ids[i] = input_ids + [0] * padding_length
-        all_attention_mask[i] = attention_mask + [0] * padding_length
-        all_token_type_ids[i] = token_type_ids + [0] * padding_length
-        all_token2char[i] = token2char + [0] * padding_length
-        all_token_offsets[i] = token_offsets + [(0, 0)] * padding_length
+        if padding_length < 0:
+            all_tokens[i] = all_tokens[i][:max_seq_length - 1] + ['[SEP]']
+            all_input_ids[i] = input_ids[:max_seq_length - 1] + [102]
+            all_attention_mask[i] = attention_mask[:max_seq_length]
+            all_token_type_ids[i] = token_type_ids[:max_seq_length]
+            all_token2char[i] = token2char[:max_seq_length]
+            all_token_offsets[i] = token_offsets[:max_seq_length - 1] + [(0, 0)
+                                                                         ]
+            #  logger.warning(f"all_tokens[i]: {all_tokens[i]}")
+            #  logger.debug(f"all_input_ids[i]: {all_input_ids[i]}")
+            #  logger.debug(f"all_token_offsets[i]: {all_token_offsets[i]}")
 
+        else:
+            all_input_ids[i] = input_ids + [0] * padding_length
+            all_attention_mask[i] = attention_mask + [0] * padding_length
+            all_token_type_ids[i] = token_type_ids + [0] * padding_length
+            all_token2char[i] = token2char + [0] * padding_length
+            all_token_offsets[i] = token_offsets + [(0, 0)] * padding_length
+        all_input_lens[i] = len(input_ids)
+
+    #  logger.warning(f"all_input_ids: {all_input_ids}")
     all_input_ids = torch.from_numpy(np.array(all_input_ids, dtype=np.int64))
     all_attention_mask = torch.from_numpy(
         np.array(all_attention_mask, dtype=np.int64))
@@ -123,6 +138,8 @@ class Trainer:
 
         self.args = args
         self.collate_fn = None
+
+        self.eval_loss = 0.0
 
     #  def build_model(self, args):
     #      raise NotImplementedError
@@ -178,6 +195,13 @@ class Trainer:
         from .utils import save_args
         save_args(args, model_path)
 
+    def save_params_file(self, args, model_path):
+        latest_dir = args.latest_dir
+        dataset_name = args.dataset_name
+        cmd_cp_params = f"cp {dataset_name}_params.py {model_path}/{dataset_name}_params.py"
+        logger.warning(f"{cmd_cp_params}")
+        os.system(cmd_cp_params)
+
     def save_model(self, args, model, tokenizer, optimizer, scheduler,
                    model_path):
         if not os.path.exists(model_path):
@@ -204,6 +228,7 @@ class Trainer:
         )
 
         self.save_args(args, args.latest_dir)
+        self.save_params_file(args, args.latest_dir)
 
         #  if is_master_process(args):
         #      tb_writer = SummaryWriter()
@@ -350,6 +375,7 @@ class Trainer:
         #  )
         #  for epoch in train_iterator:
         for epoch in range(epochs_trained, args.num_train_epochs):
+            args.epoch = epoch
 
             #  epoch_iterator = tqdm(train_dataloader,
             #                        desc="Iteration",
@@ -376,6 +402,8 @@ class Trainer:
                 #  logger.debug(f"outputs: {outputs}")
                 # -------- loss --------
                 loss, logits = outputs[:2]
+
+                #  loss += torch.tensor(self.eval_loss).cuda()
 
                 if enable_kd:
                     inputs = self.batch_to_inputs(args, batch)
@@ -433,7 +461,8 @@ class Trainer:
                 lr = scheduler.get_last_lr()[0]
                 #  lr = scheduler.get_lr()[0]
                 pbar.update(step + 1,
-                            values=[('lr', lr), ('loss', loss.item())])
+                            values=[('lr', lr), ('loss', loss.item()),
+                                    ('eval_loss', self.eval_loss)])
                 train_loss += loss.item()
 
                 if (step + 1) % args.gradient_accumulation_steps == 0:

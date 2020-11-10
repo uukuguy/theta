@@ -112,9 +112,10 @@ class CommonParams(Params):
 @dataclass
 class NerParams(Params):
     ner_labels: List[str] = field(default_factory=list)
-    ner_type: str = "crf"
+    ner_type: str = "span"
     no_crf_loss: bool = False
     soft_label: bool = False
+    ignore_categories: List[str] = None
 
 
 @dataclass

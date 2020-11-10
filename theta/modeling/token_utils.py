@@ -16,8 +16,11 @@
 
 """
 
-from loguru import logger
 from collections import defaultdict
+
+from loguru import logger
+
+from transformers import BertTokenizer
 
 
 # Hugging Face Tokenizer
@@ -116,9 +119,6 @@ class HFTokenizer:
 
     def save_vocabulary(self, model_path):
         self._tokenizer.save(model_path + "/vocab.txt")
-
-
-from transformers import BertTokenizer
 
 
 class CNerTokenizer(BertTokenizer):

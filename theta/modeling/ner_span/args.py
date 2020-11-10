@@ -6,11 +6,19 @@ from ..common_args import get_main_args
 
 
 def add_modeling_args(parser):
-    parser.add_argument("--soft_label", action="store_true", help="Soft label for ner span")
+    parser.add_argument("--soft_label",
+                        action="store_true",
+                        help="Soft label for ner span")
+    parser.add_argument("--ignore_categories",
+                        default=None,
+                        help="Ignore categories list.")
     return parser
 
 
-def get_args(experiment_params = None, special_args: list = None, ):
-    return get_main_args(add_modeling_args, 
+def get_args(
+    experiment_params=None,
+    special_args: list = None,
+):
+    return get_main_args(add_modeling_args,
                          experiment_params=experiment_params,
-                         special_args = special_args)
+                         special_args=special_args)

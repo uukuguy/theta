@@ -283,7 +283,8 @@ def data_seg_generator(lines,
                        seg_backoff=0,
                        num_augments=0,
                        allow_overlap=False):
-    assert seg_backoff >= 0 and seg_backoff <= int(seg_len * 3 / 4)
+    #  assert seg_backoff >= 0 and seg_backoff <= int(seg_len * 3 / 4)
+    assert seg_len >= 0 and seg_backoff >= 0 and seg_backoff <= seg_len
     all_text_entities = []
     labels_map = {}
 
@@ -343,11 +344,11 @@ def data_seg_generator(lines,
                 #      break
             if overlap:
                 num_overlap += 1
-                if not allow_overlap:
-                    logger.warning(
-                        f"Overlap! {i} mention: {entity.mention}({s}:{e}), used_span: {used_span}"
-                    )
-                    continue
+                #  if not allow_overlap:
+                logger.warning(
+                    f"Overlap! {i} mention: {entity.mention}({s}:{e}), used_span: {used_span}"
+                )
+                continue
             used_span.append((s, e))
 
             new_entities.append(entity)

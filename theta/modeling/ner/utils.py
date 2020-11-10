@@ -400,8 +400,13 @@ def bert_extract_item(start_logits, end_logits):
 
 
 class SeqEntityScore(object):
-    def __init__(self, id2label, markup='bios', autofix=False):
+    def __init__(self,
+                 id2label,
+                 ignore_categories=None,
+                 markup='bios',
+                 autofix=False):
         self.id2label = id2label
+        self.ignore_categories = ignore_categories
         self.markup = markup
         self.autofix = autofix
         self.reset()
@@ -420,10 +425,18 @@ class SeqEntityScore(object):
 
     def result(self):
         class_info = {}
-        origin_counter = Counter([x[0] for x in self.origins])
-        found_counter = Counter([x[0] for x in self.founds])
-        right_counter = Counter([x[0] for x in self.rights])
+        #  origin_counter = Counter([x[0] for x in self.origins])
+        #  found_counter = Counter([x[0] for x in self.founds])
+        #  right_counter = Counter([x[0] for x in self.rights])
+        origin_counter = Counter([f"{x[0]}" for x in self.origins])
+        found_counter = Counter([f"{x[0]}" for x in self.founds])
+        right_counter = Counter([f"{x[0]}" for x in self.rights])
+
+        total_origin = 0
+        total_found = 0
+        total_right = 0
         for type_, count in origin_counter.items():
+            category = type_
             origin = count
             found = found_counter.get(type_, 0)
             right = right_counter.get(type_, 0)
@@ -431,13 +444,37 @@ class SeqEntityScore(object):
             class_info[type_] = {
                 "acc": round(precision, 4),
                 'recall': round(recall, 4),
-                'f1': round(f1, 4)
+                'f1': round(f1, 4),
+                'right': right,
+                'found': found,
+                'origin': origin
             }
-        origin = len(self.origins)
-        found = len(self.founds)
-        right = len(self.rights)
+            if self.ignore_categories and category in self.ignore_categories:
+                pass
+            else:
+                total_origin += origin
+                total_found += found
+                total_right += right
+        if self.ignore_categories:
+            origin = total_origin
+            found = total_found
+            right = total_right
+        else:
+            origin = len(self.origins)
+            found = len(self.founds)
+            right = len(self.rights)
+        #  origin = len(self.origins)
+        #  found = len(self.founds)
+        #  right = len(self.rights)
         recall, precision, f1 = self.compute(origin, found, right)
-        return {'acc': precision, 'recall': recall, 'f1': f1}, class_info
+        return {
+            'acc': precision,
+            'recall': recall,
+            'f1': f1,
+            'right': right,
+            'found': found,
+            'origin': origin
+        }, class_info
 
     def update(self, label_paths, pred_paths):
         '''

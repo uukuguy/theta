@@ -30,6 +30,10 @@ def do_new(args):
     from .utils import save_args
     save_args(args, latest_dir)
 
+    #  cmd_cp_params =
+    #      f"cp {theta_src_path}/templates/{app_type}/{app_type}_params.py {latest_dir}/{dataset_name}_params.py"
+    #  logger.warning(f"{cmd_cp_params}")
+
     logger.warning(f"dataset_name: {args.dataset_name}")
     logger.warning(f"experiment_name: {args.experiment_name}")
     logger.warning(f"local_id: {args.local_id}")
@@ -47,6 +51,7 @@ class GlueApp:
 
         args = get_args(experiment_params=experiment_params,
                         special_args=[add_special_args])
+        args.app_type = 'glue'
         self.args = args
         logger.info(f"args: {args}")
         #  print("[bold cyan]args:[/bold cyan]", args)
@@ -265,6 +270,7 @@ class NerApp:
 
         args = get_args(experiment_params=experiment_params,
                         special_args=[add_special_args])
+        args.app_type = 'ner'
         self.args = args
         logger.info(f"args: {args}")
         #  print("[bold cyan]args:[/bold cyan]", args)
@@ -487,6 +493,7 @@ class SpoApp:
 
         args = get_args(experiment_params=experiment_params,
                         special_args=[add_special_args])
+        args.app_type = 'spo'
         self.args = args
         logger.info(f"args: {args}")
         #  print("[bold cyan]args:[/bold cyan]", args)

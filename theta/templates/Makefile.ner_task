@@ -8,8 +8,7 @@ train:
 		--do_train \
 
 eval:
-	python run_${DATASET_NAME}.py \
-		--do_eval \
+	python ${DATASET_NAME}.py data/zs100w_0921_wyq_up.txt ./outputs/saved_models/${LOCAL_ID}/${DATASET_NAME}_reviews_${LOCAL_ID}.json
 
 predict:
 	python run_${DATASET_NAME}.py \

@@ -22,9 +22,14 @@ def get_ner_results(metric):
     total_recall = 0
     total_f1 = 0
     for key, metrics in sorted_entity_info:
-        #  for key in entity_info.keys():
-        #      metrics = entity_info[key]
-        disp_key = ' ' + key[:16]
+        if ':' in key:
+            category = key.split(':')[1]
+        else:
+            category = key
+        if metric.ignore_categories and category in metric.ignore_categories:
+            disp_key = ' -' + key[:16]
+        else:
+            disp_key = ' ' + key[:16]
         disp_key += ' ' * (24 - len(disp_key.encode('gbk')))
         info = f"{disp_key} | {metrics['acc']:.4f} {metrics['recall']:.4f} {metrics['f1']:.4f}"
         right = metrics['right']
@@ -32,10 +37,17 @@ def get_ner_results(metric):
         origin = metrics['origin']
         info += f" {right}/{found}/{origin}"
         logger.info(info)
-        total_acc += metrics['acc']
-        total_recall += metrics['recall']
-        total_f1 += metrics['f1']
-    num_categories = len(sorted_entity_info)
+        if metric.ignore_categories and category in metric.ignore_categories:
+            pass
+        else:
+            total_acc += metrics['acc']
+            total_recall += metrics['recall']
+            total_f1 += metrics['f1']
+    if metric.ignore_categories:
+        num_categories = len(sorted_entity_info) - len(
+            metric.ignore_categories)
+    else:
+        num_categories = len(sorted_entity_info)
     macro_acc = total_acc / num_categories
     macro_recall = total_recall / num_categories
     macro_f1 = total_f1 / num_categories

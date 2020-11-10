@@ -1,8 +1,10 @@
 # Theta 
 
-Deep learning toolbox for end-to-end text classification and entity extraction tasks.
+Deep learning toolbox for end-to-end text information extraction tasks.
 
-Theta是基于深度学习的文本挖掘基础能力工具箱，提供文本分类、文本抽取、文本匹配、阅读理解、知识问答、知识图谱等端到端开箱即用工具集。
+Theta定位是解决实际	工程项目中文本信息抽取任务的实用工具箱，端到端实现从原始文本输入到结构化输出全过程。用户工作聚焦于输入数据格式转换，调整关键参数调度theta完成模型训练推理任务及输出格式化数据利用。
+
+参加了CCF2019、CHIP2019、CCKS2020、CCL2020等大型线上评测，取得10余次决赛奖项，包括7次进入前三，3次第一。
 
 ## 更新
 
