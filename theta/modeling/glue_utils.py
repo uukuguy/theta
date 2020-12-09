@@ -119,6 +119,11 @@ def show_glue_datainfo(glue_labels, train_data_generator, train_file,
         from collections import Counter
         logger.info(f"{Counter(all_labels).most_common()}")
     logger.info(f"")
+
+    logger.info(f"Train samples: {len(train_lengths)}")
+    logger.info(f"Test samples: {len(test_lengths)}")
+
+    logger.info(f"")
     import numpy as np
     logger.info(f"****** train lengths ******")
     logger.info(f"mean: {np.mean(train_lengths):.2f}")
@@ -135,12 +140,12 @@ def show_glue_datainfo(glue_labels, train_data_generator, train_file,
     logger.info(f"")
 
 
-def save_glue_preds(args, preds, test_examples):
+def save_glue_preds(args, preds, test_examples, probs=None):
     assert len(test_examples) == len(preds)
     reviews_file = args.reviews_file
 
     reviews = {}
-    for input_example, v in zip(test_examples, preds):
+    for i, (input_example, v) in enumerate(zip(test_examples, preds)):
         guid = input_example.guid
         text_a = input_example.text_a or ""
         text_b = input_example.text_b or ""
@@ -149,11 +154,20 @@ def save_glue_preds(args, preds, test_examples):
         else:
             label = args.id2label[v]
 
+        prob = None
+        if isinstance(probs, np.ndarray):
+            prob = [f"{x:.3f}" for x in list(probs[i])]
+        elif isinstance(probs, list):
+            prob = [f"{x:.3f}" for x in probs[i]]
+        else:
+            prob = None
+
         reviews[guid] = {
             'guid': guid,
             'text_a': text_a,
             'text_b': text_b,
-            'label': label
+            'label': label,
+            'probs': prob
         }
 
     json.dump(reviews, open(reviews_file, 'w'), ensure_ascii=False, indent=2)

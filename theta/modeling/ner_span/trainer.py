@@ -407,7 +407,10 @@ def bert_extract_item(start_logits,
     #          if i + j < len(starts) - 1 and starts[i + j + 1] != 0:
     #              break
     #  for i in range(len(starts) - 1):
+    last_j = -1
     for i in range(len(starts)):
+        if i <= last_j:
+            continue
         s_l = starts[i]
         if s_l == 0:
             continue
@@ -416,7 +419,8 @@ def bert_extract_item(start_logits,
                 if not overlap:
                     #  if sum(starts[i + 1:i + j + 1]) == 0:
                     S.append((int(s_l), i, i + j))
-                    #  i = j + 1
+                    last_j = j
+                    i = j + 1
                     break
                 else:
                     if sum(starts[i + 1:i + j + 1]) != 0:
@@ -698,8 +702,8 @@ class NerTrainer(Trainer):
             _, _, start_logits, end_logits = outputs[:4]
             #  _, start_logits, end_logits = outputs[:3]
 
-            #  start_logits = F.softmax(start_logits, -1)
-            #  end_logits = F.softmax(end_logits, -1)
+            start_logits = F.softmax(start_logits, -1)
+            end_logits = F.softmax(end_logits, -1)
             num_tokens = int(all_input_lens[i])
             R = bert_extract_item(start_logits,
                                   end_logits, [num_tokens],

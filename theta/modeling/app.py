@@ -197,7 +197,10 @@ class GlueApp:
                 model = self.load_model()
                 trainer.predict(args, model, test_examples)
                 from .glue_utils import save_glue_preds
-                save_glue_preds(args, trainer.pred_results, test_examples)
+                save_glue_preds(args,
+                                trainer.pred_results,
+                                test_examples,
+                                probs=trainer.pred_probs)
 
             if args.do_train:
                 do_train(args)
@@ -353,7 +356,7 @@ class NerApp:
         if args.do_new:
             do_new(args)
 
-        elif args.do_eda:
+        if args.do_eda:
             do_eda(args)
 
         elif args.do_submit:

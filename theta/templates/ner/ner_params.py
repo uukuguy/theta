@@ -22,6 +22,8 @@ FOCALLOSS_GAMMA = 2.0
 ALLOW_OVERLAP = False
 NER_TYPE = "span"
 SOFT_LABEL = False
+ENABLE_NESTED_ENTITIES = False
+FP16 = True
 CC = None
 
 SEED = 8864
@@ -47,6 +49,8 @@ conf_common_params = {
     'loss_type': LOSS_TYPE,
     'focalloss_gamma': FOCALLOSS_GAMMA,
     'allow_overlap': ALLOW_OVERLAP,
+    'enable_nested_entities': ENABLE_NESTED_ENTITIES,
+    'fp16': FP16,
     'cc': CC,
     'seed': SEED
 }

@@ -19,7 +19,7 @@ class Params:
         #          mlflow.log_param(k, v)
 
     def debug(self):
-        for k, v in self.__dict__.items():
+        for k, v in sorted(self.__dict__.items()):
             if isinstance(v, Params):
                 v.debug()
             else:

@@ -49,7 +49,7 @@ export_train_json_data:
 	python -m theta --export_train_data \
 		--dataset_name ${DATASET_NAME} \
 		--format json \
-		--dataset_file ./data/${DATASET_NAME}_train_data.json 
+		--output ./data/${DATASET_NAME}_train_data.json 
 
 export_train_brat_data: 
 	python -m theta --export_train_data \
@@ -62,7 +62,7 @@ export_test_json_data:
 	python -m theta --export_test_data \
 		--dataset_name ${DATASET_NAME} \
 		--format json \
-		--dataset_file ./data/${DATASET_NAME}_test_data.json 
+		--output ./data/${DATASET_NAME}_test_data.json 
 
 export_test_brat_data: 
 	python -m theta --export_test_data \

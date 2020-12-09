@@ -18,7 +18,7 @@ def clean_text(text):
     return text
 
 
-def train_data_generator(train_file):
+def train_data_generator(train_file=None):
 
     if train_file is None:
         train_file = 'data/data_train.json'
@@ -33,7 +33,7 @@ def train_data_generator(train_file):
         yield str(i), text, None, label
 
 
-def test_data_generator(test_file):
+def test_data_generator(test_file=None):
     if test_file is None:
         test_file = 'data/sentences.json'
 
@@ -45,9 +45,13 @@ def test_data_generator(test_file):
         yield guid, text, None, None
 
 
-def generate_submission(args):
+def generate_submission(args, reviews_file=None, submission_file=None):
+    if reviews_file is None:
+        reviews_file = args.reviews_file
     reviews = json.load(open(args.reviews_file, 'r'))
-    submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json"
+
+    if submission_file is None:
+        submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json"
 
     json.dump(reviews,
               open(submission_file, 'w'),

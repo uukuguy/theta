@@ -297,6 +297,9 @@ def export_train_data(args):
     ner_connections = None
     if 'ner_connections' in dataset_module.__dict__:
         ner_connections = dataset_module.ner_connections
+    glue_labels = None
+    if 'glue_labels' in dataset_module.__dict__:
+        glue_labels = dataset_module.glue_labels
 
     predicate_labels = None
     if 'predicate_labels' in dataset_module.__dict__:
@@ -324,9 +327,11 @@ def export_train_data(args):
         ner_dataset.info()
 
         export_format = args.format
-        if export_format == "json":
-            dataset_file = args.dataset_file
-            ner_dataset.save(dataset_file)
+        if export_format == "json" or export_format == "lines":
+            dataset_file = args.output
+            if not dataset_file:
+                dataset_file = f"{dataset_name}_train_data.json"
+            ner_dataset.save(dataset_file, format=export_format)
         elif export_format == "brat":
             brat_data_dir = args.brat_data_dir
             if not brat_data_dir:
@@ -340,6 +345,21 @@ def export_train_data(args):
             raise Exception(
                 f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
             )
+    elif glue_labels:
+        console.log("[bold cyan]glue_labels:[/bold cyan]", glue_labels)
+
+        export_format = args.format
+        dataset_file = args.output
+        if not dataset_file:
+            dataset_file = f"{dataset_name}_train_data.json"
+        all_examples = []
+        for guid, text, _, labels in tqdm(train_data_generator()):
+            all_examples.append({'guid': guid, 'text': text, 'labels': labels})
+        json.dump(all_examples,
+                  open(dataset_file, 'w'),
+                  ensure_ascii=False,
+                  indent=2)
+        logger.warning(f"Saved {dataset_file}")
 
 
 def reviews_data_generator(reviews_file):
@@ -370,6 +390,9 @@ def export_test_data(args):
     ner_connections = None
     if 'ner_connections' in dataset_module.__dict__:
         ner_connections = dataset_module.ner_connections
+    glue_labels = None
+    if 'glue_labels' in dataset_module.__dict__:
+        glue_labels = dataset_module.glue_labels
 
     #  logger.info(f"ner_labels: {ner_labels}")
     #  logger.info(f"ner_connections: {ner_connections}")
@@ -383,30 +406,48 @@ def export_test_data(args):
         training_args = json.load(open(args_path))
         local_id = training_args['local_id']
 
-    reviews_file = os.path.join(args.output_dir, 'saved_models', local_id,
-                                f"{dataset_name}_reviews_{local_id}.json")
+    if ner_labels:
+        reviews_file = os.path.join(args.output_dir, 'saved_models', local_id,
+                                    f"{dataset_name}_reviews_{local_id}.json")
 
-    ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
-    ner_dataset.load(reviews_data_generator, reviews_file)
-    ner_dataset.info()
+        ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
+        ner_dataset.load(reviews_data_generator, reviews_file)
+        ner_dataset.info()
 
-    export_format = args.format
-    if export_format == "json":
-        data_file = args.dataset_file
-        ner_dataset.save(data_file)
-    elif export_format == "brat":
-        brat_data_dir = args.brat_data_dir
-        if not brat_data_dir:
-            brat_data_dir = "brat_data"
-        if not os.path.exists(brat_data_dir):
-            os.makedirs(brat_data_dir)
-        ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
-    elif export_format == "poplar":
-        pass
-    else:
-        raise Exception(
-            f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
-        )
+        export_format = args.format
+        if export_format == "json" or export_format == "lines":
+            dataset_file = args.output
+            if not dataset_file:
+                dataset_file = f"{dataset_name}_test_data.json"
+            ner_dataset.save(dataset_file, format=export_format)
+        elif export_format == "brat":
+            brat_data_dir = args.brat_data_dir
+            if not brat_data_dir:
+                brat_data_dir = "brat_data"
+            if not os.path.exists(brat_data_dir):
+                os.makedirs(brat_data_dir)
+            ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
+        elif export_format == "poplar":
+            pass
+        else:
+            raise Exception(
+                f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
+            )
+    elif glue_labels:
+        console.log("[bold cyan]glue_labels:[/bold cyan]", glue_labels)
+
+        export_format = args.format
+        dataset_file = args.output
+        if not dataset_file:
+            dataset_file = f"{dataset_name}_train_data.json"
+        all_examples = []
+        for guid, text, _, _ in tqdm(test_data_generator()):
+            all_examples.append({'guid': guid, 'text': text})
+        json.dump(all_examples,
+                  open(dataset_file, 'w'),
+                  ensure_ascii=False,
+                  indent=2)
+        logger.warning(f"Saved {dataset_file}")
 
 
 def import_brat_data(args):
@@ -853,7 +894,7 @@ def get_args():
         default="/opt/share/pretrained/pytorch/bert-base-chinese")
     parser.add_argument("--format",
                         default='json',
-                        choices=['json', 'brat', 'poplar'])
+                        choices=['json', 'lines', 'brat', 'poplar'])
     parser.add_argument("--export_train_data", action='store_true')
     parser.add_argument("--export_test_data", action='store_true')
     parser.add_argument("--import_brat_data", action='store_true')
@@ -862,6 +903,7 @@ def get_args():
     parser.add_argument("--json_to_brat", action='store_true')
     parser.add_argument("--brat_to_json", action='store_true')
     parser.add_argument("--dataset_file", default=None)
+    parser.add_argument("--output", default=None)
 
     parser.add_argument("--diff_ner_datasets",
                         nargs=2,

@@ -102,7 +102,7 @@ class NerDataset:
     def extend(self, other_dataset):
         self.tagged_text_list.extend(other_dataset)
 
-    def save(self, filename: str, format="lines"):
+    def save(self, filename: str, format="json"):
         """
         {'guid': '0000', 'text': "sample text", 'tags': [{'category': "实体类别1", start: 10, mention: "实体文本"}, ...]}
         """
@@ -123,7 +123,7 @@ class NerDataset:
             raise ValueError(
                 f"Bad format: {format}. Format must be one of ['json', 'lines']"
             )
-        logger.info(f"Saved {filename}")
+        logger.warning(f"Saved {filename}")
 
     def load_from_file(self, filename: str):
         logger.info(f"Loading {filename}")

@@ -287,7 +287,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
                     #  loss = DiceLoss(weight=self.diceloss_weight)(logits.view(
                     #      -1, self.num_labels), labels.view(-1))
                     loss = DiceLoss(epsilon=1e-5)(logits.view(
-                        -1, self.num_labels), labels.view(-1))
+                        -1, self.num_labels), labels.view(-1, self.num_labels))
                 elif self.loss_type == 'BCEWithLogitsLoss':
                     loss_fct = BCEWithLogitsLoss()
                     #  logger.debug(f"logits: {logits.shape}, {logits}")
@@ -700,7 +700,7 @@ class GlueTrainer(Trainer):
         self.logits = None
 
         self.pred_results = None
-        self.probs = None
+        self.pred_probs = None
 
     #  def on_predict_step(self, args, test_dataset, step, model, inputs,
     #                      outputs):
@@ -722,24 +722,24 @@ class GlueTrainer(Trainer):
     def on_predict_end(self, args, test_dataset):
         logger.warning(f"self.logits.shape: {self.logits.shape}")
         self.pred_results = np.argmax(self.logits, axis=1)
-        self.probs = softmax(self.logits)
+        self.pred_probs = softmax(self.logits)
 
         #  self.pred_results = np.array([
         #      0 if x == 1 and prob[1] < 0.60 else x
-        #      for prob, x in zip(self.probs, self.pred_results)
+        #      for prob, x in zip(self.pred_probs, self.pred_results)
         #  ])
 
         # multi labels
         #  threshold = 5.0 / len(self.label2id)
-        #  logger.info(f"self.probs > threshold: {self.probs > threshold}")
+        #  logger.info(f"self.pred_probs > threshold: {self.pred_probs > threshold}")
         #  logger.info(
-        #      f"np.sum(self.probs > threshold: {np.sum(self.probs > threshold)}")
+        #      f"np.sum(self.pred_probs > threshold: {np.sum(self.pred_probs > threshold)}")
         #  threshold = args.confidence
-        #  self.probs = sigmoid(self.logits)
-        #  self.pred_results = np.array(self.probs > threshold, dtype=np.int64)
+        #  self.pred_probs = sigmoid(self.logits)
+        #  self.pred_results = np.array(self.pred_probs > threshold, dtype=np.int64)
 
         # multi classes
-        #  self.pred_results, self.probs = logits_to_preds(self.logits)
+        #  self.pred_results, self.pred_probs = logits_to_preds(self.logits)
 
         logger.debug(f"pred_results: {self.pred_results}")
-        logger.debug(f"probs: {self.probs}")
+        logger.debug(f"pred_probs: {self.pred_probs}")

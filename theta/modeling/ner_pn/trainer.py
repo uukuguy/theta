@@ -294,17 +294,23 @@ def extract_entity_from_logits(args,
         ends.append(end)
     #  logger.info(f"starts: {starts}")
     #  logger.info(f"ends: {ends}")
+    #  logger.info(f"enable_nested_entities: {enable_nested_entities}")
     entities = []
     for n in range(num_labels):
         start = starts[n]
         end = ends[n]
+
+        last_end_pos = -1
         for idx, i in enumerate(start):
+            if i <= last_end_pos:
+                continue
             jj = end[end >= i]
             for j in jj:
                 if idx < len(start) - 1 and j >= start[idx + 1]:
                     break
                 s = i  #- 1
                 e = j  #- 1
+                last_end_pos = e
                 entities.append((n + 1, s, e))
                 if not enable_nested_entities:
                     break
