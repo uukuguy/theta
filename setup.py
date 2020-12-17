@@ -17,17 +17,18 @@ REQUIRED = [
     "dataclasses;python_version<'3.7'",
     "tqdm >= 4.27",
     "loguru",
-    "torch >= 1.4.0",
-    "transformers >=1.1.0",
+    "torch >= 1.5.0",
+    "transformers >=3.0.0",
+    "rich",
 ]
 
 # Package meta-data.
 NAME = 'theta'
-DESCRIPTION = 'Deep learning toolbox for end-to-end text classification and entity extraction tasks.'
+DESCRIPTION = 'Deep learning toolbox for end-to-end text information extraction tasks.'
 URL = 'https://github.com/idleuncle/theta'
 EMAIL = '531045572@qq.com'
 AUTHOR = 'Jiangwen Su'
-REQUIRES_PYTHON = '>=3.6.0'
+REQUIRES_PYTHON = '>=3.7.0'
 VERSION = None
 
 # What packages are required for this module to be executed?
