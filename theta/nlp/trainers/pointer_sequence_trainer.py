@@ -1,18 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json
-import os
-from collections import Counter
+import os, json
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from loguru import logger
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from tqdm import tqdm
 
 from transformers import (AutoConfig, AutoModelForTokenClassification,
                           BertConfig, BertTokenizer, BertTokenizerFast)
@@ -22,11 +17,12 @@ from ...losses import DiceLoss, FocalLoss, LabelSmoothingCrossEntropy
 from ...utils.multiprocesses import (barrier_leader_process,
                                      barrier_member_processes,
                                      is_multi_processes)
-from ..models.linears import PoolerEndLogits, PoolerStartLogits
-from ..trainer import Trainer, get_default_optimizer_parameters
-from .utils import CNerTokenizer, SeqEntityScore, get_entities
+from ...modeling.models.linears import PoolerEndLogits, PoolerStartLogits
 
-#  import mlflow
+from tqdm import tqdm
+from loguru import logger
+from collections import Counter
+from .base_trainer import BaseTrainer, get_default_optimizer_parameters
 
 
 class BertSpanForNer(BertPreTrainedModel):
@@ -239,111 +235,6 @@ class SpanEntityScore(object):
         ])
 
 
-MODEL_CLASSES = {
-    'bert': (BertConfig, BertSpanForNer, CNerTokenizer),
-    #  'bert': (BertConfig, BertSpanForNer, BertTokenizer),
-    #  'bert': (BertConfig, BertSpanForNer, BertTokenizerFast),
-}
-
-
-def load_pretrained_tokenizer(args):
-    #  config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-    #  tokenizer = tokenizer_class.from_pretrained(
-    #      args.model_path,
-    #      do_lower_case=args.do_lower_case,
-    #      is_english=args.is_english,
-    #      cache_dir=args.cache_dir if args.cache_dir else None,
-    #  )
-    from ..token_utils import HFTokenizer
-    tokenizer = HFTokenizer(os.path.join(args.model_path, 'vocab.txt'),
-                            lowercase=args.do_lower_case,
-                            cc=args.cc)
-
-    return tokenizer
-
-
-def load_pretrained_model(args):
-    # make sure only the first process in distributed training
-    # will download model & vocab
-    barrier_member_processes(args)
-
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-    config = config_class.from_pretrained(
-        args.model_path,
-        num_labels=args.num_labels,
-        loss_type=args.loss_type,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-        soft_label=args.soft_label,
-    )
-    setattr(config, 'label2id', args.label2id)
-    setattr(config, 'id2label', args.id2label)
-    setattr(config, 'soft_label', args.soft_label)
-    setattr(config, 'loss_type', args.loss_type)
-    setattr(config, 'focalloss_gamma', args.focalloss_gamma)
-    setattr(config, 'focalloss_alpha', args.focalloss_alpha)
-    setattr(config, 'diceloss_weight', args.diceloss_weight)
-    logger.info(f"model_path: {args.model_path}")
-    logger.info(f"config:{config}")
-    model = model_class.from_pretrained(
-        args.model_path,
-        from_tf=bool(".ckpt" in args.model_path),
-        config=config,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
-
-    # make sure only the first process in distributed training
-    # will download model & vocab
-    barrier_leader_process(args)
-
-    return model
-
-
-#  def batch_to_input_data(batch):
-#      all_input_ids = torch.stack([e.input_ids for e in batch])
-#      all_input_mask = torch.stack([e.input_mask for e in batch])
-#      all_segment_ids = torch.stack([e.segment_ids for e in batch])
-#      all_input_lens = torch.stack([e.input_len for e in batch])
-#      all_token_offsets = torch.stack([e.token_offsets for e in batch])
-#      all_start_ids = torch.stack([e.start_ids for e in batch])
-#      all_end_ids = torch.stack([e.end_ids for e in batch])
-#      all_subjects = [e.subjects for e in batch]
-#
-#      return (all_input_ids, all_input_mask, all_segment_ids, all_start_ids,
-#              all_end_ids, all_input_lens, all_subjects, all_token_offsets)
-
-
-def collate_fn(batch):
-    """
-    batch should be a list of (sequence, target, length) tuples...
-    Returns a padded tensor of sequences sorted from longest to shortest,
-    """
-    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_input_lens = map(
-    #      torch.stack, zip(*batch))
-    #  from .dataset import batch_to_input_data
-    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_input_lens, all_subjects, all_token_offsets = batch_to_input_data(
-    #      batch)
-    all_input_ids = torch.stack([e.input_ids for e in batch])
-    all_attention_mask = torch.stack([e.attention_mask for e in batch])
-    all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
-    all_input_lens = torch.stack([e.input_len for e in batch])
-    all_token_offsets = torch.stack([e.token_offsets for e in batch])
-
-    all_start_ids = torch.stack([e.start_ids for e in batch])
-    all_end_ids = torch.stack([e.end_ids for e in batch])
-    all_subjects = [e.subjects for e in batch]
-
-    max_len = max(all_input_lens).item()
-    all_input_ids = all_input_ids[:, :max_len]
-    all_attention_mask = all_attention_mask[:, :max_len]
-    all_token_type_ids = all_token_type_ids[:, :max_len]
-    all_token_offsets = all_token_offsets[:, :max_len]
-
-    all_start_ids = all_start_ids[:, :max_len]
-    all_end_ids = all_end_ids[:, :max_len]
-
-    return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects
-
-
 def bert_extract_item(start_logits,
                       end_logits,
                       lens,
@@ -436,10 +327,82 @@ def bert_extract_item(start_logits,
     return S
 
 
-def load_model(args):
-    model = load_pretrained_model(args)
-    model.to(args.device)
+MODEL_CLASSES = {
+    'bert': (BertConfig, BertSpanForNer, None),
+    #  'bert': (BertConfig, BertSpanForNer, BertTokenizer),
+    #  'bert': (BertConfig, BertSpanForNer, BertTokenizerFast),
+}
+
+
+def load_pretrained_tokenizer(args):
+    #  config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    #  tokenizer = tokenizer_class.from_pretrained(
+    #      args.model_path,
+    #      do_lower_case=args.do_lower_case,
+    #      is_english=args.is_english,
+    #      cache_dir=args.cache_dir if args.cache_dir else None,
+    #  )
+    from ..tokenizers import HFTokenizer
+    tokenizer = HFTokenizer(os.path.join(args.model_path, 'vocab.txt'),
+                            lowercase=args.do_lower_case,
+                            cc=args.cc)
+
+    return tokenizer
+
+
+def load_pretrained_model(args, model_path=None):
+    # make sure only the first process in distributed training
+    # will download model & vocab
+    barrier_member_processes(args)
+
+    if model_path is None:
+        model_path = args.model_path
+
+    config_class, model_class, _ = MODEL_CLASSES[args.model_type]
+    config = config_class.from_pretrained(
+        model_path,
+        num_labels=args.num_labels,
+        loss_type=args.loss_type,
+        cache_dir=args.cache_dir if args.cache_dir else None,
+        soft_label=args.soft_label,
+    )
+    setattr(config, 'label2id', args.label2id)
+    setattr(config, 'id2label', args.id2label)
+    setattr(config, 'soft_label', args.soft_label)
+    setattr(config, 'loss_type', args.loss_type)
+    setattr(config, 'focalloss_gamma', args.focalloss_gamma)
+    setattr(config, 'focalloss_alpha', args.focalloss_alpha)
+    setattr(config, 'diceloss_weight', args.diceloss_weight)
+    logger.info(f"model_path: {model_path}")
+    logger.info(f"config:{config}")
+    model = model_class.from_pretrained(
+        model_path,
+        from_tf=bool(".ckpt" in args.model_path),
+        config=config,
+        cache_dir=args.cache_dir if args.cache_dir else None,
+    )
+
+    # make sure only the first process in distributed training
+    # will download model & vocab
+    barrier_leader_process(args)
+
     return model
+
+
+def save_args(args, model_path):
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
+    #  torch.save(args, os.path.join(model_path, "training_args.bin"))
+    logger.info(f"Save args in {model_path}/training_args.json")
+    json.dump(
+        {
+            k: v
+            for k, v in args.__dict__.items() if v is None
+            or type(v) in [bool, str, int, float, dict, list, tuple]
+        },
+        open(os.path.join(model_path, "training_args.json"), 'w'),
+        ensure_ascii=False,
+        indent=2)
 
 
 def build_default_model(args):
@@ -472,6 +435,38 @@ def build_default_model(args):
     return model, optimizer, scheduler
 
 
+def collate_fn(batch):
+    """
+    batch should be a list of (sequence, target, length) tuples...
+    Returns a padded tensor of sequences sorted from longest to shortest,
+    """
+    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_input_lens = map(
+    #      torch.stack, zip(*batch))
+    #  from .dataset import batch_to_input_data
+    #  all_input_ids, all_input_mask, all_segment_ids, all_start_ids, all_end_ids, all_input_lens, all_subjects, all_token_offsets = batch_to_input_data(
+    #      batch)
+    all_input_ids = torch.stack([e.input_ids for e in batch])
+    all_attention_mask = torch.stack([e.attention_mask for e in batch])
+    all_token_type_ids = torch.stack([e.token_type_ids for e in batch])
+    all_input_lens = torch.stack([e.input_len for e in batch])
+    all_token_offsets = torch.stack([e.token_offsets for e in batch])
+
+    all_start_ids = torch.stack([e.start_ids for e in batch])
+    all_end_ids = torch.stack([e.end_ids for e in batch])
+    all_encoded_tags = [e.encoded_tags for e in batch]
+
+    max_len = max(all_input_lens).item()
+    all_input_ids = all_input_ids[:, :max_len]
+    all_attention_mask = all_attention_mask[:, :max_len]
+    all_token_type_ids = all_token_type_ids[:, :max_len]
+    all_token_offsets = all_token_offsets[:, :max_len]
+
+    all_start_ids = all_start_ids[:, :max_len]
+    all_end_ids = all_end_ids[:, :max_len]
+
+    return all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_encoded_tags
+
+
 def init_labels(args, labels):
 
     #  args.ner_labels = ['[unused1]', '[unused2]', '[unused3]'] + labels
@@ -495,9 +490,9 @@ def init_labels(args, labels):
     logger.info(f"args.num_labels: {args.num_labels}")
 
 
-class NerTrainer(Trainer):
+class PointerSequenceTrainer(BaseTrainer):
     def __init__(self, args, ner_labels, build_model=None, tokenizer=None):
-        super(NerTrainer, self).__init__(args)
+        super(PointerSequenceTrainer, self).__init__(args)
         init_labels(args, ner_labels)
         if tokenizer:
             self.tokenizer = tokenizer
@@ -517,18 +512,11 @@ class NerTrainer(Trainer):
     #      return examples_to_dataset(examples, self.label2id, self.tokenizer,
     #                                 max_seq_length)
 
-    def encode_examples(self,
-                        examples,
-                        max_seq_length,
-                        enttype_labels=None,
-                        epoch=-1):
-        from .dataset import encode_examples
-        return encode_examples(examples,
-                               self.label2id,
-                               self.tokenizer,
-                               max_seq_length,
-                               enttype_labels=enttype_labels,
-                               epoch=epoch)
+    def load_model(self, model_path=None):
+        args = self.args
+        model = load_pretrained_model(args, model_path=model_path)
+        model.to(args.device)
+        return model
 
     def batch_to_inputs(self, args, batch, known_labels=True):
         inputs = {
@@ -562,7 +550,7 @@ class NerTrainer(Trainer):
 
     #  def on_eval_step(self, args, eval_dataset, step, model, inputs, outputs):
     def on_eval_step(self, args, model, step, batch):
-        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_encoded_tags = batch
 
         eval_loss = 0.0
         num_eval_steps = 0
@@ -592,7 +580,7 @@ class NerTrainer(Trainer):
                                   args.confidence,
                                   overlap=args.allow_overlap)
 
-            T = all_subjects[i]
+            T = all_encoded_tags[i]
 
             #  logger.warning(f"R: {R}")
             #  logger.warning(f"T: {T}")
@@ -637,7 +625,7 @@ class NerTrainer(Trainer):
 
         return (eval_loss, ), results
 
-    def on_eval_end(self, args, eval_examples):
+    def on_eval_end(self, args, eval_features):
         from ...utils.ner_utils import get_ner_results
         results = get_ner_results(self.metric)
 
@@ -655,21 +643,21 @@ class NerTrainer(Trainer):
             num_tokens,
             'subjects': [
                 entity_text(example, token_offsets, m, s, e)
-                for m, s, e in example.subjects
+                for m, s, e in example.encoded_tags
             ],
             'right': [
                 entity_text(example, token_offsets, m, s, e)
-                for m, s, e in sorted(list(set(R) & set(example.subjects)),
+                for m, s, e in sorted(list(set(R) & set(example.encoded_tags)),
                                       key=lambda x: x[1])
             ],
             'miss': [
                 entity_text(example, token_offsets, m, s, e)
-                for m, s, e in sorted(list(set(example.subjects) - set(R)),
+                for m, s, e in sorted(list(set(example.encoded_tags) - set(R)),
                                       key=lambda x: x[1])
             ],
             'extra': [
                 entity_text(example, token_offsets, m, s, e)
-                for m, s, e in sorted(list(set(R) - set(example.subjects)),
+                for m, s, e in sorted(list(set(R) - set(example.encoded_tags)),
                                       key=lambda x: x[1])
             ],
             'pred':
@@ -679,7 +667,7 @@ class NerTrainer(Trainer):
         } for example, (
             num_tokens,
             R, token_offsets,
-            x) in tqdm(zip(eval_examples, self.eval_logs), desc="eval_logs")]
+            x) in tqdm(zip(eval_features, self.eval_logs), desc="eval_logs")]
         json.dump(all_eval_logs,
                   open(eval_logs_file, 'w'),
                   ensure_ascii=False,
@@ -690,11 +678,14 @@ class NerTrainer(Trainer):
         return results
 
     def on_predict_start(self, args, test_features):
-        self.pred_results = []
+        self.preds = []
+        self.probs = []
 
     def on_predict_step(self, args, model, step, batch):
-        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_subjects = batch
+        all_input_ids, all_attention_mask, all_token_type_ids, all_input_lens, all_token_offsets, all_start_ids, all_end_ids, all_encoded_tags = batch
 
+        #  logger.debug(f"all_input_lens: {all_input_lens}")
+        #  logger.debug(f"all_token_offsets: {all_token_offsets}")
         for i in range(all_input_ids.size()[0]):
             inputs = {
                 "input_ids": all_input_ids[i].view(1, -1),
@@ -718,6 +709,7 @@ class NerTrainer(Trainer):
                                   args.confidence,
                                   overlap=args.allow_overlap)
 
+            #  logger.debug(f"R: {R}")
             if R:
                 label_entities = [[
                     args.id2label[x[0]], token_offsets[x[1]][0].item(),
@@ -745,7 +737,7 @@ class NerTrainer(Trainer):
 
             #  logger.debug(f"{json_d}")
 
-            self.pred_results.append(json_d)
+            self.preds.append(json_d)
 
-    def on_predict_end(self, args, test_dataset):
-        return self.pred_results
+    def on_predict_end(self, args, test_features):
+        return self.preds, self.probs

@@ -3,6 +3,8 @@
 
 import copy
 import json
+import random
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -318,8 +320,15 @@ class InputFeature(object):
 #
 #      return all_features
 
+#  enttype_labels = defaultdict(list)
 
-def encode_examples(examples, label2id, tokenizer, max_seq_length):
+
+def encode_examples(examples,
+                    label2id,
+                    tokenizer,
+                    max_seq_length,
+                    enttype_labels=None,
+                    epoch=-1):
 
     #  num_labels = len(label2id)
     #  texts = [e.text_a[:max_seq_length - 2] for e in examples]
@@ -347,6 +356,44 @@ def encode_examples(examples, label2id, tokenizer, max_seq_length):
     #      all_token2char[i] = token2char + [0] * padding_length
     #      all_token_offsets[i] = token_offsets + [(0, 0)] * padding_length
 
+    #  if epoch >= 0 and enttype_labels:
+    #      old_examples = copy.deepcopy(examples)
+    #      random.seed(8864)
+    #      for e in tqdm(examples, desc="Aug entitiesi in epoch {epoch}"):
+    #          p0 = 0
+    #          text = copy.deepcopy(e.text_a)
+    #          new_text = ""
+    #          new_labels = []
+    #          for i, (label, start, end) in enumerate(e.labels):
+    #              new_text += text[p0:start]
+    #              if random.randint(0, 1000 - 1) < 666:
+    #                  new_start = len(new_text)
+    #                  new_mention = text[start:end + 1]
+    #                  new_text += new_mention
+    #                  new_labels.append(
+    #                      (label, new_start, new_start + len(new_mention) - 1))
+    #                  p0 = end + 1
+    #              else:
+    #                  new_start = len(new_text)
+    #                  new_idx = random.randint(0, len(enttype_labels[label]) - 1)
+    #                  new_mention = enttype_labels[label][new_idx]
+    #                  new_text += new_mention
+    #                  new_end = new_start + len(new_mention) - 1
+    #                  new_labels.append((label, new_start, new_end))
+    #                  p0 = end + 1
+    #          new_text += text[p0:]
+    #          #  logger.debug(
+    #          #      f"text: {text} | {[ text[start:end+1] for _, start, end in e.labels]}"
+    #          #  )
+    #          #  logger.warning(
+    #          #      f"new_text: {new_text} | {[ new_text[start:end+1] for _, start, end in new_labels]}"
+    #          #  )
+    #          e.text_a = new_text
+    #          e.labels = new_labels
+    #
+    #      examples = old_examples + examples
+    #      random.sample(examples, len(examples))
+    #
     num_labels = len(label2id)
     #  texts = [e.text_a[:max_seq_length - 2] for e in examples]
     texts = [e.text_a for e in examples]

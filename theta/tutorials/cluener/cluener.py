@@ -21,6 +21,7 @@ def clean_text(text):
         text = text.strip()
     return text
 
+
 def load_cluener_data(train_file):
 
     from theta.utils import load_json_file
@@ -54,15 +55,11 @@ def load_cluener_data(train_file):
             #  logger.debug(f"c_labels:{c_labels}")
             for label, span in c_labels.items():
                 s, e = span[0]
-                m = text[s:e+1]
-                tags.append({
-                    'category': c,
-                    'start': s,
-                    'mention': m
-                }
-                )
+                m = text[s:e + 1]
+                tags.append({'category': c, 'start': s, 'mention': m})
 
         yield guid, text, None, tags
+
 
 def train_data_generator(train_file):
     if train_file is None:
@@ -78,47 +75,43 @@ def train_data_generator(train_file):
     #      yield guid, text, None, tags
 
 
-
 def test_data_generator(test_file):
     if test_file is None:
         test_file = 'data/test.json'
 
-    from theta.modeling import ner_data_generator
-    for guid, text, _, _ in ner_data_generator(train_file):
-        # 逐行输出guid, text
+    for i, line in enumerate(
+            tqdm(open(test_file).readlines(), desc="Test data: ")):
+        guid = f"{i}"
+        json_data = json.loads(line.strip())
+        text = clean_text(json_data['text'])
+
         yield guid, text, None, None
 
 
-def generate_submission(args, reviews_file=None, submission_file=None):
-    if reviews_file is None:
-        reviews_file = args.reviews_file
+def generate_submission(args):
+    reviews_file = args.reviews_file
     reviews = json.load(open(reviews_file, 'r'))
 
-    if submission_file is None:
-        submission_file = f"{args.submissions_dir}/{args.dataset_name}_submission_{args.local_id}.json"
+    submission_file = f"./submissions/{args.dataset_name}_predict.json"
+    test_results = []
+    for guid, json_data in tqdm(reviews.items()):
+        text = json_data['text']
 
-    #  json.dump(reviews,
-    #            open(submission_file, 'w'),
-    #            ensure_ascii=False,
-    #            indent=2)
-    from collections import defaultdict
-    entities = defaultdict(list)
-    from theta.modeling import ner_data_generator
-    for guid, text, _, tags in tqdm(ner_data_generator(reviews_file)):
-        for tag in tags:
-            c = tag['category']
-            s = tag['start']
-            m = tag['mention']
-            if len(m) <= 32:
-                entities[c].append(m)
+        classes = {}
+        for json_entity in json_data['tags']:
+            c = json_entity['category']
+            s = json_entity['start']
+            m = json_entity['mention']
+            if c not in classes:
+                classes[c] = {}
+            if m not in classes[c]:
+                classes[c][m] = []
+            classes[c][m].append([s, s + len(m) - 1])
+        test_results.append({'id': guid, 'text': text, 'label': classes})
 
-    for c, ents in entities.items():
-        entities[c] = sorted(list(set(ents)))
-
-    json.dump({'entities': entities},
-              open(submission_file, 'w'),
-              ensure_ascii=False,
-              indent=2)
+    with open(submission_file, 'w') as wt:
+        for line in test_results:
+            wt.write(f"{json.dumps(line, ensure_ascii=False)}\n")
 
     logger.info(f"Saved {len(reviews)} lines in {submission_file}")
 

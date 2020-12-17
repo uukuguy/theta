@@ -100,7 +100,7 @@ class NerDataset:
         self.tagged_text_list.append(tagged_text)
 
     def extend(self, other_dataset):
-        self.tagged_text_list.extend(other_dataset)
+        self.tagged_text_list.extend(other_dataset.tagged_text_list)
 
     def save(self, filename: str, format="json"):
         """
@@ -184,7 +184,8 @@ class NerDataset:
 
     def export_to_poplar(self, poplar_file, max_pages=100, start_page=0):
         from .poplar import save_poplar_file
-        save_poplar_file(poplar_file,
+        save_poplar_file(self.tagged_text_list,
+                         poplar_file,
                          self.ner_labels,
                          self.ner_connections,
                          start_page=start_page,
@@ -242,7 +243,8 @@ def merge_ner_datasets(ner_dataset_list, min_dups=2):
     from copy import deepcopy
     merged_dataset = deepcopy(ner_dataset_list[0])
     if len(ner_dataset_list) > 1:
-        for i, X in enumerate(tqdm(zip(*ner_dataset_list), desc="Merge ner datasets")):
+        for i, X in enumerate(
+                tqdm(zip(*ner_dataset_list), desc="Merge ner datasets")):
             tags_list = [x.tags for x in X]
             from ..utils import merge_entities
             new_tags = merge_entities(
@@ -262,7 +264,8 @@ def mix_ner_datasets(ner_dataset_list):
         return None
     from copy import deepcopy
     mixed_dataset = deepcopy(ner_dataset_list[0])
-    for i, X in enumerate(tqdm(zip(*ner_dataset_list), desc="Mix ner datasets")):
+    for i, X in enumerate(tqdm(zip(*ner_dataset_list),
+                               desc="Mix ner datasets")):
         mixed_tags = mixed_dataset[i].tags
         #  logger.info(f"mixed_tags: {mixed_tags}")
         tags_list = [x.tags for x in X]

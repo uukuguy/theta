@@ -498,6 +498,11 @@ def get_main_args(
     logname = args.task_name
     logger.add(os.path.join(args.latest_dir, f"{logname}.log"))
 
+    if args.experiment_name is None:
+        args.experiment_name = "Theta"
+    if args.dataset_name is None:
+        args.dataset_name = os.path.basename(os.path.abspath(os.path.curdir))
+
     args.reviews_file = f"{args.latest_dir}/{args.dataset_name}_reviews_{args.local_id}.json"
 
     logger.warning(f"dataset_name: {args.dataset_name}")

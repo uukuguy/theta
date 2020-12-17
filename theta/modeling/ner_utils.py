@@ -374,39 +374,39 @@ def data_seg_generator(lines,
             if labels:
                 yield guid, text_a, None, labels, seg_offset
 
-                if num_augments > 0:
-                    seg_entities = [
-                        {
-                            'start': x.start - seg_offset,
-                            'end': x.end - seg_offset,
-                            'category': x.category,
-                            'mention': x.mention
-                        } for x in entities
-                        if x.start >= seg_offset and x.end < seg_end
-                    ]
-                    all_text_entities.append((guid, text_a, seg_entities))
-
-                    for entity in seg_entities:
-                        label_type = entity['category']
-                        s = entity['start']  # - seg_offset
-                        e = entity['end']  #- seg_offset
-                        #  print(s, e)
-                        assert e >= s
-                        #  logger.debug(
-                        #      f"seg_start: {seg_start}, seg_end: {seg_end}, seg_offset: {seg_offset}"
-                        #  )
-                        #  logger.debug(f"s: {s}, e: {e}")
-                        assert s >= 0 and e < len(seg_text)
-                        #  if s >= len(seg_text) or e >= len(seg_text):
-                        #      continue
-
-                        entity_text = seg_text[s:e + 1]
-                        #  print(label_type, entity_text)
-
-                        assert len(entity_text) > 0
-                        if label_type not in labels_map:
-                            labels_map[label_type] = []
-                        labels_map[label_type].append(entity_text)
+            #      if num_augments > 0:
+            #          seg_entities = [
+            #              {
+            #                  'start': x.start - seg_offset,
+            #                  'end': x.end - seg_offset,
+            #                  'category': x.category,
+            #                  'mention': x.mention
+            #              } for x in entities
+            #              if x.start >= seg_offset and x.end < seg_end
+            #          ]
+            #          all_text_entities.append((guid, text_a, seg_entities))
+            #
+            #          for entity in seg_entities:
+            #              label_type = entity['category']
+            #              s = entity['start']  # - seg_offset
+            #              e = entity['end']  #- seg_offset
+            #              #  print(s, e)
+            #              assert e >= s
+            #              #  logger.debug(
+            #              #      f"seg_start: {seg_start}, seg_end: {seg_end}, seg_offset: {seg_offset}"
+            #              #  )
+            #              #  logger.debug(f"s: {s}, e: {e}")
+            #              assert s >= 0 and e < len(seg_text)
+            #              #  if s >= len(seg_text) or e >= len(seg_text):
+            #              #      continue
+            #
+            #              entity_text = seg_text[s:e + 1]
+            #              #  print(label_type, entity_text)
+            #
+            #              assert len(entity_text) > 0
+            #              if label_type not in labels_map:
+            #                  labels_map[label_type] = []
+            #              labels_map[label_type].append(entity_text)
 
             seg_offset += seg_len - seg_backoff
 
