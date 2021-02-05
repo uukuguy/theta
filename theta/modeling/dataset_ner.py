@@ -107,6 +107,7 @@ class NerDataset:
         {'guid': '0000', 'text': "sample text", 'tags': [{'category': "实体类别1", start: 10, mention: "实体文本"}, ...]}
         """
 
+        logger.debug(f"Save {filename} with format {format}")
         if format == "json":
             json_data = {x.guid: x.to_dict() for x in self.tagged_text_list}
             json.dump(json_data,

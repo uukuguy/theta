@@ -9,7 +9,7 @@ from typing import List
 from loguru import logger
 from tqdm import tqdm
 
-from .dataflow import RNGDataFlow
+#from .dataflow import RNGDataFlow
 
 
 # 实体标签
@@ -83,10 +83,12 @@ class TaggedText:
         self.tags.append(tag)
 
     def __repr__(self):
-        return f"{self.guid}: {self.text[:50]} | {self.text_offset} | {self.tags}"
+        #  return f"{self.guid}: {self.text[:50]} | {self.text_offset} | {self.tags}"
+        return f"guid: {self.guid}, text: {self.text[:50]}... | text_offset: {self.text_offset} | tags: {self.tags}"
 
 
-class BaseDataFlow(RNGDataFlow):
+#class BaseDataFlow(RNGDataFlow):
+class BaseDataFlow(object):
     def __init__(self, data_list=None):
         super(BaseDataFlow, self).__init__()
 
@@ -105,13 +107,14 @@ class BaseDataFlow(RNGDataFlow):
 
     def shuffle(self):
         self._shuffle_idxs = list(range(self.__len__()))
-        self.rng.shuffle(self._shuffle_idxs)
+        #self.rng.shuffle(self._shuffle_idxs)
 
     def __getitem__(self, idx):
         return self._data_list[idx]
 
     def reset_state(self):
-        super(BaseDataFlow, self).reset_state()
+        #super(BaseDataFlow, self).reset_state()
+        pass
 
     def clean(self):
         self._data_list = []
@@ -180,6 +183,7 @@ class EntityDataFlow(BaseDataFlow):
             self.append(tagged_text)
 
         logger.info(f"Loaded categories: {categories}")
+        logger.info(f"Loaded {self.__len__()} samples.")
         if not self.entity_labels:
             self.entity_labels = categories
 

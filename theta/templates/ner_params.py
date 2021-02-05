@@ -43,7 +43,7 @@ experiment_params = NerAppParams(
         random_type=None,
         allow_overlap=False,
         #  max_train_examples=0,
-        confidence=0.5,
+        confidence=0.35,
         enable_nested_entities=False,
         seed=8864),
     NerParams(

@@ -90,7 +90,7 @@ class CommonParams(Params):
     adam_epsilon: float = 1e-8
     weight_decay: float = 0.0
     max_train_examples: int = 0
-    confidence: float = 0.5
+    confidence: float = 0.35
     enable_nested_entities: bool = False
     emotion_words_file: str = None
     cc: str = None

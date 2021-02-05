@@ -1095,4 +1095,12 @@ def ner_evaluate(dev_file, reviews_file, eval_data_generator):
     logger.warning(
         f"Macro: P: {macro_p:.6f}, R: {macro_r:.6f}, F1: {macro_f1:.6f}")
 
-    return macro_p, macro_r, macro_f1, micro_p, micro_r, micro_f1
+    eval_results = {
+        'macro_p': macro_p,
+        'macro_r': macro_r,
+        'macro_f1': macro_f1,
+        'micro_p': micro_p,
+        'micro_r': micro_r,
+        'micro_f1': micro_f1,
+    }
+    return eval_results

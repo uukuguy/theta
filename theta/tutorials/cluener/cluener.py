@@ -124,8 +124,8 @@ def eval_data_generator(eval_file):
 
 def evaluate(dev_file, reviews_file):
     from theta.modeling import ner_evaluate
-    macro_acc, macro_recall, macro_f1, micro_acc, micro_recall, micro_f1 = ner_evaluate(
-        dev_file, reviews_file, eval_data_generator)
+    eval_results = ner_evaluate(dev_file, reviews_file, eval_data_generator)
+    logger.warning(f"eval_results: {eval_results}")
 
 
 if __name__ == '__main__':
