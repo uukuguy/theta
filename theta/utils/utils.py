@@ -170,6 +170,18 @@ def acc_and_f1(preds, labels):
     return {"acc": acc, "f1": f1, "acc_and_f1": acc_and_f1}
 
 
+def seed_everything(seed):
+    import os, random
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def init_random(seed):
 
     random.seed(seed)
@@ -201,7 +213,8 @@ def init_cuda(args):
 
 
 def init_theta(args):
-    init_random(args.seed)
+    #  init_random(args.seed)
+    seed_everything(args.seed)
     init_cuda(args)
 
 
