@@ -323,7 +323,12 @@ def export_train_data(args):
         console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
 
         ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
-        ner_dataset.load(train_data_generator)
+        dataset_file = args.dataset_file
+        console.log("[bold cyan]dataset_file:[/bold cyan]", dataset_file)
+        if dataset_file is not None:
+            ner_dataset.load_from_file(dataset_file)
+        else:
+            ner_dataset.load(train_data_generator)
         ner_dataset.info()
 
         export_format = args.format
@@ -409,6 +414,80 @@ def export_test_data(args):
     if ner_labels:
         reviews_file = os.path.join(args.output_dir, 'saved_models', local_id,
                                     f"{dataset_name}_reviews_{local_id}.json")
+
+        ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
+        ner_dataset.load(reviews_data_generator, reviews_file)
+        ner_dataset.info()
+
+        export_format = args.format
+        if export_format == "json" or export_format == "lines":
+            dataset_file = args.output
+            if not dataset_file:
+                dataset_file = f"{dataset_name}_test_data.json"
+            ner_dataset.save(dataset_file, format=export_format)
+        elif export_format == "brat":
+            brat_data_dir = args.brat_data_dir
+            if not brat_data_dir:
+                brat_data_dir = "brat_data"
+            if not os.path.exists(brat_data_dir):
+                os.makedirs(brat_data_dir)
+            ner_dataset.export_to_brat(brat_data_dir, max_pages=args.max_pages)
+        elif export_format == "poplar":
+            pass
+        else:
+            raise Exception(
+                f"Bad export format {export_format}. Only available ['json', 'brat', 'poplar']"
+            )
+    elif glue_labels:
+        console.log("[bold cyan]glue_labels:[/bold cyan]", glue_labels)
+
+        export_format = args.format
+        dataset_file = args.output
+        if not dataset_file:
+            dataset_file = f"{dataset_name}_train_data.json"
+        all_examples = []
+        for guid, text, _, _ in tqdm(test_data_generator()):
+            all_examples.append({'guid': guid, 'text': text})
+        json.dump(all_examples,
+                  open(dataset_file, 'w'),
+                  ensure_ascii=False,
+                  indent=2)
+        logger.warning(f"Saved {dataset_file}")
+
+
+def export_submit_data(args):
+    dataset_name = get_dataset_name(args)
+    dataset_module = get_dataset_module(dataset_name)
+
+    test_data_generator = None
+    if 'test_data_generator' in dataset_module.__dict__:
+        test_data_generator = dataset_module.test_data_generator
+    ner_labels = None
+    if 'ner_labels' in dataset_module.__dict__:
+        ner_labels = dataset_module.ner_labels
+    ner_connections = None
+    if 'ner_connections' in dataset_module.__dict__:
+        ner_connections = dataset_module.ner_connections
+    glue_labels = None
+    if 'glue_labels' in dataset_module.__dict__:
+        glue_labels = dataset_module.glue_labels
+
+    #  logger.info(f"ner_labels: {ner_labels}")
+    #  logger.info(f"ner_connections: {ner_connections}")
+    console.log("[bold cyan]ner_labels:[/bold cyan]", ner_labels)
+    console.log("[bold cyan]ner_connections:[/bold cyan]", ner_connections)
+
+    if args.local_id:
+        local_id = args.local_id[0]
+    else:
+        args_path = get_model_args_path(None)
+        training_args = json.load(open(args_path))
+        local_id = training_args['local_id']
+
+    if ner_labels:
+        reviews_file = os.path.join(
+            args.submissions_dir,
+            f"{dataset_name}_final_reviews_{local_id}.json")
 
         ner_dataset = NerDataset(dataset_name, ner_labels, ner_connections)
         ner_dataset.load(reviews_data_generator, reviews_file)
@@ -833,6 +912,8 @@ def main(args):
         export_train_data(args)
     elif args.export_test_data:
         export_test_data(args)
+    elif args.export_submit_data:
+        export_submit_data(args)
     elif args.import_brat_data:
         import_brat_data(args)
     elif args.import_poplar_data:
@@ -876,6 +957,7 @@ def get_args():
     parser.add_argument("--show", action='store_true')
     parser.add_argument("--detail", action='store_true')
     parser.add_argument("--output_dir", default="./outputs")
+    parser.add_argument("--submissions_dir", default="./submissions")
     parser.add_argument("--local_id", action='append')
     parser.add_argument("--gpus", default="device=0")
 
@@ -897,6 +979,7 @@ def get_args():
                         choices=['json', 'lines', 'brat', 'poplar'])
     parser.add_argument("--export_train_data", action='store_true')
     parser.add_argument("--export_test_data", action='store_true')
+    parser.add_argument("--export_submit_data", action='store_true')
     parser.add_argument("--import_brat_data", action='store_true')
     parser.add_argument("--import_poplar_data", action='store_true')
 

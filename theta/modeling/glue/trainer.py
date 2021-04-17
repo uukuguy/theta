@@ -15,7 +15,8 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from tqdm import tqdm
 
 from transformers import BertConfig, BertTokenizer, BertTokenizerFast
-from transformers.modeling_bert import BertModel, BertPreTrainedModel
+#  from transformers.modeling_bert import BertModel, BertPreTrainedModel
+from transformers.models.bert import BertModel, BertPreTrainedModel
 
 from ...losses import DiceLoss, FocalLoss
 from ...utils import acc_and_f1, sigmoid, softmax

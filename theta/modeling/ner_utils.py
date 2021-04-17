@@ -288,9 +288,9 @@ def data_seg_generator(lines,
     all_text_entities = []
     labels_map = {}
 
+    logger.warning(f"{len(lines) in lines}")
     num_overlap = 0
     for i, s in enumerate(tqdm(lines)):
-        #  logger.debug(f"s: {s}")
         guid = str(i)
         text = s['text']
         entities = s['entities']
@@ -352,6 +352,7 @@ def data_seg_generator(lines,
             used_span.append((s, e))
 
             new_entities.append(entity)
+        #  logger.warning(f"{len(new_entities)} new_entities")
         entities = new_entities
 
         seg_offset = 0

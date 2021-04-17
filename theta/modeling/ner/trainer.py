@@ -32,7 +32,8 @@ from ...utils.multiprocesses import barrier_leader_process, barrier_member_proce
 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AutoConfig, BertTokenizerFast, AutoModelForTokenClassification
-from transformers.modeling_bert import BertPreTrainedModel, BertModel
+#  from transformers.modeling_bert import BertPreTrainedModel, BertModel
+from transformers.models.bert import BertModel, BertPreTrainedModel
 
 CRF_TYPE = "old_crf"
 CRF_TYPE = "new_crf"

@@ -137,7 +137,7 @@ class NerDataset:
                 json_data = json.load(open(filename, 'r'))
                 lines = [v for k, v in json_data.items()]
             except:
-                logger.error("Unknown file style {filename}")
+                logger.error(f"Unknown file style {filename}")
                 raise Exception(f"Unknown file style {filename}")
 
         def data_generator(data_source=None):

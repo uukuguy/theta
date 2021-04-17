@@ -408,6 +408,7 @@ def split_train_eval_examples(examples: [list, np.array],
 
         e = num_examples - num_eval_examples * fold
         s = num_examples - num_eval_examples * (fold + 1)
+        logger.warning(f"split examples fold={fold} | s: {s}, e: {e}")
         if s < 0:
             s = 0
         logger.warning(f"Eval examples: [{s}:{e}]")

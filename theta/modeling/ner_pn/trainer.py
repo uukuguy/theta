@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 from transformers import (AutoConfig, AutoModelForTokenClassification,
                           BertConfig, BertTokenizer, BertTokenizerFast)
-from transformers.modeling_bert import BertModel, BertPreTrainedModel
+#  from transformers.modeling_bert import BertModel, BertPreTrainedModel
+from transformers.models.bert import BertModel, BertPreTrainedModel
 
 from ...losses import DiceLoss, FocalLoss, LabelSmoothingCrossEntropy
 from ...utils.multiprocesses import (barrier_leader_process,
