@@ -222,19 +222,14 @@ class GlueModel(TaskModel):
     def test_epoch_end(self, outputs):
 
         final_preds = torch.cat([out['preds'] for out in outputs])
+        logger.info(f"preds: {final_preds.shape}")
         final_preds = final_preds.detach().cpu().numpy().tolist()
 
         final_logits = torch.cat([out['logits'] for out in outputs])
+        logger.info(f"logits: {final_logits.shape}")
         final_logits = final_logits.detach().cpu().numpy().tolist()
 
-        output_dir = self.hparams.output_dir
-        test_results_file = os.path.join(output_dir, "test_results.pkl")
-        os.makedirs(output_dir, exist_ok=True)
-        test_results = {'preds': final_preds, 'logits': final_logits}
-        pill.dump(test_results, open(test_results_file, 'wb'))
-        logger.info(
-            f"Saved test results preds:{final_preds.shape}, logits:{final_logits.shape} in {test_results_file}"
-        )
+        self.test_results = {'preds': final_preds, 'logits': final_logits}
 
 
 # ------------------------------ Task ------------------------------

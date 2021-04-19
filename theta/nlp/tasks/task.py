@@ -3,32 +3,34 @@
 
 import os
 import random
+from copy import deepcopy
+from typing import Type, Union
+
 import dill
 import numpy as np
-from typing import Type, Union
-from copy import deepcopy
-
-from tqdm import tqdm
-from loguru import logger
 import pytorch_lightning as pl
 import torch
 import torch.functional as F
 import torch.nn as nn
-
-from torch.nn import CrossEntropyLoss, MSELoss
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import LambdaLR
-
+from loguru import logger
 from pytorch_lightning.callbacks import ModelCheckpoint
-
-from transformers import AdamW, AutoConfig, AutoModel, AutoTokenizer
-from transformers.optimization import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup
-from transformers import XLNetConfig, ElectraConfig
+from torch.nn import CrossEntropyLoss, MSELoss
+from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from theta.nlp.arguments import (DataArguments, ModelArguments, TaskArguments,
                                  TrainingArguments,
                                  create_instance_from_arguments,
                                  generate_method_kwargs_from_arguments)
+from transformers import (AdamW, AutoConfig, AutoModel, AutoTokenizer,
+                          ElectraConfig, XLNetConfig)
+from transformers.optimization import (
+    get_cosine_schedule_with_warmup,
+    get_cosine_with_hard_restarts_schedule_with_warmup,
+    get_linear_schedule_with_warmup)
+
+from ...utils import seed_everything
 
 
 # ------------------------------ Dataset ------------------------------
@@ -148,6 +150,12 @@ class TransformerModel():
 
         self.tokenizer.save_vocabulary(os.path.abspath(model_path) + '/')
 
+    def train(self):
+        self.model.train()
+
+    def eval(self):
+        self.model.eval()
+
     def __call__(self, *args, **kwargs):
         outputs = self.model(*args, **kwargs)
         return outputs
@@ -158,12 +166,17 @@ class TaskModel(pl.LightningModule):
         super(TaskModel, self).__init__()
         self.save_hyperparameters()
 
+        tokenizer = kwargs.get('tokenizer', None)
+        model_name_or_path = self.hparams.model_name_or_path
+        if model_name_or_path is None:
+            model_name_or_path = os.path.join(self.hparams.task_dir,
+                                              "checkpoint")
+        self.transformer_model = TransformerModel(model_name_or_path,
+                                                  tokenizer)
+
         self.warmup_steps = None
         self.total_steps = None
 
-        tokenizer = kwargs.get('tokenizer', None)
-        self.transformer_model = TransformerModel(
-            self.hparams.model_name_or_path, tokenizer)
         self.best_score = 0.0 if self.hparams.greater_is_better else float(
             'inf')
 
@@ -184,12 +197,12 @@ class TaskModel(pl.LightningModule):
         else:
             return False
 
-    def load_model(self):
-        model_path = self.hparams.model_name_or_path
+    def load_model(self, model_path):
         pl_model_checkpoint_file = f"{model_path}/pl_model.ckpt"
         if os.path.exists(pl_model_checkpoint_file):
             logger.info(f"Load PL module from {pl_model_checkpoint_file}.")
             checkpoint = dill.load(open(pl_model_checkpoint_file, 'rb'))
+            self.load_state_dict(checkpoint['state_dict'])
 
         logger.info(f"Load transformer model from {model_path}")
         self.transformer_model.load_model(model_path)
@@ -200,7 +213,7 @@ class TaskModel(pl.LightningModule):
         pl_model_checkpoint_file = f"{model_path}/pl_model.ckpt"
 
         # FIXME
-        dill.dump({'state_dict': self.state_dict},
+        dill.dump({'state_dict': self.state_dict()},
                   open(pl_model_checkpoint_file, 'wb'))
         logger.warning(f"Save PL module in {pl_model_checkpoint_file}")
 
@@ -267,7 +280,7 @@ class TaskModel(pl.LightningModule):
     #      if self.trainer.global_step > 0 and self.trainer.global_step % self.hparams.eval_steps == 0:
     #          self.trainer.run_evaluation()
 
-    def on_train_start(self, model):
+    def on_train_start(self):
         self.transformer_model.train()
 
     def on_validation_start(self, model):
@@ -300,15 +313,14 @@ class TaskModel(pl.LightningModule):
                 )
                 self.best_score = curr_score
 
-                self.save_model(self.hparams.output_dir)
+                self.save_model(
+                    os.path.join(self.hparams.task_dir, "checkpoint"))
             else:
                 logger.info(
                     f"Eval result: {curr_score:.4f} / {self.best_score:.4f}")
 
 
 # ------------------------------ Task ------------------------------
-
-from ...utils import seed_everything
 
 
 class BaseTask():
@@ -367,14 +379,25 @@ class BaseTask():
         return self.args.remaining_args
 
     @property
-    def test_results_file(self):
-        return os.path.join(self.output_dir, "test_results.pkl")
+    def checkpoint_path(self):
+        return os.path.join(self.training_args.task_dir, "checkpoint")
 
     @property
-    def get_test_results(self):
-        import pill
-        test_results = pill.load(open(self.test_results_file, 'rb'))
+    def test_results_file(self):
+        return os.path.join(self.training_args.task_dir, "test_results.pkl")
+
+    def load_test_results(self, test_results_file=None):
+        if test_results_file is None:
+            test_results_file = self.test_results_file
+        logger.info(f"Load test result from {test_results_file}")
+        test_results = dill.load(open(test_results_file, 'rb'))
         return test_results
+
+    def dump_test_results(self, test_results, test_results_file=None):
+        if test_results_file is None:
+            test_results_file = self.test_results_file
+        dill.dump(test_results, open(test_results_file, 'wb'))
+        logger.info(f"Dump test results to {test_results_file}.")
 
     @property
     def train_dataloader(self):
@@ -434,7 +457,8 @@ class BaseTask():
 
         # ------------------------------ do_train ------------------------------
         if training_args.do_train:
-            self.model.load_model()
+            model_path = model_args.model_name_or_path
+            self.model.load_model(model_path)
             self.data.load_train_data()
 
             # warmup_steps
@@ -481,6 +505,7 @@ class BaseTask():
 
         # ------------------------------ do_eval ------------------------------
         if training_args.do_eval:
+            self.model.load_model(self.checkpoint_path)
             self.data.load_train_data()
 
             val_dataloader = self.val_dataloader
@@ -488,7 +513,7 @@ class BaseTask():
 
         # ------------------------------ do_predict ------------------------------
         if training_args.do_predict:
-            self.model.load_model()
+            self.model.load_model(self.checkpoint_path)
             self.data.load_test_data()
 
             test_dataloader = self.test_dataloader
@@ -503,6 +528,8 @@ class BaseTask():
             trainer = pl.Trainer(**trainer_kwargs)
 
             trainer.test(self.model, test_dataloaders=test_dataloader)
+
+            self.dump_test_results(self.model.test_results)
 
         if training_args.do_submit:
             self.generate_submission()

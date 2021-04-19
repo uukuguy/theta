@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import sys
+import sys, os
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple, Type, Union
 
@@ -96,11 +96,6 @@ class DataArguments(BaseArguments):
         metadata={"help": ("Overwrite the content of the cache directory.")},
     )
 
-    task_name: Optional[str] = field(
-        default=None,
-        metadata={"help": "Task name"},
-    )
-
     #  split_ratio: Optional[Union[float, List, Tuple]] = field(
     split_ratios: Optional[float] = field(
         default=0.9,
@@ -191,6 +186,24 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
         metadata={
             "help":
             "The output directory where the model predictions and checkpoints will be written."
+        },
+    )
+    submissions_dir: Optional[str] = field(
+        default="submissions",
+        metadata={
+            "help":
+            "The output directory where the submission files will be written."
+        },
+    )
+    task_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "Task name"},
+    )
+    task_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help":
+            "The task output directory where the model predictions and checkpoints will be written."
         },
     )
     # -------------------- commands --------------------
@@ -492,6 +505,19 @@ class TaskArguments():
         else:
             data_args, model_args, training_args, remaining_args = parser.parse_args_into_dataclasses(
                 return_remaining_strings=True)
+
+        assert training_args.output_dir is not None
+        os.makedirs(training_args.output_dir, exist_ok=True)
+
+        if training_args.task_dir is None:
+            if training_args.task_name is not None:
+                training_args.task_dir = os.path.join(training_args.output_dir,
+                                                      training_args.task_name)
+            else:
+                training_args.task_dir = training_args.output_dir
+        os.makedirs(training_args.task_dir, exist_ok=True)
+
+        os.makedirs(training_args.submissions_dir, exist_ok=True)
 
         set_seed(training_args.seed)
 
