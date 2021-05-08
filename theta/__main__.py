@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import datetime
-import glob
-import json
-import os
-import shutil
+import os, sys, json
+import glob, shutil
+from datetime import datetime
 
 import rich
 from loguru import logger
@@ -34,8 +32,7 @@ def find_models(args):
             model_path = os.path.split(file)[0]
 
             ctime = os.stat(file).st_ctime
-            ctime = datetime.datetime.fromtimestamp(ctime).strftime(
-                '%Y/%m/%d %H:%M:%S')
+            ctime = datetime.fromtimestamp(ctime).strftime('%Y/%m/%d %H:%M:%S')
 
             all_models.append((local_id, model_path, ctime))
     all_models = sorted(all_models, key=lambda x: x[2], reverse=True)
@@ -76,8 +73,7 @@ def show_model(args):
     args_path = get_model_args_path(model)
 
     ctime = os.stat(args_path).st_ctime
-    ctime = datetime.datetime.fromtimestamp(ctime).strftime(
-        '%Y/%m/%d %H:%M:%S')
+    ctime = datetime.fromtimestamp(ctime).strftime('%Y/%m/%d %H:%M:%S')
 
     training_args = json.load(open(args_path))
     logger.warning(f"-------- {training_args['local_id']} --------")
@@ -891,11 +887,20 @@ def version(args):
     print(f"Version: {__version__}")
 
 
+def home(args):
+
+    home_dir = os.path.dirname(__file__)
+    home_dir = os.path.realpath(home_dir)
+    print(home_dir)
+
+
 def main(args):
     find_models(args)
 
     if args.version:
         version(args)
+    elif args.home:
+        home(args)
     elif args.init:
         init(args)
     elif args.list:
@@ -949,6 +954,7 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--version", action='store_true')
+    parser.add_argument("--home", action='store_true')
     parser.add_argument("--init", action='store_true')
     parser.add_argument("--new", action='store_true')
     parser.add_argument("--use", action='store_true')

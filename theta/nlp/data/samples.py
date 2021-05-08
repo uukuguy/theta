@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import random
-from typing import Callable, Type, List, Tuple, Union
+from typing import Callable, List, Tuple, Type, Union
 
 from loguru import logger
 from tqdm import tqdm
@@ -40,6 +40,10 @@ class BaseSamples:
         return {x: i for i, x in enumerate(self.labels_list)}
 
     @property
+    def id2label(self):
+        return {i: x for i, x in enumerate(self.labels_list)}
+
+    @property
     def rows(self):
         def _rows():
             for data in self.data_list:
@@ -48,6 +52,8 @@ class BaseSamples:
         return _rows
 
     def load_samples(self):
+        logger.warning(f"self.data_generator: {self.data_generator}")
+        logger.warning(f"self.data_file: {self.data_file}")
         if self.data_generator is not None:
             self.load_samples_from_generator(self.data_generator)
         elif self.data_file is not None:
@@ -58,13 +64,17 @@ class BaseSamples:
             )
 
     def load_samples_from_generator(self, data_generator):
+        self.data_list = []
         for x in data_generator():
             self.data_list.append(x)
 
     def load_samples_from_file(self, data_file):
+        self.data_list = []
         raise NotImplementedError
 
-    def split(self, ratios: Union[float, List, Tuple] = None):
+    def split(self,
+              ratios: Union[float, List, Tuple] = None,
+              random_state=None):
         if type(ratios) == float:
             train_rate = ratios
             eval_rate = 1.0 - train_rate
@@ -87,20 +97,33 @@ class BaseSamples:
             num_eval_samples = num_total_samples - num_train_samples
             num_test_samples = 0
 
-        train_samples = self._new_instance(
-            data_list=self.data_list[:num_train_samples],
-            labels_list=self.labels_list)
-        eval_samples = self._new_instance(
-            data_list=self.data_list[num_train_samples:num_train_samples +
-                                     num_eval_samples],
-            labels_list=self.labels_list)
-        if num_test_samples > 0:
-            test_samples = self._new_instance(
-                data_list=self.data_list[-num_test_samples:],
-                labels_list=self.labels_list)
-            return train_samples, eval_samples, test_samples
-        else:
+        if random_state is not None:
+            from sklearn.model_selection import train_test_split
+            train_data_list, eval_data_list = train_test_split(
+                self.data_list,
+                train_size=train_rate,
+                random_state=random_state)
+            train_samples = self._new_instance(data_list=train_data_list,
+                                               labels_list=self.labels_list)
+            eval_samples = self._new_instance(data_list=eval_data_list,
+                                              labels_list=self.labels_list)
+
             return train_samples, eval_samples
+        else:
+            train_samples = self._new_instance(
+                data_list=self.data_list[:num_train_samples],
+                labels_list=self.labels_list)
+            eval_samples = self._new_instance(
+                data_list=self.data_list[num_train_samples:num_train_samples +
+                                         num_eval_samples],
+                labels_list=self.labels_list)
+            if num_test_samples > 0:
+                test_samples = self._new_instance(
+                    data_list=self.data_list[-num_test_samples:],
+                    labels_list=self.labels_list)
+                return train_samples, eval_samples, test_samples
+            else:
+                return train_samples, eval_samples
 
 
 def check_labels(glue_labels, labels_list):
@@ -121,17 +144,17 @@ class GlueSamples(BaseSamples):
     def _new_instance(self, **kwargs):
         return GlueSamples(**kwargs)
 
-    @classmethod
-    def from_generator(cls,
-                       data_generator: Callable,
-                       glue_labels,
-                       data_source: str = None):
-        samples = GlueSamples(data_generator=data_generator,
-                              labels_list=glue_labels)
-        for sid, text_a, text_b, label in data_generator(data_source):
-            samples.data_list.append((sid, text_a, text_b, label))
-
-        return samples
+    #  @classmethod
+    #  def from_generator(cls,
+    #                     data_generator: Callable,
+    #                     glue_labels,
+    #                     data_source: str = None):
+    #      samples = GlueSamples(data_generator=data_generator,
+    #                            labels_list=glue_labels)
+    #      for sid, text_a, text_b, label in data_generator(data_source):
+    #          samples.data_list.append((sid, text_a, text_b, label))
+    #
+    #      return samples
 
 
 class EntitySamples(BaseSamples):
@@ -141,31 +164,39 @@ class EntitySamples(BaseSamples):
     def _new_instance(self, **kwargs):
         return EntitySamples(**kwargs)
 
-    @classmethod
-    def from_generator(cls,
-                       data_generator: Callable,
-                       ner_labels,
-                       data_source: str = None):
-        samples = EntitySamples(labels_list=ner_labels)
-        categories = []
-        for guid, text, _, json_tags in data_generator(data_source):
-            tagged_text = TaggedText(guid, text)
-            for json_tag in json_tags:
-                entity_tag = EntityTag().from_dict(json_tag)
-                tagged_text.add_tag(entity_tag)
+    @property
+    def label2id(self):
+        return {x: i + 1 for i, x in enumerate(self.labels_list)}
 
-                category = entity_tag.category
-                if category not in categories:
-                    categories.append(category)
+    @property
+    def id2label(self):
+        return {i + 1: x for i, x in enumerate(self.labels_list)}
 
-            samples.data_list.append(tagged_text)
-
-        logger.info(f"Loaded categories: {categories}")
-        check_labels(ner_labels, categories)
-        if not samples.labels_list:
-            samples.labels_list = categories
-
-        return samples
+    #  @classmethod
+    #  def from_generator(cls,
+    #                     data_generator: Callable,
+    #                     ner_labels,
+    #                     data_source: str = None):
+    #      samples = EntitySamples(data_generator=data_generator,
+    #                              labels_list=ner_labels)
+    #      categories = []
+    #      for sid, text, _, json_tags in data_generator(data_source):
+    #          """
+    #          json_tag: {'category': 'Person', 'start': 0, 'mention': 'name'}
+    #          """
+    #          samples.data_list.append((sid, text, json_tags))
+    #
+    #          for tag in json_tags:
+    #              c = tag['category']
+    #              if c not in categories:
+    #                  categories.append(c)
+    #      categories = sorted(list(set(categories)))
+    #      logger.info(f"Loaded categories: {categories}")
+    #
+    #      if not samples.labels_list:
+    #          samples.labels_list = categories
+    #
+    #      return samples
 
 
 class SPOSamples(BaseSamples):
@@ -174,3 +205,28 @@ class SPOSamples(BaseSamples):
 
     def _new_instance(self, **kwargs):
         return SPOSamples(**kwargs)
+
+    #  @classmethod
+    #  def from_generator(cls,
+    #                     data_generator: Callable,
+    #                     ner_labels,
+    #                     data_source: str = None):
+    #      samples = SPOSamples(labels_list=ner_labels)
+    #      categories = []
+    #      for sid, text, _, json_tags in data_generator(data_source):
+    #          """
+    #          json_tag: {'category': 'Person', 'start': 0, 'mention': 'name'}
+    #          """
+    #          samples.data_list.append((sid, text, json_tags))
+    #
+    #          for tag in json_tags:
+    #              c = tag['category']
+    #              if c not in categories:
+    #                  categories.append(c)
+    #      categories = sorted(list(set(categories)))
+    #      logger.info(f"Loaded categories: {categories}")
+    #
+    #      if not samples.labels_list:
+    #          samples.labels_list = categories
+    #
+    #      return samples

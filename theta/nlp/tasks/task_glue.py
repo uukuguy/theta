@@ -1,24 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json
-import os
+import os, json
 from collections import OrderedDict
 from typing import Type
+import dill
+
+from tqdm import tqdm
+from loguru import logger
 
 import numpy as np
 import torch
 import torch.functional as F
 import torch.nn as nn
-from loguru import logger
 from torch.nn import CrossEntropyLoss, MSELoss
-from tqdm import tqdm
 
 from theta.nlp.arguments import (DataArguments, ModelArguments, TaskArguments,
                                  TrainingArguments)
 from theta.nlp.data.samples import GlueSamples
 
-from ..tasks import BaseDataset, BaseTask, TaskData, TaskModel
+from .task import BaseDataset, BaseTask, TaskData, TaskModel, TransformerModel
 
 
 # ------------------------------ Dataset ------------------------------
@@ -89,29 +90,90 @@ class GlueData(TaskData):
     def __init__(self, *args, **kwargs):
         super(GlueData, self).__init__(*args, **kwargs)
 
-    @property
-    def train_dataset(self):
-        if self._train_dataset is None:
-            self._train_dataset = GlueDataset(
-                self.data_args, self._splitted_train_samples.rows,
-                self.label2id, self.tokenizer)
-        return self._train_dataset
+    def build_train_dataset(self):
+        return GlueDataset(self.data_args, self._splitted_train_samples.rows,
+                           self.label2id, self.tokenizer)
 
-    @property
-    def val_dataset(self):
-        if self._val_dataset is None:
-            self._val_dataset = GlueDataset(self.data_args,
-                                            self._splitted_val_samples.rows,
-                                            self.label2id, self.tokenizer)
-        return self._val_dataset
+    def build_val_dataset(self):
+        return GlueDataset(self.data_args, self._splitted_val_samples.rows,
+                           self.label2id, self.tokenizer)
 
-    @property
-    def test_dataset(self):
-        if self._test_dataset is None:
-            self._test_dataset = GlueDataset(self.data_args,
-                                             self.test_samples.rows,
-                                             self.label2id, self.tokenizer)
-        return self._test_dataset
+    def build_test_dataset(self):
+        return GlueDataset(self.data_args, self.test_samples.rows,
+                           self.label2id, self.tokenizer)
+
+
+class MyGlueModel(TransformerModel):
+    def __init__(
+        self,
+        model_name_or_path,
+        num_labels,
+        tokenizer=None,
+        dropout_prob=0.1,
+        #  loss_type='CrossEntropyLoss',
+        loss_type='FocalLoss',
+        #  loss_type='LabelSmoothingCrossEntropy',
+        #  loss_type='DiceLoss',
+        **kwargs):
+        super(MyGlueModel, self).__init__(model_name_or_path,
+                                          tokenizer=tokenizer)
+        self.num_labels = num_labels
+        config = self.transformer.config
+        if self._is_xlnet():
+            from transformers.modeling_utils import SequenceSummary
+            self.sequence_summary = SequenceSummary(config)
+            self.logits_proj = nn.Linear(config.d_model, self.num_labels)
+        else:
+            self.dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.classifier = nn.Linear(config.hidden_size, self.num_labels)
+
+        self.transformer.init_weights()
+
+    def forward(self,
+                input_ids=None,
+                attention_mask=None,
+                token_type_ids=None,
+                labels=None):
+
+        outputs = self.transformer(input_ids,
+                                   attention_mask=attention_mask,
+                                   token_type_ids=token_type_ids,
+                                   return_dict=True)
+        #  logger.warning(f"outputs[0].shape: {outputs[0].shape}")
+        #  logger.warning(f"outputs: {outputs}")
+        # logger.warning(f"outputs[1]: {outputs[1]}")
+
+        #  if labels is not None:
+        #      loss = outputs.loss
+        #      logits = outputs.logits
+        #      return (loss, logits)
+        #  else:
+        #      logits = outputs.logits
+        #      return logits
+
+        if self._is_xlnet():
+            output = outputs[0]
+            output = self.sequence_summary(output)
+            logits = self.logits_proj(output)
+        #  elif self._is_electra():
+        #      # ElectraConfig last_hidden_state
+        #      pooled_output = outputs[0]
+        #
+        #      pooled_output = self.dropout(pooled_output)
+        #      logits = self.classifier(pooled_output)
+        else:
+            # BERT
+            pooled_output = outputs.pooler_output
+
+            pooled_output = self.dropout(pooled_output)
+            logits = self.classifier(pooled_output)
+#
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            return (loss, logits)
+        else:
+            return logits
 
 
 # ------------------------------ TaskModel ------------------------------
@@ -119,57 +181,80 @@ class GlueModel(TaskModel):
     """
     任务专属模型定义
     """
-    def __init__(self, task_args, num_labels):
+    def __init__(self, task_args, glue_labels):
         super(GlueModel, self).__init__(**task_args.to_dict())
-        self.num_labels = num_labels
+        logger.warning(f"glue_labels: {glue_labels}")
+        self.glue_labels = glue_labels
+        self.num_labels = len(self.glue_labels)
+        self.label2id = {x: i for i, x in enumerate(glue_labels)}
+        self.id2label = {i: x for i, x in enumerate(glue_labels)}
+        self.type_weights = np.ones(self.num_labels)
 
-        config = self.transformer_model.config
-        if self._is_xlnet():
-            from transformers.modeling_utils import SequenceSummary
-            self.sequence_summary = SequenceSummary(config)
-            self.logits_proj = nn.Linear(config.d_model, num_labels)
-        else:
-            self.dropout = nn.Dropout(config.hidden_dropout_prob)
-            self.classifier = nn.Linear(config.hidden_size, num_labels)
+        model_args = task_args.model_args
+
+        self.model = MyGlueModel(
+            model_name_or_path=model_args.model_name_or_path
+            if model_args.model_name_or_path else model_args.checkpoint_path,
+            num_labels=self.num_labels)
+        #  config = self.transformer.config
+        #  if self._is_xlnet():
+        #      from transformers.modeling_utils import SequenceSummary
+        #      self.sequence_summary = SequenceSummary(config)
+        #      self.logits_proj = nn.Linear(config.d_model, num_labels)
+        #  else:
+        #      self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        #      self.classifier = nn.Linear(config.hidden_size, num_labels)
+
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
 
     #  def forward(self, batch, batch_idx):
-    def forward(self,
-                input_ids=None,
-                attention_mask=None,
-                token_type_ids=None,
-                labels=None):
-
-        outputs = self.transformer_model(input_ids,
-                                         attention_mask=attention_mask,
-                                         token_type_ids=token_type_ids,
-                                         return_dict=True)
-        #  logger.warning(f"outputs[0].shape: {outputs[0].shape}")
-        #  logger.warning(f"outputs: {outputs}")
-        # logger.warning(f"outputs[1]: {outputs[1]}")
-
-        if self._is_xlnet():
-            output = outputs[0]
-            output = self.sequence_summary(output)
-            logits = self.logits_proj(output)
-        elif self._is_electra():
-            # ElectraConfig last_hidden_state
-            pooled_output = outputs[0]
-
-            pooled_output = self.dropout(pooled_output)
-            logits = self.classifier(pooled_output)
-        else:
-            # BERT
-            pooled_output = outputs.pooler_output
-
-            pooled_output = self.dropout(pooled_output)
-            logits = self.classifier(pooled_output)
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            return (loss, logits)
-        else:
-            return logits
+    #  def forward(self,
+    #              input_ids=None,
+    #              attention_mask=None,
+    #              token_type_ids=None,
+    #              labels=None):
+    #
+    #      return self.model(*args, **kwargs)
+#          outputs = self.transformer(input_ids,
+#                                           attention_mask=attention_mask,
+#                                           token_type_ids=token_type_ids,
+#                                           return_dict=True)
+#          #  logger.warning(f"outputs[0].shape: {outputs[0].shape}")
+#          #  logger.warning(f"outputs: {outputs}")
+#          # logger.warning(f"outputs[1]: {outputs[1]}")
+#
+#          #  if labels is not None:
+#          #      loss = outputs.loss
+#          #      logits = outputs.logits
+#          #      return (loss, logits)
+#          #  else:
+#          #      logits = outputs.logits
+#          #      return logits
+#
+#          if self._is_xlnet():
+#              output = outputs[0]
+#              output = self.sequence_summary(output)
+#              logits = self.logits_proj(output)
+#          elif self._is_electra():
+#              # ElectraConfig last_hidden_state
+#              pooled_output = outputs[0]
+#
+#              pooled_output = self.dropout(pooled_output)
+#              logits = self.classifier(pooled_output)
+#          else:
+#              # BERT
+#              pooled_output = outputs.pooler_output
+#
+#              pooled_output = self.dropout(pooled_output)
+#              logits = self.classifier(pooled_output)
+#  #
+#          if labels is not None:
+#              loss_fct = CrossEntropyLoss()
+#              loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+#              return (loss, logits)
+#          else:
+#              return logits
 
     def training_step(self, batch, batch_idx):
         outputs = self.forward(**batch)
@@ -185,9 +270,18 @@ class GlueModel(TaskModel):
     def validation_step(self, batch, batch_idx):
         loss, logits = self.forward(**batch)
 
-        labels = batch['labels']
-        labels_hat = torch.argmax(logits, dim=1)
-        correct_count = torch.sum(labels == labels_hat)
+        batch_preds = torch.argmax(logits, dim=1)
+        #  batch_preds = batch_preds.detach().cpu().numpy()
+        #  logits = logits.detach().cpu().numpy()
+        #  batch_preds = np.argmax(logits, axis=-1)
+
+        batch_labels = batch['labels']
+        #  batch_labels = batch_labels.to('cpu').numpy()
+
+        #  logger.info(
+        #      f"batch_preds: {batch_preds}, batch_labels: {batch_labels}")
+        correct_count = torch.sum(batch_labels == batch_preds)
+        #  logger.info(f"correct_count: {correct_count}")
         if self.on_gpu:
             correct_cout = correct_count.cuda(loss.device.index)
 
@@ -196,7 +290,7 @@ class GlueModel(TaskModel):
         return OrderedDict({
             'val_loss': loss,
             'correct_count': correct_count,
-            'batch_size': len(labels)
+            'batch_size': batch_labels.shape[0]
         })
 
     def validation_epoch_end(self, outputs):
@@ -243,7 +337,7 @@ class GlueTask(BaseTask):
         training_args = self.training_args
         remaining_args = self.remaining_args
 
-        super(GlueTask, self).execute(*args, **kwargs)
+        return super(GlueTask, self).execute(*args, **kwargs)
 
     def generate_submission(self):
         logger.warning(f"GlueTask.generate_submission().")
