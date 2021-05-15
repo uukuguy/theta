@@ -11,7 +11,7 @@ EPOCHS=10
 BATCH_SIZE=16
 GRADIENT_ACCUMULATION_STEPS=1
 EARLYSTOPPING_PATIENCE=5
-WEIGHT_DECAY=0.01
+WEIGHT_DECAY=0.0
 SEED=42
 TRAINING_ARGS=--learning_rate ${LR} \
 		--max_epochs ${EPOCHS} \
@@ -35,6 +35,7 @@ train:
 		${TRAINING_ARGS} \
 		${EVAL_ARGS} \
 		--output_dir outputs \
+		--overwrite_cache \
 		--overwrite_output_dir \
 		--fp16 \
 		--seed ${SEED} \
@@ -45,6 +46,7 @@ predict:
 		--task_name ${TASK_NAME} \
 		${DATA_ARGS} \
 		--per_device_test_batch_size ${BATCH_SIZE} \
+		--overwrite_cache \
 		--fp16 \
 		--seed ${SEED} \
 

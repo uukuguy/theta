@@ -151,10 +151,10 @@ class ModelArguments(BaseArguments):
             "help":
             "Pretrained tokenizer name or path if not the same as model_name"
         })
-    num_labels: int = field(
-        default=None,
-        metadata={"help": "Number of labels"},
-    )
+    #  num_labels: int = field(
+    #      default=None,
+    #      metadata={"help": "Number of labels"},
+    #  )
     use_fast_tokenizer: bool = field(
         default=True,
         metadata={

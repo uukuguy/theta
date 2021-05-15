@@ -7,6 +7,7 @@ import numpy as np
 from loguru import logger
 from tqdm import tqdm
 import rich
+from collections import defaultdict
 
 
 def get_module(module_name):
@@ -48,7 +49,7 @@ def main():
             len_max1 = np.max(text1_lens)
 
             text2_lens = [
-                len(text_b) if text_b is not None else ""
+                len(text_b) if text_b is not None else 0
                 for _, _, text_b, _ in train_samples
             ]
             len_mean2 = np.mean(text2_lens)
@@ -67,6 +68,12 @@ def main():
             rich.print(
                 f"mean: {len_mean2:.2f}, std: {len_std2:.2f}, min: {len_min2}, max: {len_max2}"
             )
+            # 标签分布情况
+            labels_map = defaultdict(int)
+            for sample in train_samples:
+                c = sample[3]
+                labels_map[c] += 1
+            rich.print(f"{labels_map}")
         elif is_ner:
             train_samples = [x for x in train_data_generator()]
             all_tags = [tags for _, _, _, tags in train_samples]
@@ -103,7 +110,7 @@ def main():
             len_max1 = np.max(text1_lens)
 
             text2_lens = [
-                len(text_b) if text_b is not None else ""
+                len(text_b) if text_b is not None else 0
                 for _, _, text_b, _ in test_samples
             ]
             len_mean2 = np.mean(text2_lens)

@@ -12,7 +12,7 @@ if 'THETA_HOME' in os.environ:
     sys.path.append(os.environ['THETA_HOME'])
 from theta.nlp.arguments import TaskArguments, TrainingArguments
 from theta.nlp.data.samples import GlueSamples
-from theta.nlp.tasks import GlueData, GlueModel, GlueTask
+from theta.nlp.tasks import GlueData, GlueTask
 
 from glue_data import glue_labels, prepare_samples
 
@@ -56,7 +56,7 @@ class MyTask(GlueTask):
 
         # -------------------- 转换最终输出格式 --------------------
         # 转换最终输出格式
-        id2label = self.model.id2label
+        id2label = self.runner.id2label
         final_results = []
         for index, (e, pred) in enumerate(zip(test_samples, preds)):
             final_results.append(f"{e[0]},{id2label[pred]}\n")
@@ -104,11 +104,8 @@ def run():
     train_samples, test_samples = prepare_samples()
     task_data = GlueData(task_args.data_args, train_samples, test_samples)
 
-    # -------------------- model --------------------
-    task_model = GlueModel(task_args, glue_labels=glue_labels)
-
-    # -------------------- task --------------------
-    task = MyTask(task_args, task_data, task_model)
+    # -------------------- Task --------------------
+    task = MyTask(task_args, task_data, glue_labels)
     task.execute()
 
 

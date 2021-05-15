@@ -87,10 +87,12 @@ class TaskData:
                  data_args: Type[DataArguments],
                  train_samples,
                  test_samples,
+                 val_samples=None,
                  tokenizer=None):
         self.data_args = data_args
         self.train_samples = train_samples
         self.test_samples = test_samples
+        self.val_samples = val_samples
         self.tokenizer = tokenizer
 
         self._train_dataset = None
@@ -110,11 +112,16 @@ class TaskData:
     def load_train_data(self):
         self.train_samples.load_samples()
 
-        all_train_samples = self.train_samples.shuffle()
-        self._splitted_train_samples, self._splitted_val_samples = all_train_samples.split(
-            ratios=self.data_args.split_ratios,
-            random_state=self.data_args.random_state)
-        logger.info(f"total train samples: {len(self.train_samples)}")
+        if self.val_samples is not None:
+            selv.val_samples.load_samples()
+            self._splitted_train_samples = self.train_samples
+            self._splitted_val_samples = self.val_samples
+        else:
+            all_train_samples = self.train_samples.shuffle()
+            self._splitted_train_samples, self._splitted_val_samples = all_train_samples.split(
+                ratios=self.data_args.split_ratios,
+                random_state=self.data_args.random_state)
+            logger.info(f"total train samples: {len(self.train_samples)}")
         logger.info(f"train samples: {len(self._splitted_train_samples)}")
         logger.info(f"val samples: {len(self._splitted_val_samples)}")
 
@@ -173,10 +180,15 @@ def save_args(args, model_path):
         indent=2)
 
 
-# ------------------------------ TaskModel ------------------------------
 class TransformerModel(nn.Module):
-    def __init__(self, model_name_or_path, tokenizer=None):
+    def __init__(self,
+                 model_name_or_path,
+                 tokenizer=None,
+                 automodel_cls=AutoModel):
         super(TransformerModel, self).__init__()
+        assert automodel_cls is not None
+        self.automodel_cls = automodel_cls
+        logger.info(f"automodel_cls: {self.automodel_cls}")
         self.config = AutoConfig.from_pretrained(model_name_or_path)
         logger.info(f"{self.config}")
 
@@ -193,13 +205,32 @@ class TransformerModel(nn.Module):
         self.tokenizer = tokenizer
 
         self.model_name_or_path = model_name_or_path
-        self.transformer = AutoModel.from_config(self.config)
+        #  self.transformer = self.automodel_cls.from_config(self.config)
+        self.load_from_config()
 
-    def _is_xlnet(self):
-        if isinstance(self.config, XLNetConfig):
-            return True
-        else:
-            return False
+    def init_weights(self):
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        """
+        Initialize the weights
+        Derived from BertPreTrainedModel._init_weights() in modeling_bert.py of transformers.
+        """
+        if isinstance(module, nn.Linear):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            module.weight.data.normal_(mean=0.0,
+                                       std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0,
+                                       std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
 
     #  @staticmethod
     #  def _init_weights(blocks, **kwargs):
@@ -219,13 +250,28 @@ class TransformerModel(nn.Module):
     #                  nn.init.ones_(module.weight)
     #                  nn.init.zeros_(module.bias)
 
-    def load_from_pretrained(self, model_path):
-        self.transformer = AutoModel.from_pretrained(
-            model_path)  #, add_pooler_layer=False)
-        #  self.transformer = BertForSequenceClassification.from_pretrained(model_path)
+    def _is_xlnet(self):
+        if isinstance(self.config, XLNetConfig):
+            return True
+        else:
+            return False
 
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.transformer.to(device)
+    #  def load_from_pretrained(self, model_path):
+    #      assert self.automodel_cls is not None
+    #      self.transformer = self.automodel_cls.from_pretrained(model_path)
+    #
+    #      device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    #      self.transformer.to(device)
+
+    #  def _load_from_pretrained(self, model_path, automodel_cls=None):
+    #      if automodel_cls is not None:
+    #          self.transformer = automodel_cls.from_pretrained(model_path)
+    #      else:
+    #          self.transformer = AutoModel.from_pretrained(model_path)
+    #          #  self.transformer = BertForSequenceClassification.from_pretrained(model_path)
+    #
+    #      device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    #      self.transformer.to(device)
 
     def save_model(self, model_path):
         os.makedirs(model_path, exist_ok=True)
@@ -251,9 +297,10 @@ class TransformerModel(nn.Module):
         return outputs
 
 
-class TaskModel(pl.LightningModule):
+# ------------------------------ TaskRunner ------------------------------
+class TaskRunner(pl.LightningModule):
     def __init__(self, *args, **kwargs):
-        super(TaskModel, self).__init__()
+        super(TaskRunner, self).__init__()
         self.save_hyperparameters()
 
         #  model_name_or_path = self.hparams.model_name_or_path
@@ -301,6 +348,7 @@ class TaskModel(pl.LightningModule):
     #          self.model.load_model(model_path)
 
     def load_from_checkpoint(self, model_path):
+        #  self.model.load_from_config()
         if os.path.isdir(model_path):
             pl_model_checkpoint_file = f"{model_path}/pl_model.ckpt"
         else:
@@ -372,8 +420,8 @@ class TaskModel(pl.LightningModule):
         #
         #  scheduler = LambdaLR(optimizer, lr_lambda=lr_exp_warmup)
 
-        #  schedule_fn = get_linear_schedule_with_warmup
-        schedule_fn = get_cosine_schedule_with_warmup
+        schedule_fn = get_linear_schedule_with_warmup
+        #  schedule_fn = get_cosine_schedule_with_warmup
         #  schedule_fn = get_cosine_with_hard_restarts_schedule_with_warmup
         scheduler = schedule_fn(optimizer,
                                 num_warmup_steps=self.warmup_steps,
@@ -419,7 +467,7 @@ class TaskModel(pl.LightningModule):
         if 'val_loss' in eval_outputs:
             val_loss = eval_outputs['val_loss']
             logger.info(
-                f"Epoch {self.current_epoch+1}/{self.max_epochs} val_loss: {val_loss:.4f}"
+                f"Epoch {self.current_epoch}/{self.max_epochs} val_loss: {val_loss:.4f}"
             )
         else:
             logger.warning(f"No val_loss in eval_outputs: {eval_outputs}")
@@ -464,21 +512,21 @@ class BaseTask():
 
     task_args = TaskArguments.parse_args()
     task_data = ExpData(data_args=task_args.data_args)
-    task_model = ExpModel(model_args=task_args.model_args,
+    task_trainer = ExpModel(model_args=task_args.model_args,
                           num_labels=len(glue_labels))
 
     task = ExpTask(args=task_args,
                    data=task_data,
-                   model=task_model)
+                   trainer=task_trainer)
 
     task.execute(glue_labels)
 
     """
     def __init__(self, args: Type[TaskArguments], data: Type[TaskData],
-                 model: Type[TaskModel]):
+                 runner: Type[TaskRunner]):
         self.args = args
         self.data = data
-        self.model = model
+        self.runner = runner
 
         os.environ['TOKENIZERS_PARALLELISM'] = "true"
         seed_everything(self.args.training_args.seed)  #固定随机种子
@@ -579,12 +627,12 @@ class BaseTask():
             num_workers=8)
         return test_dataloader
 
-    def get_latest_submission_file(self, ext="json"):
+    def get_latest_submission_file(self, ext="json", prefix="submission"):
         ts = datetime.now().strftime("%Y%m%d.%H%M%S")
         real_path = os.readlink(self.latest_path)
         task_id = os.path.basename(real_path)
         submission_file = os.path.join(self.training_args.submissions_dir,
-                                       f"submission_{task_id}_{ts}.{ext}")
+                                       f"{prefix}_{task_id}_{ts}.{ext}")
         return submission_file
 
     def generate_submission(self):
@@ -603,8 +651,8 @@ class BaseTask():
         # ------------------------------ do_train ------------------------------
         if training_args.do_train:
             model_path = model_args.model_name_or_path
-            self.model.load_from_pretrained(model_path)
-            self.data.tokenizer = self.model.model.tokenizer
+            self.runner.load_from_pretrained(model_path)
+            self.data.tokenizer = self.runner.model.tokenizer
             self.data.load_train_data()
 
             def setup_warmup_steps():
@@ -647,8 +695,8 @@ class BaseTask():
             else:
                 total_steps = self.training_args.max_steps
 
-            self.model.warmup_steps = training_args.warmup_steps
-            self.model.total_steps = total_steps
+            self.runner.warmup_steps = training_args.warmup_steps
+            self.runner.total_steps = total_steps
 
             #  self.training_args.max_steps = total_steps
 
@@ -704,12 +752,13 @@ class BaseTask():
             logger.warning(f"trainer_kwargs: {trainer_kwargs}")
 
             trainer = pl.Trainer(**trainer_kwargs)
-            trainer.fit(self.model, self.train_dataloader, self.val_dataloader)
+            trainer.fit(self.runner, self.train_dataloader,
+                        self.val_dataloader)
 
         # ------------------------------ do_eval ------------------------------
         if training_args.do_eval:
-            self.model.load_from_checkpoint(self.checkpoint_path)
-            self.data.tokenizer = self.model.model.tokenizer
+            self.runner.load_from_checkpoint(self.checkpoint_path)
+            self.data.tokenizer = self.runner.model.tokenizer
             self.data.load_train_data()
 
             val_dataloader = self.val_dataloader
@@ -717,8 +766,8 @@ class BaseTask():
 
         # ------------------------------ do_predict ------------------------------
         if training_args.do_predict:
-            self.model.load_from_checkpoint(self.checkpoint_path)
-            self.data.tokenizer = self.model.model.tokenizer
+            self.runner.load_from_checkpoint(self.checkpoint_path)
+            self.data.tokenizer = self.runner.model.tokenizer
             self.data.load_test_data()
 
             test_dataloader = self.test_dataloader
@@ -732,9 +781,10 @@ class BaseTask():
 
             trainer = pl.Trainer(**trainer_kwargs)
 
-            trainer.test(self.model, test_dataloaders=test_dataloader)
+            trainer.test(self.runner, test_dataloaders=test_dataloader)
 
-            test_results_file = self.dump_test_results(self.model.test_results)
+            test_results_file = self.dump_test_results(
+                self.runner.test_results)
 
             return_dict['test_results_file'] = test_results_file
 

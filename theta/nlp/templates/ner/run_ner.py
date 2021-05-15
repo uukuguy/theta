@@ -12,7 +12,7 @@ if 'THETA_HOME' in os.environ:
     sys.path.append(os.environ['THETA_HOME'])
 from theta.nlp.arguments import TaskArguments, TrainingArguments
 from theta.nlp.data.samples import EntitySamples
-from theta.nlp.tasks import NerData, NerModel, NerTask
+from theta.nlp.tasks import NerData, NerTask
 
 from ner_data import ner_labels, prepare_samples
 
@@ -45,7 +45,7 @@ class MyTask(NerTask):
         test_results = self.load_test_results()
         preds = test_results['preds']
         #  logits = test_results['logits']
-        id2label = self.model.id2label
+        id2label = self.runner.id2label
 
         # -------------------- 载入测试数据集 --------------------
         self.data.load_test_data()
@@ -60,7 +60,7 @@ class MyTask(NerTask):
         final_results = []
         for e in test_samples:
             guid, text, _, _ = e
-            logger.warning(f"{guid}: {text}")
+            #  logger.warning(f"{guid}: {text}")
             spans_list = preds[guid]
 
             tags = []
@@ -77,7 +77,7 @@ class MyTask(NerTask):
                             'metion': m
                         })
             tags = sorted(tags, key=lambda x: x['start'])
-            rich.print(tags)
+            #  rich.print(tags)
             final_results.append({'idx': guid, 'text': text, 'tags': tags})
 
         # -------------------- 保存最终结果 --------------------
@@ -117,11 +117,8 @@ def run():
     train_samples, test_samples = prepare_samples()
     task_data = NerData(task_args.data_args, train_samples, test_samples)
 
-    # -------------------- model --------------------
-    task_model = NerModel(task_args, ner_labels=ner_labels)
-
     # -------------------- task --------------------
-    task = MyTask(task_args, task_data, task_model)
+    task = MyTask(task_args, task_data, ner_labels)
     task.execute()
 
 
