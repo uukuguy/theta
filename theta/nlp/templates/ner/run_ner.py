@@ -9,7 +9,7 @@ from loguru import logger
 #  os.environ['PYTHONPATH'] = os.path.abspath(os.path.curdir)
 if 'THETA_HOME' in os.environ:
     import sys
-    sys.path.append(os.environ['THETA_HOME'])
+    sys.path.insert(0, os.environ['THETA_HOME'])
 from theta.nlp.arguments import TaskArguments, TrainingArguments
 from theta.nlp.data.samples import EntitySamples
 from theta.nlp.tasks import NerData, NerTask
@@ -58,24 +58,22 @@ class MyTask(NerTask):
         # -------------------- 转换最终输出格式 --------------------
         # 转换最终输出格式
         final_results = []
-        for e in test_samples:
+        final_submissions = []
+        for e in tqdm(test_samples):
             guid, text, _, _ = e
             #  logger.warning(f"{guid}: {text}")
-            spans_list = preds[guid]
+            spans = preds[guid]
 
             tags = []
-            for spans in spans_list:
-                if spans:
-                    #  logger.info(f"spans: {spans}")
-                    for c, s, e in spans:
-                        m = text[s:e + 1]
-                        if len(m) == 0:
-                            continue
-                        tags.append({
-                            'category': id2label[c],
-                            'start': s,
-                            'metion': m
-                        })
+            for c, s, e in spans:
+                m = text[s:e + 1]
+                if len(m) == 0:
+                    continue
+                tags.append({
+                    'category': id2label[c],
+                    'start': s,
+                    'mention': m
+                })
             tags = sorted(tags, key=lambda x: x['start'])
             #  rich.print(tags)
             final_results.append({'idx': guid, 'text': text, 'tags': tags})
@@ -83,12 +81,21 @@ class MyTask(NerTask):
         # -------------------- 保存最终结果 --------------------
 
         submission_file = self.get_latest_submission_file(ext="json")
+        prediction_file = re.sub("submission", "prediction", submission_file)
         json.dump(final_results,
-                  open(submission_file, 'w'),
+                  open(predication_file, 'w'),
                   ensure_ascii=False,
                   indent=2)
+        logger.warning(
+            f"Saved {len(final_results)} lines in {prediction_file}")
 
-        logger.warning(f"Saved {len(preds)} lines in {submission_file}")
+        with open(submission_file, 'w') as wt:
+            for submission in final_submissions:
+                line = json.dumps(submission, ensure_ascii=False)
+                wt.write(f"{line}\n")
+
+        logger.warning(
+            f"Saved {len(final_submissions)} lines in {submission_file}")
 
 
 def get_task_args():

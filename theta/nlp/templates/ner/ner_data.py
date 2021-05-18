@@ -20,16 +20,35 @@ def clean_text(title, content):
 
 
 def train_data_generator():
-    tags = [{
-        'category': 'category',
-        'start': 0,
-        'mention': 'mention',
-    }]
-    yield "guid", "text", None, tags
+    train_data_file = "./data/rawdata/train.json"
+    lines = open(train_data_file).readlines()
+    lines = [line.strip() for line in lines]
+    for idx, line in enumerate(tqdm(lines, desc=f"{train_data_file}")):
+        json_data = json.loads(line)
+        guid = json_data['doc_id']
+        text = json_data['text']
+        text = clean_text(text)
+
+        tags = [{
+            'category': 'category',
+            'start': 0,
+            'mention': 'mention',
+        }]
+
+        yield guid, text, None, tags
 
 
 def test_data_generator():
-    yield "guid", "text", None, None
+    test_data_file = "./data/rawdata/test.json"
+    lines = open(test_data_file).readlines()
+    lines = [line.strip() for line in lines]
+    for idx, line in enumerate(tqdm(lines, desc=f"{test_data_file}")):
+        json_data = json.loads(line)
+        guid = json_data['doc_id']
+        text = json_data['text']
+        text = clean_text(text)
+
+        yield guid, text, None, None
 
 
 def prepare_samples():

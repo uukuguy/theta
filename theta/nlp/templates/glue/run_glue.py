@@ -9,7 +9,7 @@ from loguru import logger
 #  os.environ['PYTHONPATH'] = os.path.abspath(os.path.curdir)
 if 'THETA_HOME' in os.environ:
     import sys
-    sys.path.append(os.environ['THETA_HOME'])
+    sys.path.insert(0, os.environ['THETA_HOME'])
 from theta.nlp.arguments import TaskArguments, TrainingArguments
 from theta.nlp.data.samples import GlueSamples
 from theta.nlp.tasks import GlueData, GlueTask

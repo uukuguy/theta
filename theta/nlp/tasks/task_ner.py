@@ -77,6 +77,8 @@ class NerDataset(BaseDataset):
     def _encode_item(self, x):
         guid, text, _, tags = x
 
+        #  logger.info(f"{guid}, {text}, tags: {tags}")
+
         def seg_encode(text, tags):
             batch_texts = [text]
             batch_tags = [tags]
@@ -142,8 +144,12 @@ class NerDataset(BaseDataset):
                     #  logger.info(f"tag: {tag}")
                     #  logger.info(f"s: {s}, e: {e}, char2token: {char2token}")
                     s = char2token[s]
+                    if s < 1:
+                        logger.warning(f"{guid}, {text}, tags: {tags}")
                     assert s >= 1
                     e = char2token[e]
+                    if e < 1:
+                        logger.warning(f"{guid}, {text}, tags: {tags}")
                     assert e >= 1
                     #  logger.debug(
                     #      f"num_tokens: {num_tokens}, s: {s}, e: {e}, c: {c}, m: {m}, text: {text}"
@@ -1245,7 +1251,8 @@ class NerRunner(TaskRunner):
 
         micro_metrics = np.zeros(3)
         for c, ((p, r, f1), (tp, fp, fn)) in c_p_r_f1:
-            disp_key = c[:16]
+            #  disp_key = c[:16]
+            disp_key = c
             disp_key += ' ' * (max_key_len - len(disp_key.encode('gbk')))
             #  n_english = len(re.findall('[^\u4e00-\u9fa5]', disp_key))
             #  disp_key += ' ' * ((max_key_len -
@@ -1374,20 +1381,36 @@ class NerRunner(TaskRunner):
                 ents = [(c, s + s_seg, e + s_seg) for s, e in ents
                         if s >= 0 and e >= 0]
 
-                shift_ents.extend(ents)
+                if ents:
+                    shift_ents.extend(ents)
 
             test_ents[guid].append(shift_ents)
 
-        # 去重
+        # 合并去重
         for guid, ents in test_ents.items():
+            ents = [x for x in ents if x]
             unique_ents = []
             ent_keys = []
-            for ent in ents:
-                key = str(ent)
-                if key not in ent_keys:
-                    ent_keys.append(key)
-                    unique_ents.append(ent)
+            if len(ents) > 0:
+                ents = np.concatenate(ents).tolist()
+                for ent in ents:
+                    key = str(ent)
+                    if key not in ent_keys:
+                        ent_keys.append(key)
+                        unique_ents.append(ent)
             test_ents[guid] = unique_ents
+        #  for guid, ents in test_ents.items():
+        #      unique_ents = []
+        #      ent_keys = []
+        #      for ent in ents:
+        #          key = str(ent)
+        #          logger.info(f"key: {key}")
+        #          if key not in ent_keys:
+        #              ent_keys.append(key)
+        #              unique_ents.append(ent)
+        #          else:
+        #              logger.warning(f"Duplicate {key}")
+        #      test_ents[guid] = unique_ents
 
         #  assert len(test_ents) == len(
         #      test_dataset
