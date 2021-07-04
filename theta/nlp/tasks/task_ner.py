@@ -1217,6 +1217,7 @@ class NerRunner(TaskRunner):
         self.log("val_f1", val_f1, on_step=True)
 
         return OrderedDict({
+            'batch_idx': batch_idx,
             'val_loss': val_loss,
             'val_precision': val_precision,
             'val_recall': val_recall,
@@ -1290,6 +1291,8 @@ class NerRunner(TaskRunner):
     def validation_epoch_end(self, outputs):
         x = [out['val_loss'].shape for out in outputs]
         val_loss = sum([out["val_loss"] for out in outputs]) / len(outputs)
+        min_batch_idx = min([out["batch_idx"] for out in outputs])
+        max_batch_idx = max([out["batch_idx"] for out in outputs])
         self.log('val_loss', val_loss, on_epoch=True)
 
         category_confuse_matrix = {
@@ -1326,6 +1329,8 @@ class NerRunner(TaskRunner):
         #  logger.warning(
         #      f"trainer.callback_metrics: {self.trainer.callback_metrics}")
         eval_outputs = {
+            'min_batch_idx': min_batch_idx,
+            'max_batch_idx': max_batch_idx,
             'val_loss': val_loss,
             'val_precision': val_precision,
             'val_recall': val_recall,

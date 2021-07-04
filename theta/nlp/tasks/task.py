@@ -200,7 +200,7 @@ class TransformerModel(nn.Module):
             #      # self.config.vocab_size == 21128
             #      tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese",
             #                                                fast=True)
-            tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese",
+            tokenizer = AutoTokenizer.from_pretrained(model_name_or_path,
                                                       fast=True)
         self.tokenizer = tokenizer
 
@@ -463,12 +463,11 @@ class TaskRunner(pl.LightningModule):
     #      self.model.train()
 
     def save_best_model(self, eval_outputs: dict):
-
+        epoch_str = f"Epoch {self.current_epoch}/{self.max_epochs}"
+        assert 'val_loss' in eval_outputs
         if 'val_loss' in eval_outputs:
             val_loss = eval_outputs['val_loss']
-            logger.info(
-                f"Epoch {self.current_epoch}/{self.max_epochs} val_loss: {val_loss:.4f}"
-            )
+            logger.info(f"{epoch_str} val_loss: {val_loss:.4f}")
         else:
             logger.warning(f"No val_loss in eval_outputs: {eval_outputs}")
 
@@ -486,7 +485,7 @@ class TaskRunner(pl.LightningModule):
             if is_best:
                 self.wait_count = 0
                 logger.warning(
-                    f"Best {self.hparams.metric_for_best_model}: {curr_score:.4f} / {self.best_score:.4f}"
+                    f"{epoch_str} Best {self.hparams.metric_for_best_model}: {curr_score:.4f} / {self.best_score:.4f}"
                 )
                 self.best_score = curr_score
 
@@ -494,8 +493,8 @@ class TaskRunner(pl.LightningModule):
                     os.path.join(self.hparams.task_dir, "checkpoint"))
             else:
                 self.wait_count += 1
-                logger.info(
-                    f"{self.hparams.metric_for_best_model}: {curr_score:.4f} / {self.best_score:.4f}, earlystopping_patience: {self.wait_count}/{self.hparams.earlystopping_patience}"
+                logger.debug(
+                    f"{epoch_str} {self.hparams.metric_for_best_model}: {curr_score:.4f} / {self.best_score:.4f}, earlystopping_patience: {self.wait_count}/{self.hparams.earlystopping_patience}"
                 )
                 if self.wait_count >= self.hparams.earlystopping_patience:
                     self.trainer.should_stop = True

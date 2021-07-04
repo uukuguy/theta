@@ -1,11 +1,65 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import random
+import random, json
 from typing import Callable, List, Tuple, Type, Union
+from copy import deepcopy
 
 from loguru import logger
 from tqdm import tqdm
+
+
+def is_uniform(entities):
+    for i, x in enumerate(entities):
+        for x1 in entities[i:]:
+            if x != x1:
+                return False
+    return True
+
+
+def remove_duplicate_entities(R):
+    new_R = []
+    for i, r in enumerate(R):
+        found_dup = False
+        for r1 in R[i + 1:]:
+            if r == r1:
+                found_dup = True
+                break
+        if found_dup:
+            continue
+        new_R.append(r)
+    return new_R
+
+
+def merge_entities(entities_list, key=None, min_dups=2):
+    new_X = []
+    X = [x for z in entities_list for x in z]
+    #  logger.info(f"X: {X}")
+    if key:
+        X = sorted(X, key=key)
+
+    for i, x in enumerate(X[:1 - min_dups]):
+        if is_uniform(X[i:i + min_dups]):
+            new_X.append(deepcopy(x))
+    new_X = remove_duplicate_entities(new_X)
+    return new_X
+
+
+def merge_ner_tags(ner_tags_list, min_dups=2):
+    if len(ner_tags_list) == 0:
+        return []
+    from copy import deepcopy
+    merged_tags = deepcopy(ner_tags_list[0])
+    if len(ner_tags_list) > 1:
+        for i, tags_list in enumerate(
+                tqdm(zip(*ner_tags_list), desc="Merge ner tags")):
+            new_tags = merge_entities(
+                tags_list,
+                key=lambda x: x['start'] * 1000 + len(x['mention']),
+                min_dups=min_dups)
+            merged_tags[i] = new_tags
+
+    return merged_tags
 
 
 class BaseSamples:
@@ -172,31 +226,57 @@ class EntitySamples(BaseSamples):
     def id2label(self):
         return {i + 1: x for i, x in enumerate(self.labels_list)}
 
-    #  @classmethod
-    #  def from_generator(cls,
-    #                     data_generator: Callable,
-    #                     ner_labels,
-    #                     data_source: str = None):
-    #      samples = EntitySamples(data_generator=data_generator,
-    #                              labels_list=ner_labels)
-    #      categories = []
-    #      for sid, text, _, json_tags in data_generator(data_source):
-    #          """
-    #          json_tag: {'category': 'Person', 'start': 0, 'mention': 'name'}
-    #          """
-    #          samples.data_list.append((sid, text, json_tags))
-    #
-    #          for tag in json_tags:
-    #              c = tag['category']
-    #              if c not in categories:
-    #                  categories.append(c)
-    #      categories = sorted(list(set(categories)))
-    #      logger.info(f"Loaded categories: {categories}")
-    #
-    #      if not samples.labels_list:
-    #          samples.labels_list = categories
-    #
-    #      return samples
+    @property
+    def tags(self):
+        all_tags = []
+        for data in self.data_list:
+            all_tags.append(data['tags'])
+        return all_tags
+
+    def load_samples_from_file(self, data_file):
+        self.data_file = data_file
+        self.data_list = []
+        try:
+            json_data = json.load(open(data_file, 'r'))
+        except:
+            json_data = []
+            for line in tqdm(open(data_file, 'r').readlines(), desc="jsonl"):
+                data = json.loads(line.strip())
+                json_data.append(data)
+
+        for data in tqdm(json_data, desc="Checking"):
+            assert isinstance(data, dict)
+            assert 'idx' in data, f"data: {data}"
+            assert 'text' in data, f"data: {data}"
+            assert 'tags' in data, f"data: {data}"
+            tags = data['tags']
+            for tag in tags:
+                assert isinstance(tag, dict)
+                assert 'category' in tag, f"data: {data}"
+                assert 'start' in tag, f"data: {data}"
+                assert 'mention' in tag, f"data: {data}"
+        self.data_list = json_data
+
+    @classmethod
+    def merge_tags(self, samples_list, min_dups=2):
+        if len(samples_list) == 0:
+            return None
+        if len(samples_list) == 1:
+            return samples_list[0]
+        lens = [len(samples) for samples in samples_list]
+        assert int(sum(lens) / len(lens)) == lens[0]
+
+        ner_tags_list = [samples.tags for samples in samples_list]
+        merged_tags = merge_ner_tags(ner_tags_list, min_dups=min_dups)
+
+        new_data_list = []
+        for data, tags in zip(samples_list[0], merged_tags):
+            new_data = deepcopy(data)
+            new_data['tags'] = tags
+            new_data_list.append(new_data)
+        labels_list = deepcopy(samples_list[0].labels_list)
+
+        return EntitySamples(data_list=new_data_list, labels_list=labels_list)
 
 
 class SPOSamples(BaseSamples):

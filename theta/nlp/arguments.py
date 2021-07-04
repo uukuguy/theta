@@ -177,6 +177,10 @@ class ModelArguments(BaseArguments):
             "with private models)."
         },
     )
+    cl_alpha: float = field(
+        default=None,
+        metadata={"help": "Contrastive learning alpha parameter."},
+    )
 
     def __post_init__(self):
         pass

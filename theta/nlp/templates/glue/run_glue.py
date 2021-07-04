@@ -45,6 +45,7 @@ class MyTask(GlueTask):
         test_results = self.load_test_results()
         preds = test_results['preds']
         logits = test_results['logits']
+        id2label = self.runner.id2label
 
         # -------------------- 载入测试数据集 --------------------
         self.data.load_test_data()
@@ -56,26 +57,45 @@ class MyTask(GlueTask):
 
         # -------------------- 转换最终输出格式 --------------------
         # 转换最终输出格式
-        id2label = self.runner.id2label
         final_results = []
-        for index, (e, pred) in enumerate(zip(test_samples, preds)):
-            final_results.append(f"{e[0]},{id2label[pred]}\n")
+        #  final_submissions = []
+        for index, ((idx, text_a, text_b, _),
+                    pred) in enumerate(zip(test_samples, preds)):
+            label = id2label[pred]
+            #  final_results.append(f"{guid},{label}\n")
+            final_results.append({
+                'idx': idx,
+                'text_a': text_a,
+                'text_b': text_b,
+                'labels': label
+            })
+
+            #  final_submissions.append({
+            #      'idx': idx,
+            #      'text_a': text_a,
+            #      'text_b': text_b,
+            #      'labels': label
+            #  })
 
         # -------------------- 保存最终结果 --------------------
 
-        submission_file = self.get_latest_submission_file(ext="csv")
-        with open(submission_file, 'w') as wt:
-            wt.write(f"id,label\n")
-            for line in final_results:
-                wt.write(line)
+        submission_file = self.get_latest_submission_file(ext="json")
+        prediction_file = re.sub("submission_", "prediction_", submission_file)
 
-        #  submission_file = self.get_latest_submission_file(ext="json")
-        #  json.dump(results,
+        json.dump(final_results,
+                  open(prediction_file, 'w'),
+                  ensure_ascii=False,
+                  indent=2)
+        logger.warning(
+            f"Saved {len(final_results)} lines in {prediction_file}")
+
+        #  json.dump(final_submissions,
         #            open(submission_file, 'w'),
         #            ensure_ascii=False,
         #            indent=2)
+        #  logger.info(f"Saved {len(preds)} lines in {submission_file}")
 
-        logger.warning(f"Saved {len(preds)} lines in {submission_file}")
+        return prediction_file, submission_file
 
 
 def get_task_args():

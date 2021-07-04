@@ -6,15 +6,16 @@ from loguru import logger
 from tqdm import tqdm
 
 glue_labels = []
+assert len(glue_labels) > 0
 
 
-def clean_text(title, content):
-    content = re.sub("<.*?>", '', content)
+def clean_text(text):
+    #  content = re.sub("<.*?>", '', content)
     #  content = re.sub("[\s]", '', content)
     #  content = re.sub("[\n\t]", ' ', content)
     #  content = re.sub("[\n\t]", '。', content)
 
-    text = title + content
+    #  text = title + content
     #  text = re.sub("[^0-9\u4e00-\u9fa5]", '', text)
     return text
 

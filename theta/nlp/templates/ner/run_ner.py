@@ -81,13 +81,14 @@ class MyTask(NerTask):
         # -------------------- 保存最终结果 --------------------
 
         submission_file = self.get_latest_submission_file(ext="json")
-        prediction_file = re.sub("submission", "prediction", submission_file)
+        predication_file = re.sub("submission_", "prediction_",
+                                  submission_file)
         json.dump(final_results,
                   open(predication_file, 'w'),
                   ensure_ascii=False,
                   indent=2)
         logger.warning(
-            f"Saved {len(final_results)} lines in {prediction_file}")
+            f"Saved {len(final_results)} lines in {predication_file}")
 
         with open(submission_file, 'w') as wt:
             for submission in final_submissions:

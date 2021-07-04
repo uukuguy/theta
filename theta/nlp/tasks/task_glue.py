@@ -174,7 +174,47 @@ class GlueData(TaskData):
                            self.label2id, self.tokenizer)
 
 
-class MyGlueModel(TransformerModel):
+def contrastive_learning_loss(alpha, loss_fct, labels, num_labels,
+                              logits_list):
+    loss = None
+    for logits in logits_list:
+        if num_labels == 1:
+            #  We are doing regression
+            loss_fct = MSELoss()
+            if loss:
+                loss += alpha * loss_fct(logits.view(-1), labels.view(-1))
+            else:
+                loss = alpha * loss_fct(logits.view(-1), labels.view(-1))
+        else:
+            loss_fct = CrossEntropyLoss()
+            if loss:
+                loss += alpha * loss_fct(logits.view(-1, num_labels),
+                                         labels.view(-1))
+            else:
+                loss = alpha * loss_fct(logits.view(-1, num_labels),
+                                        labels.view(-1))
+
+    if loss is not None:
+        if num_labels == 1:
+            loss_fct = MSELoss()
+            loss += 1.0 * loss_fct(logits_list[0].view(-1),
+                                   logits_list[-1].view(-1))
+        else:
+            p = torch.log_softmax(logits_list[0].view(-1, num_labels), dim=-1)
+            p_tec = torch.softmax(logits_list[0].view(-1, num_labels), dim=-1)
+            q = torch.log_softmax(logits_list[-1].view(-1, num_labels), dim=-1)
+            q_tec = torch.softmax(logits_list[-1].view(-1, num_labels), dim=-1)
+
+            kl_loss = torch.nn.functional.kl_div(p, q_tec,
+                                                 reduction='none').sum()
+            reverse_kl_loss = torch.nn.functional.kl_div(
+                q, p_tec, reduction='none').sum()
+            loss += 0.5 * (kl_loss + reverse_kl_loss) / 2.
+
+    return loss, logits_list[0]
+
+
+class MyGlueBaseModel(TransformerModel):
     def __init__(
         self,
         model_name_or_path,
@@ -189,7 +229,7 @@ class MyGlueModel(TransformerModel):
 
         # for TransformerModel.load_from_config()
         self.num_labels = num_labels
-        super(MyGlueModel,
+        super(MyGlueBaseModel,
               self).__init__(model_name_or_path,
                              tokenizer=tokenizer,
                              automodel_cls=AutoModelForSequenceClassification)
@@ -276,7 +316,109 @@ class MyGlueModel(TransformerModel):
             return logits
 
 
+class MyGlueModel(MyGlueBaseModel):
+    def __init__(
+        self,
+        model_name_or_path,
+        num_labels,
+        tokenizer=None,
+        dropout_prob=0.1,
+        #  loss_type='CrossEntropyLoss',
+        loss_type='FocalLoss',
+        #  loss_type='LabelSmoothingCrossEntropy',
+        #  loss_type='DiceLoss',
+        **kwargs):
+
+        # for TransformerModel.load_from_config()
+        self.num_labels = num_labels
+        super(MyGlueModel, self).__init__(model_name_or_path,
+                                          num_labels,
+                                          tokenizer=tokenizer,
+                                          dropout_prob=dropout_prob,
+                                          loss_type=loss_type,
+                                          **kwargs)
+
+    def forward(self,
+                input_ids=None,
+                attention_mask=None,
+                token_type_ids=None,
+                labels=None):
+
+        outputs = self.transformer(input_ids,
+                                   attention_mask=attention_mask,
+                                   token_type_ids=token_type_ids,
+                                   labels=labels,
+                                   return_dict=True)
+        loss = outputs.loss
+        logits = outputs.logits
+        if labels is not None:
+            return (loss, logits)
+        else:
+            return logits
+
+
+class ContrastiveLearningGlueModel(MyGlueBaseModel):
+    def __init__(
+        self,
+        model_name_or_path,
+        num_labels,
+        tokenizer=None,
+        dropout_prob=0.1,
+        #  loss_type='CrossEntropyLoss',
+        loss_type='FocalLoss',
+        #  loss_type='LabelSmoothingCrossEntropy',
+        #  loss_type='DiceLoss',
+        cl_alpha=4.0,
+        **kwargs):
+
+        # for TransformerModel.load_from_config()
+        self.num_labels = num_labels
+        self.cl_alpha = cl_alpha
+        super(ContrastiveLearningGlueModel,
+              self).__init__(model_name_or_path,
+                             num_labels,
+                             tokenizer=tokenizer,
+                             dropout_prob=dropout_prob,
+                             loss_type=loss_type,
+                             **kwargs)
+
+    def forward(self,
+                input_ids=None,
+                attention_mask=None,
+                token_type_ids=None,
+                labels=None):
+
+        if labels is not None:
+            logits_list = []
+            for i in range(2):
+                outputs = self.transformer(input_ids,
+                                           attention_mask=attention_mask,
+                                           token_type_ids=token_type_ids,
+                                           labels=labels,
+                                           return_dict=True)
+                loss = outputs.loss
+                logits = outputs.logits
+                logits_list.append(logits)
+
+            alpha = self.cl_alpha
+            loss_fct = CrossEntropyLoss()
+            num_labels = self.num_labels
+            loss, logits = contrastive_learning_loss(alpha, loss_fct, labels,
+                                                     num_labels, logits_list)
+            return (loss, logits)
+        else:
+            outputs = self.transformer(input_ids,
+                                       attention_mask=attention_mask,
+                                       token_type_ids=token_type_ids,
+                                       labels=labels,
+                                       return_dict=True)
+            logits = outputs.logits
+            return logits
+
+
 # ------------------------------ TaskRunner ------------------------------
+
+
 class GlueRunner(TaskRunner):
     """
     任务专属模型定义
@@ -293,10 +435,17 @@ class GlueRunner(TaskRunner):
         model_args = task_args.model_args
 
         logger.warning(f"num_labels: {self.num_labels}")
-        self.model = MyGlueModel(
-            model_name_or_path=model_args.model_name_or_path
-            if model_args.model_name_or_path else model_args.checkpoint_path,
-            num_labels=self.num_labels)
+        if model_args.cl_alpha is None:
+            self.model = MyGlueModel(
+                model_name_or_path=model_args.model_name_or_path if
+                model_args.model_name_or_path else model_args.checkpoint_path,
+                num_labels=self.num_labels)
+        else:
+            self.model = ContrastiveLearningGlueModel(
+                model_name_or_path=model_args.model_name_or_path if
+                model_args.model_name_or_path else model_args.checkpoint_path,
+                num_labels=self.num_labels,
+                cl_alpha=model_args.cl_alpha)
         #  config = self.transformer.config
         #  if self._is_xlnet():
         #      from transformers.modeling_utils import SequenceSummary
@@ -419,6 +568,7 @@ class GlueRunner(TaskRunner):
             'val_f1': val_f1,
             'batch_probs': batch_probs,
             #  'correct_count': correct_count,
+            'batch_idx': batch_idx,
             'batch_size': batch_labels.shape[0]
         })
 
@@ -436,6 +586,10 @@ class GlueRunner(TaskRunner):
         logger.info(
             f"val_loss: {val_loss:.4f}, val_acc: {val_acc:.4f}, val_recall: {val_recall:.4f}, val_f1: {val_f1:.4f}"
         )
+        min_batch_idx = min([out["batch_idx"] for out in outputs])
+        max_batch_idx = max([out["batch_idx"] for out in outputs])
+        #  batch_size = int(
+        #      sum([out["batch_size"] for out in outputs]) / len(outputs))
 
         self.log('val_loss', val_loss, on_epoch=True)
         self.log('val_acc', val_acc, on_epoch=True)
@@ -443,6 +597,9 @@ class GlueRunner(TaskRunner):
         self.log('val_f1', val_f1, on_epoch=True)
 
         eval_outputs = {
+            'min_batch_idx': min_batch_idx,
+            'max_batch_idx': max_batch_idx,
+            #  'batch_size': batch_size,
             'val_loss': val_loss,
             'val_acc': val_acc,
             'val_recall': val_recall,
