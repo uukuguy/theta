@@ -17,9 +17,13 @@ REQUIRED = [
     "dataclasses;python_version<'3.7'",
     "tqdm >= 4.27",
     "loguru",
-    "torch >= 1.5.0",
-    "transformers >=3.0.0",
+    "torch >= 1.7.0",
+    "transformers >=4.6.0",
+    "tokenizers >= 0.10.2",
+    "pytorch-lightning >= 1.2.3",
+    "datasets >= 1.2.1",
     "rich",
+    "dill",
 ]
 
 # Package meta-data.

@@ -1,10 +1,9 @@
 numpy
-pandas
-sklearn
-torch==1.5.0
-transformers==3.0.2
+torch >= 1.7.0
+transformers >=4.6.0
+tokenizers >= 0.10.2
+pytorch-lightning >= 1.2.3
+dill
 tqdm
 loguru
 rich
-msgpack
-msgpack_numpy
