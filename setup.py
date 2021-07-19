@@ -20,7 +20,8 @@ REQUIRED = [
     "torch >= 1.7.0",
     "transformers >=4.6.0",
     "tokenizers >= 0.10.2",
-    "pytorch-lightning >= 1.2.3"
+    "pytorch-lightning >= 1.2.3",
+    "datasets >= 1.2.1",
     "rich",
     "dill",
 ]
