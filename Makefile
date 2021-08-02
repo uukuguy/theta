@@ -2,7 +2,7 @@ PACKAGENAME=`grep -e '^NAME = ' setup.py | cut -d ' ' -f 3 | sed -e "s/'//g"`
 
 all: clean buildall
 
-buildall:
+buildall: clean
 	python setup.py sdist bdist_wheel
 
 upload-test: buildall
