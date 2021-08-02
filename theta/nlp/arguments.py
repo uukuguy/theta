@@ -671,7 +671,7 @@ class TaskArguments():
 
         ensure_task_dir(training_args)
 
-        model_args.checkpoint_path = f"{training_args.latest_path}/checkpoint"
+        model_args.checkpoint_path = f"{training_args.latest_path}"
 
         if data_args.cache_dir is None:
             data_args.cache_dir = f"{training_args.output_dir}/.cache.{training_args.task_name}"

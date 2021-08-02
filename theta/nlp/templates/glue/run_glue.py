@@ -103,6 +103,31 @@ class MyTask(GlueTask):
         }
 
 
+def predict_by_checkpoint(checkpoint_path, test_data_generator):
+    #checkpoint_path = "outputs/glue_data_latest"
+    # from glue_data import test_data_generator
+
+    # -------- task_args --------
+    task_args = TaskArguments.get_checkpoint_task_args(
+        checkpoint_path, training_args_cls=CustomTrainingArguments)
+
+    #task_args.training_args.show_dataloader_samples = 0
+
+    rich.print(task_args)
+
+    # -------- run predict task --------
+    return_dict = MyTask.run_task_from_checkpoint(
+        task_args,
+        checkpoint_path,
+        labels_list=ner_labels,
+        do_predict=True,
+        do_submit=True,
+        test_data_generator=test_data_generator)
+    rich.print(return_dict)
+
+    return return_dict
+
+
 from dataclasses import dataclass, field
 
 

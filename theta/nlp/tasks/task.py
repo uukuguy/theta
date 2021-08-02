@@ -774,7 +774,8 @@ class BaseTask():
 
         # ------------------------------ do_eval ------------------------------
         if training_args.do_eval:
-            self.runner.load_from_checkpoint(self.checkpoint_path)
+            self.runner.load_from_checkpoint(
+                os.path.join(self.checkpoint_path, "checkpoint"))
             self.data.tokenizer = self.runner.model.tokenizer
             self.data.load_train_data()
 
@@ -783,7 +784,8 @@ class BaseTask():
 
         # ------------------------------ do_predict ------------------------------
         if training_args.do_predict:
-            self.runner.load_from_checkpoint(self.checkpoint_path)
+            self.runner.load_from_checkpoint(
+                os.path.join(self.checkpoint_path, "checkpoint"))
             self.data.tokenizer = self.runner.model.tokenizer
             self.data.load_test_data()
 
