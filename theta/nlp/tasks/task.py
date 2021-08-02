@@ -561,6 +561,14 @@ class BaseTask():
     def checkpoint_path(self):
         return self.model_args.checkpoint_path
 
+    @classmethod
+    def get_data_class(cls):
+        raise NotImplementedError
+
+    @classmethod
+    def get_samples_class(cls):
+        raise NotImplementedError
+
     @property
     def test_results_file(self):
         return os.path.join(self.training_args.task_dir, "test_results.pkl")
@@ -795,11 +803,50 @@ class BaseTask():
             test_results_file = self.dump_test_results(
                 self.runner.test_results)
 
-            return_dict['test_results_file'] = test_results_file
+            return_dict.update({'test_results_file': test_results_file})
 
         if training_args.do_submit:
-            submission_file = self.generate_submission()
+            submit_dict = self.generate_submission()
 
-            return_dict['submission_file'] = submission_file
+            return_dict.update(submit_dict)
 
         return return_dict
+
+
+def run_task_from_checkpoint(task_cls,
+                             task_args,
+                             checkpoint_path,
+                             labels_list,
+                             do_train=False,
+                             do_eval=False,
+                             do_predict=False,
+                             do_submit=False,
+                             train_data_generator=None,
+                             test_data_generator=None):
+    samples_cls = task_cls.get_samples_class()
+    data_cls = task_cls.get_data_class()
+
+    task_args.training_args.do_train = do_train
+    task_args.training_args.do_eval = do_eval
+    task_args.training_args.do_predict = do_predict
+    task_args.training_args.do_submit = do_submit
+    task_args.model_args.checkpoint_path = checkpoint_path
+
+    train_samples = None
+    if train_data_generator:
+        train_samples = samples_cls(labels_list=labels_list,
+                                    data_generator=train_data_generator)
+
+    test_samples = None
+    if test_data_generator:
+        test_samples = samples_cls(labels_list=labels_list,
+                                   data_generator=test_data_generator)
+
+    task_data = data_cls(task_args.data_args,
+                         train_samples=train_samples,
+                         test_samples=test_samples)
+
+    task = task_cls(task_args, task_data, labels_list)
+    return_dict = task.execute()
+
+    return return_dict

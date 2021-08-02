@@ -636,6 +636,15 @@ class GlueTask(BaseTask):
         runner = GlueRunner(args, glue_labels)
         super(GlueTask, self).__init__(args, data, runner)
 
+    @classmethod
+    def get_data_class(cls):
+        return GlueData
+
+    @classmethod
+    def get_samples_class(cls):
+        from ..data.samples import GlueSamples
+        return GlueSamples
+
     def execute(self, *args, **kwargs):
         model_args = self.model_args
         data_args = self.data_args
@@ -646,3 +655,27 @@ class GlueTask(BaseTask):
 
     def generate_submission(self):
         logger.warning(f"GlueTask.generate_submission().")
+
+    @classmethod
+    def run_task_from_checkpoint(task_cls,
+                                 task_args,
+                                 checkpoint_path,
+                                 labels_list,
+                                 do_train=False,
+                                 do_eval=False,
+                                 do_predict=False,
+                                 do_submit=False,
+                                 train_data_generator=None,
+                                 test_data_generator=None):
+        from .task import run_task_from_checkpoint as _run_task_from_checkpoint
+        return _run_task_from_checkpoint(
+            task_cls,
+            task_args,
+            checkpoint_path,
+            labels_list,
+            do_train=do_train,
+            do_eval=do_eval,
+            do_predict=do_predict,
+            do_submit=do_submit,
+            train_data_generator=train_data_generator,
+            test_data_generator=test_data_generator)

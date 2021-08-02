@@ -1450,13 +1450,46 @@ class NerTask(BaseTask):
         runner = NerRunner(args, ner_labels)
         super(NerTask, self).__init__(args, data, runner)
 
+    @classmethod
+    def get_data_class(cls):
+        return NerData
+
+    @classmethod
+    def get_samples_class(cls):
+        from ..data.samples import EntitySamples
+        return EntitySamples
+
     def execute(self, *args, **kwargs):
         model_args = self.model_args
         data_args = self.data_args
         training_args = self.training_args
         remaining_args = self.remaining_args
 
-        super(NerTask, self).execute(*args, **kwargs)
+        return super(NerTask, self).execute(*args, **kwargs)
 
     def generate_submission(self):
         logger.warning(f"NerTask.generate_submission().")
+
+    @classmethod
+    def run_task_from_checkpoint(task_cls,
+                                 task_args,
+                                 checkpoint_path,
+                                 labels_list,
+                                 do_train=False,
+                                 do_eval=False,
+                                 do_predict=False,
+                                 do_submit=False,
+                                 train_data_generator=None,
+                                 test_data_generator=None):
+        from .task import run_task_from_checkpoint as _run_task_from_checkpoint
+        return _run_task_from_checkpoint(
+            task_cls,
+            task_args,
+            checkpoint_path,
+            labels_list,
+            do_train=do_train,
+            do_eval=do_eval,
+            do_predict=do_predict,
+            do_submit=do_submit,
+            train_data_generator=train_data_generator,
+            test_data_generator=test_data_generator)

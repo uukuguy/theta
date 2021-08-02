@@ -32,9 +32,11 @@ class MyTask(NerTask):
             """
             Do something
             """
-            pass
 
-        super(MyTask, self).execute(*args, **kwargs)
+            return_dict = {}
+            return return_dict
+
+        return super(MyTask, self).execute(*args, **kwargs)
 
     # TODO 将模型推理结果转换成任务最终输出格式
     def generate_submission(self):
@@ -103,18 +105,21 @@ class MyTask(NerTask):
         }
 
 
+from dataclasses import dataclass, field
+
+
+@dataclass
+class CustomTrainingArguments(TrainingArguments):
+    """
+    """
+    # TODO 自定义需要的命令行参数
+    do_something: bool = field(default=False,
+                               metadata={"help": "Do something"})
+
+
 def get_task_args():
     """
     """
-    from dataclasses import dataclass, field
-
-    @dataclass
-    class CustomTrainingArguments(TrainingArguments):
-        """
-        """
-        # TODO 自定义需要的命令行参数
-        do_something: bool = field(default=False,
-                                   metadata={"help": "Do something"})
 
     task_args = TaskArguments.parse_args(
         training_args_cls=CustomTrainingArguments)

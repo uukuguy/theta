@@ -609,7 +609,11 @@ class TaskArguments():
         return task_args
 
     @classmethod
-    def parse_from_task_args_file(task_args_file):
+    def parse_from_task_args_file(cls,
+                                  task_args_file,
+                                  data_args_cls=DataArguments,
+                                  model_args_cls=ModelArguments,
+                                  training_args_cls=TrainingArguments):
         json_data = json.load(open(task_args_file))
         task_args_dict = {}
         for key in ('data_args', 'model_args', 'training_args'):
@@ -619,7 +623,7 @@ class TaskArguments():
                 task_args_dict[k] = v
 
         parser = HfArgumentParser(
-            (DataArguments, ModelArguments, TrainingArguments))
+            (data_args_cls, model_args_cls, training_args_cls))
         data_args, model_args, training_args = parser.parse_dict(
             task_args_dict)
 
@@ -631,6 +635,15 @@ class TaskArguments():
         task_args = TaskArguments(data_args=data_args,
                                   model_args=model_args,
                                   training_args=training_args)
+        return task_args
+
+    @classmethod
+    def get_checkpoint_task_args(cls,
+                                 checkpoint_path,
+                                 training_args_cls=TrainingArguments):
+        task_args_file = f"{checkpoint_path}/train_task_args.json"
+        task_args = TaskArguments.parse_from_task_args_file(
+            task_args_file, training_args_cls=training_args_cls)
         return task_args
 
     @classmethod
