@@ -1,61 +1,12 @@
-#  num_gpus = 1
-#  samples_per_gpu = 8
-#  workers_per_gpu = 4
-#  max_epochs = 20
-#  warmup_steps = [16, 19]
-#  num_train_samples = int(8000 * 0.9)
-#  data_root = './data/'
-#  img_train_scale_list = [(640, 480), (960, 720)]
-#  img_test_scale_list = [(640, 480), (800, 600), (960, 720)]
-#  #  fp16 = dict(loss_scale=8.)
-# depth = 50
-#  load_from = "../weights/cascade_rcnn_r50_fpn_1x_coco_classes_13.pth"
-#  #  load_from = "../weights/cascade_rcnn_r101_fpn_20e_coco_classes_7.pth"
-#  # load_from = "../weights/cascade_rcnn_x101_64x4d_fpn_20e_coco_classes_7.pth"
-
 num_gpus = 1
-#  samples_per_gpu = 1
-samples_per_gpu = 2
-#  samples_per_gpu = 4
-#  samples_per_gpu = 8
+samples_per_gpu = 8
 workers_per_gpu = 4
-
-max_epochs = 12
-warmup_steps = [8, 11]
-#  max_epochs = 20
-#  warmup_steps = [16, 19]
-#  max_epochs = 20
-#  warmup_steps = [8, 12, 18]
-#  max_epochs = 24
-#  warmup_steps = [16, 22]
-#  max_epochs = 36
-#  warmup_steps = [24, 33]
-
-depth = 50
-num_train_samples = int(2000 * 0.9)
-
-img_train_scale_list = (1280, 720)
-img_test_scale_list = (1280, 720)
-
-# 多尺度预测
-#  img_train_scale_list = [(640, 480), (960, 720)]
-#  img_test_scale_list = [(640, 480), (800, 600), (960, 720)]
-
-#  img_train_scale_list = [(960, 640), (1333, 800)]
-#  img_test_scale_list = [(960, 640), (1100, 700), (1333, 800)]
-
-#  img_train_scale_list = [(1280, 720), (1920, 1080)]
-#  img_test_scale_list = [(1280, 720), (1600, 960), (1920, 1080)]
-
-#  img_train_scale_list = [(1333, 800), (2666, 1600)]
-#  img_test_scale_list = [(1333, 800), (2000, 1200), (2666, 1600)]
+gpu_assign_thr = 100
+#  max_epochs = 12 # 0.45735
+max_epochs = 20
+num_train_samples = int(8000 * 0.9)
 
 data_root = './data/'
-
-classes = ('phone', 'pad', 'laptop', 'wallet', 'packsack')
-num_classes = len(classes)
-
-gpu_assign_thr = 100
 train_ann_file = data_root + 'train/annotations/train_coco.json'
 train_img_prefix = data_root + "train/images/"
 val_ann_file = data_root + 'train/annotations/val_coco.json'
@@ -63,10 +14,24 @@ val_img_prefix = data_root + "train/images/"
 test_ann_file = data_root + 'test/annotations/test_coco.json'
 test_img_prefix = data_root + "test/images/"
 
-#  classes = ('knife', 'scissors', 'sharpTools', 'expandableBaton',
-#             'smallGlassBottle', 'electricBaton', 'plasticBeverageBottle',
-#             'plasticBottleWithaNozzle', 'electronicEquipment', 'battery',
-#             'seal', 'umbrella')
+#  {
+#      'knife': 1,
+#      'scissors': 2,
+#      'sharpTools': 3,
+#      'expandableBaton': 4,
+#      'smallGlassBottle': 5,
+#      'electricBaton': 6,
+#      'plasticBeverageBottle': 7,
+#      'plasticBottleWithaNozzle': 8,
+#      'electronicEquipment': 9,
+#      'battery': 10,
+#      'seal': 11,
+#      'umbrella': 12
+#  }
+classes = ('knife', 'scissors', 'sharpTools', 'expandableBaton',
+           'smallGlassBottle', 'electricBaton', 'plasticBeverageBottle',
+           'plasticBottleWithaNozzle', 'electronicEquipment', 'battery',
+           'seal', 'umbrella')
 num_classes = len(classes)
 
 # -------------------- model settings --------------------
@@ -76,7 +41,7 @@ model = dict(
     pretrained=None,  # 'torchvision://resnet50',
     backbone=dict(
         type='ResNet',
-        depth=depth,
+        depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
@@ -271,7 +236,7 @@ mixup_train_transforms = dict(type='MixUp', p=0.5, lambd=0.5)
 #  img_scale_list = [(1333, 480), (1333, 512), (1333, 544), (1333, 576),
 #                    (1333, 608), (1333, 640), (1333, 672), (1333, 704),
 #                    (1333, 736), (1333, 768), (1333, 800)]
-#  img_scale_list = [(640, 480), (960, 720)]
+img_scale_list = [(640, 480), (960, 720)]
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -287,8 +252,7 @@ train_pipeline = [
     #       crop_type='absolute_range',
     #       crop_size=(360, 360),
     #       allow_negative_crop=True),
-    #  dict(type='Resize', img_scale=[(640, 480), (960, 720)], keep_ratio=True),
-    dict(type='Resize', img_scale=img_train_scale_list, keep_ratio=True),
+    dict(type='Resize', img_scale=[(640, 480), (960, 720)], keep_ratio=True),
     #  dict(
     #      type='AutoAugment',
     #      policies=[
@@ -343,8 +307,7 @@ test_pipeline = [
         #  img_scale=[(1333, 800), (2000, 1200), (2666, 1600)],  # 多尺度预测
         #  img_scale=[(960, 640), (1100, 700), (1333, 800)],  # 多尺度预测
         #  img_scale=[(1280, 720), (1600, 960), (1920, 1080)],  # 多尺度预测
-        #  img_scale=[(640, 480), (800, 600), (960, 720)],  # 多尺度预测
-        img_scale=img_test_scale_list,  # 多尺度预测
+        img_scale=[(640, 480), (800, 600), (960, 720)],  # 多尺度预测
         #  img_scale=img_scale_list,
         flip=False,
         transforms=[
@@ -407,7 +370,7 @@ lr_config = dict(policy='step',
                  warmup_iters=int(
                      (num_train_samples / samples_per_gpu) * max_epochs / 10),
                  warmup_ratio=0.001,
-                 step=warmup_steps)
+                 step=[16, 19])
 #  step=[8, 11])
 #  step=[16, 19])
 #  step=[24, 33])
@@ -431,14 +394,8 @@ custom_hooks = [dict(type='NumClassCheckHook')]
 
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
-load_from = None
-#  load_from = "../weights/cascade_rcnn_r50_fpn_1x_coco_classes_13.pth"
+load_from = "../weights/cascade_rcnn_r50_fpn_1x_coco_classes_13.pth"
 #  load_from = "../weights/cascade_rcnn_r101_fpn_20e_coco_classes_7.pth"
 # load_from = "../weights/cascade_rcnn_x101_64x4d_fpn_20e_coco_classes_7.pth"
 resume_from = None
 workflow = [('train', 1)]
-
-weights_dir = "../weights"
-load_from = f"{weights_dir}/cascade_rcnn_r50_fpn_1x_coco_classes_{num_classes+1}.pth"
-# load_from = f"{weights_dir}/cascade_rcnn_r101_fpn_20e_coco_classes_{num_classes+1}.pth"
-# load_from = f"{weights_dir}/cascade_rcnn_x101_64x4d_fpn_20e_coco_classes_{num_classes+1}.pth"

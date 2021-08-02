@@ -6,7 +6,7 @@ from loguru import logger
 from tqdm import tqdm
 
 glue_labels = []
-assert len(glue_labels) > 0
+#  assert len(glue_labels) > 0
 
 
 def clean_text(text):

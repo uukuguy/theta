@@ -385,6 +385,13 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
         },
     )
 
+    show_dataloader_samples: int = field(
+        default=1,
+        metadata={
+            "help": "Number of samples to be shown while loading dataloader"
+        },
+    )
+
     #  run_name: Optional[str] = field(
     #      default=None,
     #      metadata={
@@ -599,6 +606,31 @@ class TaskArguments():
                         model_args=model_args,
                         training_args=training_args,
                         remaining_args=remaining_args)
+        return task_args
+
+    @classmethod
+    def parse_from_task_args_file(task_args_file):
+        json_data = json.load(open(task_args_file))
+        task_args_dict = {}
+        for key in ('data_args', 'model_args', 'training_args'):
+            if key not in json_data:
+                continue
+            for k, v in json_data[key].items():
+                task_args_dict[k] = v
+
+        parser = HfArgumentParser(
+            (DataArguments, ModelArguments, TrainingArguments))
+        data_args, model_args, training_args = parser.parse_dict(
+            task_args_dict)
+
+        training_args.do_train = False
+        training_args.do_eval = False
+        training_args.do_predict = False
+        training_args.do_submit = False
+
+        task_args = TaskArguments(data_args=data_args,
+                                  model_args=model_args,
+                                  training_args=training_args)
         return task_args
 
     @classmethod

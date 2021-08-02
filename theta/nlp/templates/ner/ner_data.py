@@ -6,7 +6,7 @@ from loguru import logger
 from tqdm import tqdm
 
 ner_labels = []
-assert len(ner_labels) > 0
+#  assert len(ner_labels) > 0
 
 
 def clean_text(text):

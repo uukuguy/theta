@@ -43,6 +43,7 @@ train:
 predict:
 	python run_${TASK_NAME}.py \
 		--do_predict \
+		--do_submit \
 		--task_name ${TASK_NAME} \
 		${DATA_ARGS} \
 		--per_device_test_batch_size ${BATCH_SIZE} \

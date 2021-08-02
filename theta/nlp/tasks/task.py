@@ -584,9 +584,13 @@ class BaseTask():
     @property
     def train_dataloader(self):
         train_dataset = self.data.train_dataset
-        for index in random.sample(range(len(train_dataset)), 1):
-            logger.info(
-                f"Sample {index} of the training set: {train_dataset[index]}.")
+        if self.training_args.show_dataloader_samples > 0:
+            for index in random.sample(
+                    range(len(train_dataset)),
+                    self.training_args.show_dataloader_samples):
+                logger.info(
+                    f"Sample {index} of the training set: {train_dataset[index]}."
+                )
 
         train_dataloader = DataLoader(
             train_dataset,
@@ -599,9 +603,12 @@ class BaseTask():
     @property
     def val_dataloader(self):
         val_dataset = self.data.val_dataset
-        for index in random.sample(range(len(val_dataset)), 1):
-            logger.info(
-                f"Sample {index} of the val set: {val_dataset[index]}.")
+        if self.training_args.show_dataloader_samples > 0:
+            for index in random.sample(
+                    range(len(val_dataset)),
+                    self.training_args.show_dataloader_samples):
+                logger.info(
+                    f"Sample {index} of the val set: {val_dataset[index]}.")
 
         val_dataloader = DataLoader(
             val_dataset,
@@ -614,9 +621,12 @@ class BaseTask():
     @property
     def test_dataloader(self):
         test_dataset = self.data.test_dataset
-        for index in random.sample(range(len(test_dataset)), 1):
-            logger.info(
-                f"Sample {index} of the test set: {test_dataset[index]}.")
+        if self.training_args.show_dataloader_samples > 0:
+            for index in random.sample(
+                    range(len(test_dataset)),
+                    self.training_args.show_dataloader_samples):
+                logger.info(
+                    f"Sample {index} of the test set: {test_dataset[index]}.")
 
         test_dataloader = DataLoader(
             test_dataset,
