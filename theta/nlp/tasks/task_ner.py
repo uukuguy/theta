@@ -8,7 +8,6 @@ from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from typing import Type
 
-import dill
 import numpy as np
 import torch
 import torch.nn as nn
@@ -1101,7 +1100,8 @@ class NerRunner(TaskRunner):
         #  self.model = SpanModel(
         self.model = BertSpanModel(
             model_name_or_path=model_args.model_name_or_path
-            if model_args.model_name_or_path else model_args.checkpoint_path,
+            if model_args.model_name_or_path else os.path.join(
+                model_args.checkpoint_path, "checkpoint"),
             num_labels=self.num_labels)
 
         self.all_ccm_list = []

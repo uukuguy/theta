@@ -93,6 +93,20 @@ def generate_det_coco_data():
 
     return coco_json_data
 
+#  import os, sys
+#  from coco_data import CocoData
+#
+#  coco_file = sys.argv[1]
+#  coco_data = CocoData()
+#  coco_data.from_file(coco_file)
+#  train_coco_data, val_coco_data = coco_data.split(train_ratio=0.9)
+#
+#  data_dir = os.path.basename(coco_file).split('.')[0]
+#  anns_dir = f"{data_dir}/train/annotations"
+#  os.makedirs(anns_dir, exist_ok=True)
+#  train_coco_data.save(f"{anns_dir}/train_coco.json")
+#  val_coco_data.save(f"{anns_dir}/val_coco.json")
+
 
 def generate_test_coco_data():
     img_files = glob(f"rawdata/test_A/images/*.jpg")

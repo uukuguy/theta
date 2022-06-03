@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os, re, json
+from dataclasses import dataclass, field
+import os
+import re
+import json
 
 from tqdm import tqdm
 from loguru import logger
@@ -9,8 +12,11 @@ import rich
 
 #  os.environ['PYTHONPATH'] = os.path.abspath(os.path.curdir)
 if 'THETA_HOME' in os.environ:
+    import os
     import sys
-    sys.path.insert(0, os.environ['THETA_HOME'])
+    theta_home = os.environ.get('THETA_HOME', None)
+    if theta_home and theta_home not in sys.path:
+        sys.path.insert(0, theta_home)
 from theta.nlp.arguments import TaskArguments, TrainingArguments
 from theta.nlp.data.samples import EntitySamples
 from theta.nlp.tasks import NerData, NerTask
@@ -129,9 +135,6 @@ def predict_by_checkpoint(checkpoint_path, test_data_generator):
     rich.print(return_dict)
 
     return return_dict
-
-
-from dataclasses import dataclass, field
 
 
 @dataclass

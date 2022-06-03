@@ -64,6 +64,7 @@ def compare_arguments(one_args, another_args, return_identical=False):
 
 @dataclass
 class BaseArguments:
+
     def to_dict(self):
         return asdict(self)
 
@@ -177,9 +178,18 @@ class ModelArguments(BaseArguments):
             "with private models)."
         },
     )
+    dropout_prob: float = field(
+        default=0.3,
+        metadata={"help": "Model dropout prob"},
+    )
     cl_alpha: float = field(
         default=None,
         metadata={"help": "Contrastive learning alpha parameter."},
+    )
+    noise_lambda: float = field(
+        default=None,
+        type=float,
+        metadata={"help": "Noise tune lambda parameter."},
     )
 
     def __post_init__(self):

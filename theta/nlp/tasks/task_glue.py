@@ -6,10 +6,10 @@ import os
 from collections import OrderedDict
 from typing import Type
 
-import dill
 import numpy as np
 import torch
-import torch.functional as F
+#  import torch.functional as F
+import torch.nn.functional as F
 import torch.nn as nn
 from loguru import logger
 from sklearn.metrics import f1_score
@@ -68,6 +68,7 @@ class GlueDataset(BaseDataset):
     """
     完成模型输入数据的编码工作
     """
+
     def __init__(self, *args, **kwargs):
         super(GlueDataset, self).__init__(*args, **kwargs)
 
@@ -158,6 +159,7 @@ class GlueData(TaskData):
     """
     指定任务专属的Dataset类型，并提供训练、验证、测试集实例。
     """
+
     def __init__(self, *args, **kwargs):
         super(GlueData, self).__init__(*args, **kwargs)
 
@@ -174,8 +176,79 @@ class GlueData(TaskData):
                            self.label2id, self.tokenizer)
 
 
-def contrastive_learning_loss(alpha, loss_fct, labels, num_labels,
-                              logits_list):
+# https://github.com/wangz10/contrastive_loss
+
+
+def compute_kl_loss(p, q, pad_mask=None):
+
+    p_loss = F.kl_div(F.log_softmax(p, dim=-1),
+                      F.softmax(q, dim=-1),
+                      reduction='none')
+    q_loss = F.kl_div(F.log_softmax(q, dim=-1),
+                      F.softmax(p, dim=-1),
+                      reduction='none')
+
+    # pad_mask is for seq-level tasks
+    if pad_mask is not None:
+        p_loss.masked_fill_(pad_mask, 0.)
+        q_loss.masked_fill_(pad_mask, 0.)
+
+    # You can choose whether to use function "sum" and "mean" depending on your task
+    p_loss = p_loss.sum()
+    q_loss = q_loss.sum()
+
+    loss = (p_loss + q_loss) / 2
+    return loss
+
+
+#  def contrastive_learning_loss_official(alpha, loss_fct, labels, num_labels,
+#                                         logits_list):
+def contrastive_learning_loss_official(alpha, loss_fct, labels, num_labels,
+                                       logits_list):
+    #  print(f"In contrastive_learning_loss")
+
+    logits1 = logits_list[0]
+    logits2 = logits_list[-1]
+    #  print(f"logits1: {logits1}, logits2: {logits2}")
+
+    #  loss1 = losses_list[0]
+    #  loss2 = losses_list[-1]
+    # cross entropy loss for classifier
+    #  loss1 = loss_fct(logits1.view(-1, num_labels), labels.view(-1))
+    #  loss2 = loss_fct(logits2.view(-1, num_labels), labels.view(-1))
+    loss1 = loss_fct(logits1, labels)
+    loss2 = loss_fct(logits2, labels)
+    #  print(f"loss1: {loss1}, loss2: {loss2}")
+
+    ce_loss = 0.5 * (loss1 + loss2)
+    #  print(f"ce_loss: {ce_loss}")
+
+    kl_loss = compute_kl_loss(logits1, logits2)
+    #  print(f"cel_loss: {ce_loss.item():.6f}, kl_loss: {kl_loss.item():.6f}")
+
+    # carefully choose hyper-parameters
+    # 0.849145
+    alpha = 10.0
+
+    # 0.824338
+    #  alpha = 0.1
+
+    # submissions/prediction_glue_20220603001227_20220603.170045.json
+    # 0.843111
+    #  alpha = 1.0
+
+    # submissions/prediction_glue_20220603170256_20220604.000032.json
+    # 0.84311
+    #  alpha = 20.0
+
+    loss = ce_loss + alpha * kl_loss
+    #  print(f"contrastive_loss: {loss}")
+
+    return loss, logits_list[0]
+
+
+def contrastive_learning_loss_old(alpha, loss_fct, labels, num_labels,
+                                  logits_list):
     loss = None
     for logits in logits_list:
         if num_labels == 1:
@@ -211,10 +284,16 @@ def contrastive_learning_loss(alpha, loss_fct, labels, num_labels,
                 q, p_tec, reduction='none').sum()
             loss += 0.5 * (kl_loss + reverse_kl_loss) / 2.
 
+#
     return loss, logits_list[0]
 
 
+#  contrastive_learning_loss = contrastive_learning_loss_old
+contrastive_learning_loss = contrastive_learning_loss_official
+
+
 class MyGlueBaseModel(TransformerModel):
+
     def __init__(
         self,
         model_name_or_path,
@@ -232,7 +311,8 @@ class MyGlueBaseModel(TransformerModel):
         super(MyGlueBaseModel,
               self).__init__(model_name_or_path,
                              tokenizer=tokenizer,
-                             automodel_cls=AutoModelForSequenceClassification)
+                             automodel_cls=AutoModelForSequenceClassification,
+                             dropout_prob=dropout_prob)
         #  config = self.config
         #  if self._is_xlnet():
         #      from transformers.modeling_utils import SequenceSummary
@@ -244,22 +324,32 @@ class MyGlueBaseModel(TransformerModel):
 
         self.init_weights()
 
+    def _adjust_config(self):
+        setattr(self.config, 'num_labels', self.num_labels)
+        # default: 0.1
+        setattr(self.config, 'attention_probs_dropout_prob', self.dropout_prob)
+        # default: null
+        #  setattr(self.config, 'classifier_dropout', self.dropout_prob)
+
     def load_from_pretrained(self, model_path):
         #  automodel_cls = AutoModelForSequenceClassification
         #  super(MyGlueModel,
         #        self)._load_from_pretrained(model_path,
         #                                    automodel_cls=automodel_cls,
         #                                    num_labels=self.num_labels)
-        setattr(self.config, 'num_labels', self.num_labels)
+
+        self._adjust_config()
         self.transformer = AutoModelForSequenceClassification.from_pretrained(
             model_path, config=self.config)
+
         #  self.transformer = AutoModelForSequenceClassification.from_pretrained(
         #      model_path, num_labels=self.num_labels)
 
     def load_from_config(self):
-        setattr(self.config, 'num_labels', self.num_labels)
+        self._adjust_config()
         self.transformer = AutoModelForSequenceClassification.from_config(
             self.config)
+        logger.warning(f"After load_from_config() : {self.config}")
 
     def forward(self,
                 input_ids=None,
@@ -317,6 +407,7 @@ class MyGlueBaseModel(TransformerModel):
 
 
 class MyGlueModel(MyGlueBaseModel):
+
     def __init__(
         self,
         model_name_or_path,
@@ -358,18 +449,19 @@ class MyGlueModel(MyGlueBaseModel):
 
 
 class ContrastiveLearningGlueModel(MyGlueBaseModel):
+
     def __init__(
-        self,
-        model_name_or_path,
-        num_labels,
-        tokenizer=None,
-        dropout_prob=0.1,
-        #  loss_type='CrossEntropyLoss',
-        loss_type='FocalLoss',
-        #  loss_type='LabelSmoothingCrossEntropy',
-        #  loss_type='DiceLoss',
-        cl_alpha=4.0,
-        **kwargs):
+            self,
+            model_name_or_path,
+            num_labels,
+            tokenizer=None,
+            dropout_prob=0.1,
+            #  loss_type='CrossEntropyLoss',
+            loss_type='FocalLoss',
+            #  loss_type='LabelSmoothingCrossEntropy',
+            #  loss_type='DiceLoss',
+            cl_alpha=4.0,
+            **kwargs):
 
         # for TransformerModel.load_from_config()
         self.num_labels = num_labels
@@ -403,8 +495,10 @@ class ContrastiveLearningGlueModel(MyGlueBaseModel):
             alpha = self.cl_alpha
             loss_fct = CrossEntropyLoss()
             num_labels = self.num_labels
+            #  print(f"call contrastive_learning_loss")
             loss, logits = contrastive_learning_loss(alpha, loss_fct, labels,
                                                      num_labels, logits_list)
+            #  print(f"After contrastive_learning_loss: {loss: {loss}}")
             return (loss, logits)
         else:
             outputs = self.transformer(input_ids,
@@ -423,6 +517,7 @@ class GlueRunner(TaskRunner):
     """
     任务专属模型定义
     """
+
     def __init__(self, task_args, glue_labels):
         super(GlueRunner, self).__init__(**task_args.to_dict())
         logger.warning(f"glue_labels: {glue_labels}")
@@ -437,13 +532,17 @@ class GlueRunner(TaskRunner):
         logger.warning(f"num_labels: {self.num_labels}")
         if model_args.cl_alpha is None:
             self.model = MyGlueModel(
-                model_name_or_path=model_args.model_name_or_path if
-                model_args.model_name_or_path else model_args.checkpoint_path,
+                model_name_or_path=model_args.model_name_or_path
+                if model_args.model_name_or_path else os.path.join(
+                    model_args.checkpoint_path, "checkpoint"),
+                dropout_prob=model_args.dropout_prob,
                 num_labels=self.num_labels)
         else:
             self.model = ContrastiveLearningGlueModel(
-                model_name_or_path=model_args.model_name_or_path if
-                model_args.model_name_or_path else model_args.checkpoint_path,
+                model_name_or_path=model_args.model_name_or_path
+                if model_args.model_name_or_path else os.path.join(
+                    model_args.checkpoint_path, "checkpoint"),
+                dropout_prob=model_args.dropout_prob,
                 num_labels=self.num_labels,
                 cl_alpha=model_args.cl_alpha)
         #  config = self.transformer.config

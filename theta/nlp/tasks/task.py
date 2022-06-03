@@ -8,7 +8,10 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Type, Union
 
-import dill
+try:
+    import dill
+except:
+    import pickle as dill
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -44,6 +47,7 @@ class BaseDataset(object):
         Dataset负责完成传入模型数据的编码工作
         编码data_generator生成的数据
     """
+
     def __init__(self, data_args, data_generator, label2id, tokenizer):
         super(BaseDataset, self).__init__()
         self.data_args = data_args
@@ -55,13 +59,14 @@ class BaseDataset(object):
         self.encoded_data_list = []
         for x in tqdm(data_generator(), desc="Encoding"):
             encoded = self._encode_item(x)
-            if isinstance(encoded, list):
-                self.encoded_data_list.extend(encoded)
-                sids = [f"{x[0]}-{i}" for i in range(len(encoded))]
-                self.sids.extend(sids)
-            else:
-                self.encoded_data_list.append(encoded)
-                self.sids.append(x[0])
+            if encoded:
+                if isinstance(encoded, list):
+                    self.encoded_data_list.extend(encoded)
+                    sids = [f"{x[0]}-{i}" for i in range(len(encoded))]
+                    self.sids.extend(sids)
+                else:
+                    self.encoded_data_list.append(encoded)
+                    self.sids.append(x[0])
 
     def _encode_item(self, x):
         raise NotImplementedError
@@ -83,6 +88,7 @@ class TaskData:
     TaskData负责完成Samples -> Dataset的转换
     对模型提供train_dataset、val_dataset、test_dataset
     """
+
     def __init__(self,
                  data_args: Type[DataArguments],
                  train_samples,
@@ -181,13 +187,16 @@ def save_args(args, model_path):
 
 
 class TransformerModel(nn.Module):
+
     def __init__(self,
                  model_name_or_path,
                  tokenizer=None,
-                 automodel_cls=AutoModel):
+                 automodel_cls=AutoModel,
+                 dropout_prob=0.1):
         super(TransformerModel, self).__init__()
         assert automodel_cls is not None
         self.automodel_cls = automodel_cls
+        self.dropout_prob = dropout_prob
         logger.info(f"automodel_cls: {self.automodel_cls}")
         self.config = AutoConfig.from_pretrained(model_name_or_path)
         logger.info(f"{self.config}")
@@ -299,6 +308,7 @@ class TransformerModel(nn.Module):
 
 # ------------------------------ TaskRunner ------------------------------
 class TaskRunner(pl.LightningModule):
+
     def __init__(self, *args, **kwargs):
         super(TaskRunner, self).__init__()
         self.save_hyperparameters()
@@ -364,6 +374,12 @@ class TaskRunner(pl.LightningModule):
     def load_from_pretrained(self, model_name_or_path):
         logger.info(f"Load from pretrained model by {model_name_or_path}")
         self.model.load_from_pretrained(model_name_or_path)
+
+        if self.hparams.noise_lambda > 0.0:
+            noise_lambda = self.hparams.noise_lambda
+            for name, para in self.model.named_parameters():
+                self.model.state_dict()[name][:] += (torch.rand(
+                    para.size()) - 0.5) * noise_lambda * torch.std(para)
 
     def save_model(self, model_path):
         os.makedirs(model_path, exist_ok=True)
@@ -521,6 +537,7 @@ class BaseTask():
     task.execute(glue_labels)
 
     """
+
     def __init__(self, args: Type[TaskArguments], data: Type[TaskData],
                  runner: Type[TaskRunner]):
         self.args = args
@@ -800,7 +817,8 @@ class BaseTask():
 
             trainer = pl.Trainer(**trainer_kwargs)
 
-            trainer.test(self.runner, test_dataloaders=test_dataloader)
+            #  trainer.test(self.runner, test_dataloaders=test_dataloader)
+            trainer.test(self.runner, test_dataloader)
 
             test_results_file = self.dump_test_results(
                 self.runner.test_results)
