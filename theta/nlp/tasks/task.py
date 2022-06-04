@@ -192,11 +192,13 @@ class TransformerModel(nn.Module):
                  model_name_or_path,
                  tokenizer=None,
                  automodel_cls=AutoModel,
-                 dropout_prob=0.1):
+                 dropout_prob=0.1,
+                 attention_probs_dropout_prob=0.1):
         super(TransformerModel, self).__init__()
         assert automodel_cls is not None
         self.automodel_cls = automodel_cls
         self.dropout_prob = dropout_prob
+        self.attention_probs_dropout_prob = attention_probs_dropout_prob
         logger.info(f"automodel_cls: {self.automodel_cls}")
         self.config = AutoConfig.from_pretrained(model_name_or_path)
         logger.info(f"{self.config}")

@@ -37,6 +37,9 @@ train:
 		--output_dir outputs \
 		--overwrite_cache \
 		--overwrite_output_dir \
+		--dropout_prob 0.3 \
+		--noise_lambda 0.0 \
+		--cl_alpha 0.0 \
 		--fp16 \
 		--seed ${SEED} \
 

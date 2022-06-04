@@ -180,7 +180,11 @@ class ModelArguments(BaseArguments):
     )
     dropout_prob: float = field(
         default=0.3,
-        metadata={"help": "Model dropout prob"},
+        metadata={"help": "Model classifier dropout prob"},
+    )
+    attention_probs_dropout_prob: float = field(
+        default=0.1,
+        metadata={"help": "Model attention dropout prob"},
     )
     cl_alpha: float = field(
         default=None,
@@ -188,7 +192,6 @@ class ModelArguments(BaseArguments):
     )
     noise_lambda: float = field(
         default=None,
-        type=float,
         metadata={"help": "Noise tune lambda parameter."},
     )
 

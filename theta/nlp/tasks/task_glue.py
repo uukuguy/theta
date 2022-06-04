@@ -228,7 +228,7 @@ def contrastive_learning_loss_official(alpha, loss_fct, labels, num_labels,
 
     # carefully choose hyper-parameters
     # 0.849145
-    alpha = 10.0
+    #  alpha = 10.0
 
     # 0.824338
     #  alpha = 0.1
@@ -300,6 +300,7 @@ class MyGlueBaseModel(TransformerModel):
         num_labels,
         tokenizer=None,
         dropout_prob=0.1,
+        attention_probs_dropout_prob=0.1,
         #  loss_type='CrossEntropyLoss',
         loss_type='FocalLoss',
         #  loss_type='LabelSmoothingCrossEntropy',
@@ -308,11 +309,12 @@ class MyGlueBaseModel(TransformerModel):
 
         # for TransformerModel.load_from_config()
         self.num_labels = num_labels
-        super(MyGlueBaseModel,
-              self).__init__(model_name_or_path,
-                             tokenizer=tokenizer,
-                             automodel_cls=AutoModelForSequenceClassification,
-                             dropout_prob=dropout_prob)
+        super(MyGlueBaseModel, self).__init__(
+            model_name_or_path,
+            tokenizer=tokenizer,
+            automodel_cls=AutoModelForSequenceClassification,
+            dropout_prob=dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob)
         #  config = self.config
         #  if self._is_xlnet():
         #      from transformers.modeling_utils import SequenceSummary
@@ -327,9 +329,10 @@ class MyGlueBaseModel(TransformerModel):
     def _adjust_config(self):
         setattr(self.config, 'num_labels', self.num_labels)
         # default: 0.1
-        setattr(self.config, 'attention_probs_dropout_prob', self.dropout_prob)
+        setattr(self.config, 'attention_probs_dropout_prob',
+                self.attention_probs_dropout_prob)
         # default: null
-        #  setattr(self.config, 'classifier_dropout', self.dropout_prob)
+        setattr(self.config, 'classifier_dropout', self.dropout_prob)
 
     def load_from_pretrained(self, model_path):
         #  automodel_cls = AutoModelForSequenceClassification
@@ -414,6 +417,7 @@ class MyGlueModel(MyGlueBaseModel):
         num_labels,
         tokenizer=None,
         dropout_prob=0.1,
+        attention_probs_dropout_prob=0.1,
         #  loss_type='CrossEntropyLoss',
         loss_type='FocalLoss',
         #  loss_type='LabelSmoothingCrossEntropy',
@@ -422,12 +426,14 @@ class MyGlueModel(MyGlueBaseModel):
 
         # for TransformerModel.load_from_config()
         self.num_labels = num_labels
-        super(MyGlueModel, self).__init__(model_name_or_path,
-                                          num_labels,
-                                          tokenizer=tokenizer,
-                                          dropout_prob=dropout_prob,
-                                          loss_type=loss_type,
-                                          **kwargs)
+        super(MyGlueModel, self).__init__(
+            model_name_or_path,
+            num_labels,
+            tokenizer=tokenizer,
+            dropout_prob=dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
+            loss_type=loss_type,
+            **kwargs)
 
     def forward(self,
                 input_ids=None,
@@ -456,6 +462,7 @@ class ContrastiveLearningGlueModel(MyGlueBaseModel):
             num_labels,
             tokenizer=None,
             dropout_prob=0.1,
+            attention_probs_dropout_prob=0.1,
             #  loss_type='CrossEntropyLoss',
             loss_type='FocalLoss',
             #  loss_type='LabelSmoothingCrossEntropy',
@@ -466,13 +473,14 @@ class ContrastiveLearningGlueModel(MyGlueBaseModel):
         # for TransformerModel.load_from_config()
         self.num_labels = num_labels
         self.cl_alpha = cl_alpha
-        super(ContrastiveLearningGlueModel,
-              self).__init__(model_name_or_path,
-                             num_labels,
-                             tokenizer=tokenizer,
-                             dropout_prob=dropout_prob,
-                             loss_type=loss_type,
-                             **kwargs)
+        super(ContrastiveLearningGlueModel, self).__init__(
+            model_name_or_path,
+            num_labels,
+            tokenizer=tokenizer,
+            dropout_prob=dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
+            loss_type=loss_type,
+            **kwargs)
 
     def forward(self,
                 input_ids=None,
@@ -528,23 +536,26 @@ class GlueRunner(TaskRunner):
         self.type_weights = np.ones(self.num_labels)
 
         model_args = task_args.model_args
+        attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
 
         logger.warning(f"num_labels: {self.num_labels}")
-        if model_args.cl_alpha is None:
-            self.model = MyGlueModel(
-                model_name_or_path=model_args.model_name_or_path
-                if model_args.model_name_or_path else os.path.join(
-                    model_args.checkpoint_path, "checkpoint"),
-                dropout_prob=model_args.dropout_prob,
-                num_labels=self.num_labels)
-        else:
+        if model_args.cl_alpha:
             self.model = ContrastiveLearningGlueModel(
                 model_name_or_path=model_args.model_name_or_path
                 if model_args.model_name_or_path else os.path.join(
                     model_args.checkpoint_path, "checkpoint"),
                 dropout_prob=model_args.dropout_prob,
+                attention_probs_dropout_prob=attention_probs_dropout_prob,
                 num_labels=self.num_labels,
                 cl_alpha=model_args.cl_alpha)
+        else:
+            self.model = MyGlueModel(
+                model_name_or_path=model_args.model_name_or_path
+                if model_args.model_name_or_path else os.path.join(
+                    model_args.checkpoint_path, "checkpoint"),
+                dropout_prob=model_args.dropout_prob,
+                attention_probs_dropout_prob=attention_probs_dropout_prob,
+                num_labels=self.num_labels)
         #  config = self.transformer.config
         #  if self._is_xlnet():
         #      from transformers.modeling_utils import SequenceSummary

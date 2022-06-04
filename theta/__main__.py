@@ -11,7 +11,7 @@ from loguru import logger
 from rich.console import Console
 from tqdm import tqdm
 
-from .modeling import NerDataset, SpoDataset
+# from .modeling import NerDataset, SpoDataset
 
 console = Console()
 
