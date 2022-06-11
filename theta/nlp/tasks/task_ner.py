@@ -70,6 +70,7 @@ class NerDataset(BaseDataset):
     """
     完成模型输入数据的编码工作
     """
+
     def __init__(self, *args, **kwargs):
         super(NerDataset, self).__init__(*args, **kwargs)
 
@@ -282,6 +283,7 @@ class NerData(TaskData):
     """
     指定任务专属的Dataset类型，并提供训练、验证、测试集实例。
     """
+
     def __init__(self, *args, **kwargs):
         super(NerData, self).__init__(*args, **kwargs)
 
@@ -300,6 +302,7 @@ class NerData(TaskData):
 
 # ------------------------------ SpanModel ------------------------------
 class FeedForwardNetwork(nn.Module):
+
     def __init__(self, input_size, hidden_size, output_size, dropout_rate=0):
         super(FeedForwardNetwork, self).__init__()
         self.dropout_rate = dropout_rate
@@ -315,6 +318,7 @@ class FeedForwardNetwork(nn.Module):
 
 
 class PoolerStartLogits(nn.Module):
+
     def __init__(self, hidden_size, num_classes):
         super(PoolerStartLogits, self).__init__()
         self.dense = nn.Linear(hidden_size, num_classes)
@@ -325,6 +329,7 @@ class PoolerStartLogits(nn.Module):
 
 
 class PoolerEndLogits(nn.Module):
+
     def __init__(self, hidden_size, num_classes):
         super(PoolerEndLogits, self).__init__()
         self.dense_0 = nn.Linear(hidden_size, hidden_size)
@@ -341,6 +346,7 @@ class PoolerEndLogits(nn.Module):
 
 
 class BertSpanForNer(BertPreTrainedModel):
+
     def __init__(self, config):
         super(BertSpanForNer, self).__init__(config)
         self.soft_label = False  #config.soft_label
@@ -442,6 +448,7 @@ class BertSpanForNer(BertPreTrainedModel):
 
 
 class BertSpanModel(TransformerModel):
+
     def __init__(
         self,
         model_name_or_path,
@@ -648,6 +655,7 @@ class BertSpanModel(TransformerModel):
 
 
 class ___BertSpanModel(TransformerModel):
+
     def __init__(
         self,
         model_name_or_path,
@@ -1087,6 +1095,7 @@ class NerRunner(TaskRunner):
     """
     任务专属模型定义
     """
+
     def __init__(self, task_args, ner_labels):
         super(NerRunner, self).__init__(**task_args.to_dict())
         logger.warning(f"ner_labels: {ner_labels}")

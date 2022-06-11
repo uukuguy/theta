@@ -191,7 +191,7 @@ class ModelArguments(BaseArguments):
         metadata={"help": "Contrastive learning alpha parameter."},
     )
     noise_lambda: float = field(
-        default=None,
+        default=0.0,
         metadata={"help": "Noise tune lambda parameter."},
     )
 
