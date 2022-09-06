@@ -1,8 +1,5 @@
 numpy
 torch >= 1.7.0
-transformers >=4.6.0
-tokenizers >= 0.10.2
-pytorch-lightning >= 1.2.3
 dill
 tqdm
 loguru

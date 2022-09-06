@@ -16,15 +16,7 @@ REQUIRED = [
     # dataclasses for Python versions that don't have it
     "dataclasses;python_version<'3.7'",
     "tqdm >= 4.27",
-    "loguru",
     "torch >= 1.7.0",
-    "transformers >=4.6.0",
-    "accelerate>=0.9.0",
-    "tokenizers >= 0.10.2",
-    "pytorch-lightning >= 1.2.3",
-    "datasets >= 1.2.1",
-    "rich",
-    "dill",
 ]
 
 # Package meta-data.
@@ -136,6 +128,8 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
     ],
     # $ setup.py publish support.
