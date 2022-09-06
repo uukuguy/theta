@@ -91,10 +91,9 @@ class DataArguments(BaseArguments):
         metadata={"help": "The path of test file."},
     )
     padding: Optional[str] = field(
-        default='max_length',
-        metadata={'help': "Pad to ['longest', 'max_length', 'do_not_pad']"})
-    pad_to_max_length: Optional[bool] = field(
-        default=True, metadata={"help": "Pad to max length (Deprecated)"})
+        default='max_length', metadata={'help': "Pad to ['longest', 'max_length', 'do_not_pad']"}
+    )
+    pad_to_max_length: Optional[bool] = field(default=True, metadata={"help": "Pad to max length (Deprecated)"})
 
     overwrite_cache: bool = field(
         default=False,
@@ -109,10 +108,7 @@ class DataArguments(BaseArguments):
     split_ratios: Optional[float] = field(
         default=0.9,
         #  default_factory=list,
-        metadata={
-            "help":
-            "Split ratio of train/eval/test dataset. float for train or [train, eval, test]"
-        },
+        metadata={"help": "Split ratio of train/eval/test dataset. float for train or [train, eval, test]"},
     )
     random_state: Optional[int] = field(
         default=None,
@@ -120,10 +116,8 @@ class DataArguments(BaseArguments):
     )
     # NER: 保留未标注实体的拆分后的句子作为训练数据
     preserve_no_entity: bool = field(
-        default=False,
-        metadata={
-            "help": "Preseve no enity segmented sentences for training."
-        })
+        default=False, metadata={"help": "Preseve no enity segmented sentences for training."}
+    )
 
     def __post_init__(self):
         pass
@@ -147,28 +141,19 @@ class ModelArguments(BaseArguments):
         metadata={"help": "Pretrained model config name."},
     )
     tokenizer_name: Optional[str] = field(
-        default=None,
-        metadata={
-            "help":
-            "Pretrained tokenizer name or path if not the same as model_name"
-        })
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
     #  num_labels: int = field(
     #      default=None,
     #      metadata={"help": "Number of labels"},
     #  )
     use_fast_tokenizer: bool = field(
         default=True,
-        metadata={
-            "help":
-            "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
-        },
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
     )
     model_revision: str = field(
         default="main",
-        metadata={
-            "help":
-            "The specific model version to use (can be a branch name, tag name or commit id)."
-        },
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
     )
     use_auth_token: bool = field(
         default=False,
@@ -182,18 +167,19 @@ class ModelArguments(BaseArguments):
         default=0.3,
         metadata={"help": "Model classifier dropout prob"},
     )
-    attention_probs_dropout_prob: float = field(
-        default=0.1,
-        metadata={"help": "Model attention dropout prob"},
-    )
-    cl_alpha: float = field(
-        default=None,
-        metadata={"help": "Contrastive learning alpha parameter."},
-    )
-    noise_lambda: float = field(
-        default=0.0,
-        metadata={"help": "Noise tune lambda parameter."},
-    )
+
+    #  attention_probs_dropout_prob: float = field(
+    #      default=0.1,
+    #      metadata={"help": "Model attention dropout prob"},
+    #  )
+    #  cl_alpha: float = field(
+    #      default=None,
+    #      metadata={"help": "Contrastive learning alpha parameter."},
+    #  )
+    #  noise_lambda: float = field(
+    #      default=0.0,
+    #      metadata={"help": "Noise tune lambda parameter."},
+    #  )
 
     def __post_init__(self):
         pass
@@ -211,24 +197,15 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
     )
     seed: int = field(
         default=42,
-        metadata={
-            "help":
-            "Random seed that will be set at the beginning of training."
-        },
+        metadata={"help": "Random seed that will be set at the beginning of training."},
     )
     output_dir: Optional[str] = field(
         default="outputs",
-        metadata={
-            "help":
-            "The output directory where the model predictions and checkpoints will be written."
-        },
+        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     submissions_dir: Optional[str] = field(
         default="submissions",
-        metadata={
-            "help":
-            "The output directory where the submission files will be written."
-        },
+        metadata={"help": "The output directory where the submission files will be written."},
     )
     task_name: Optional[str] = field(
         default=None,
@@ -236,48 +213,29 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
     )
     task_dir: Optional[str] = field(
         default=None,
-        metadata={
-            "help":
-            "The task output directory where the model predictions and checkpoints will be written."
-        },
+        metadata={"help": "The task output directory where the model predictions and checkpoints will be written."},
     )
     latest_path: Optional[str] = field(
         default=None,
-        metadata={
-            "help":
-            "The task output directory where the model predictions and checkpoints will be written."
-        },
+        metadata={"help": "The task output directory where the model predictions and checkpoints will be written."},
     )
     # -------------------- commands --------------------
-    do_train: bool = field(default=False,
-                           metadata={"help": "Whether to run training."})
-    do_eval: bool = field(
-        default=False,
-        metadata={"help": "Whether to run eval on the dev set."})
-    do_predict: bool = field(
-        default=False,
-        metadata={"help": "Whether to run predictions on the test set."})
+    do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
+    do_eval: bool = field(default=False, metadata={"help": "Whether to run eval on the dev set."})
+    do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
 
-    do_submit: bool = field(default=False,
-                            metadata={"help": "Whether to run submit."})
+    do_submit: bool = field(default=False, metadata={"help": "Whether to run submit."})
 
     # -------------------- training --------------------
-    max_epochs: int = field(
-        default=3,
-        metadata={"help": "Total number of training epochs to perform."})
+    max_epochs: int = field(default=3, metadata={"help": "Total number of training epochs to perform."})
     num_train_epochs: int = field(
         default=None,
-        metadata={
-            "help": "Total number of training epochs to perform. (Deprecated)"
-        },
+        metadata={"help": "Total number of training epochs to perform. (Deprecated)"},
     )
     max_steps: int = field(default=None, metadata={"help": "Max train steps."})
     max_steps: int = field(
         default=None,
-        metadata={
-            "help":
-            "If > 0: set total number of training steps to perform. Override max_epochs."
-        },
+        metadata={"help": "If > 0: set total number of training steps to perform. Override max_epochs."},
     )
 
     gpus: int = field(default=1, metadata={"help": "gpus"})
@@ -305,10 +263,7 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
 
     warmup_method: str = field(
         default='by_epoch',
-        metadata={
-            "help":
-            "Linear methods. ['by_epoch', 'by_steps', 'by_rate', 'auto']"
-        },
+        metadata={"help": "Linear methods. ['by_epoch', 'by_steps', 'by_rate', 'auto']"},
     )
     warmup_rate: float = field(
         default=0.1,
@@ -343,16 +298,11 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
     #      metadata={"help": "Save checkpoint every X updates steps."},
     #  )
     metric_for_best_model: Optional[str] = field(
-        default="val_loss",
-        metadata={
-            "help": "The metric to use to compare two different models."
-        })
+        default="val_loss", metadata={"help": "The metric to use to compare two different models."}
+    )
     greater_is_better: Optional[bool] = field(
-        default=False,
-        metadata={
-            "help":
-            "Whether the `metric_for_best_model` should be maximized or not."
-        })
+        default=False, metadata={"help": "Whether the `metric_for_best_model` should be maximized or not."}
+    )
 
     save_top_k: int = field(
         default=3,
@@ -364,10 +314,7 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
     )
     fp16: bool = field(
         default=False,
-        metadata={
-            "help":
-            "Whether to use 16-bit (mixed) precision (through NVIDIA Apex) instead of 32-bit"
-        },
+        metadata={"help": "Whether to use 16-bit (mixed) precision (through NVIDIA Apex) instead of 32-bit"},
     )
     earlystopping_patience: int = field(
         default=0,
@@ -375,34 +322,26 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
     )
     gradient_accumulation_steps: int = field(
         default=1,
-        metadata={
-            "help":
-            "Number of updates steps to accumulate before performing a backward/update pass."
-        },
+        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
     )
     evaluation_strategy: str = field(
         default="no",
-        metadata={
-            "help":
-            "The evaluation strategy to use. One of EvaluationStrategy ['no', 'steps', 'epochs']."
-        },
+        metadata={"help": "The evaluation strategy to use. One of EvaluationStrategy ['no', 'steps', 'epochs']."},
     )
 
     overwrite_output_dir: bool = field(
         default=False,
         metadata={
-            "help":
-            ("Overwrite the content of the output directory."
-             "Use this to continue training if output_dir points to a checkpoint directory."
-             )
+            "help": (
+                "Overwrite the content of the output directory."
+                "Use this to continue training if output_dir points to a checkpoint directory."
+            )
         },
     )
 
     show_dataloader_samples: int = field(
         default=1,
-        metadata={
-            "help": "Number of samples to be shown while loading dataloader"
-        },
+        metadata={"help": "Number of samples to be shown while loading dataloader"},
     )
 
     #  run_name: Optional[str] = field(
@@ -507,9 +446,7 @@ class TrainingArguments(BaseArguments):  #HfTrainingArguments):
                 self.num_train_epochs = self.max_epochs
             else:
                 if self.num_train_epochs is not None:
-                    logger.warning(
-                        f"Argument num_train_epochs is deprecated, use max_epochs please."
-                    )
+                    logger.warning(f"Argument num_train_epochs is deprecated, use max_epochs please.")
                     #  self.max_epochs = self.num_train_epochs
 
 
@@ -525,20 +462,16 @@ def ensure_task_dir(training_args):
 
     #  task_name = os.path.basename(training_args.task_dir).split('_')[0]
     task_name = training_args.task_name
-    latest_path = os.path.join(training_args.output_dir,
-                               f"{training_args.task_name}_latest")
+    latest_path = os.path.join(training_args.output_dir, f"{training_args.task_name}_latest")
     training_args.latest_path = latest_path
 
     if training_args.do_train:
         ts = datetime.now().strftime("%Y%m%d%H%M%S")
         if training_args.task_dir is None:
             if training_args.task_name is not None:
-                training_args.task_dir = os.path.join(
-                    training_args.output_dir,
-                    f"{training_args.task_name}_{ts}")
+                training_args.task_dir = os.path.join(training_args.output_dir, f"{training_args.task_name}_{ts}")
             else:
-                training_args.task_dir = os.path.join(training_args.output_dir,
-                                                      f"task_{ts}")
+                training_args.task_dir = os.path.join(training_args.output_dir, f"task_{ts}")
         os.makedirs(training_args.task_dir, exist_ok=True)
 
         #  if os.path.islink(latest_path):
@@ -585,13 +518,44 @@ class TaskArguments():
         task_args_dict.update(self.data_args.to_dict())
         return task_args_dict
 
+    @property
+    def do_train(self):
+        return self.training_args.do_train
+
+    @do_train.setter
+    def do_train(self, value):
+        self.traning_args.do_train = value
+
+    @property
+    def do_eval(self):
+        return self.training_args.do_eval
+
+    @do_eval.setter
+    def do_eval(self, value):
+        self.traning_args.do_eval = value
+
+    @property
+    def do_predict(self):
+        return self.training_args.do_predict
+
+    @do_predict.setter
+    def do_predict(self, value):
+        self.traning_args.do_predict = value
+
+    @property
+    def do_submit(self):
+        return self.training_args.do_submit
+
+    @do_submit.setter
+    def do_submit(self, value):
+        self.traning_args.do_submit = value
+
     def show(self):
         training_args = self.training_args
 
         # Log on each process the small summary:
         logger.warning(
-            f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-            +
+            f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}" +
             f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
         )
         # Set the verbosity to info of the Transformers logger (on main process only):
@@ -603,30 +567,31 @@ class TaskArguments():
         logger.info(f"Training/evaluation parameters {training_args}")
 
     @classmethod
-    def parse_json_file(cls,
-                        json_file,
-                        data_args_cls=DataArguments,
-                        model_args_cls=ModelArguments,
-                        training_args_cls=TrainingArguments):
+    def parse_json_file(
+        cls,
+        json_file,
+        data_args_cls=DataArguments,
+        model_args_cls=ModelArguments,
+        training_args_cls=TrainingArguments
+    ):
         logger.info(f"Prase json file {json_file}")
-        parser = HfArgumentParser(
-            (data_args_cls, model_args_cls, training_args_cls))
-        data_args, model_args, training_args = parser.parse_json_file(
-            json_file)
+        parser = HfArgumentParser((data_args_cls, model_args_cls, training_args_cls))
+        data_args, model_args, training_args = parser.parse_json_file(json_file)
 
         remaining_args = None
-        task_args = cls(data_args=data_args,
-                        model_args=model_args,
-                        training_args=training_args,
-                        remaining_args=remaining_args)
+        task_args = cls(
+            data_args=data_args, model_args=model_args, training_args=training_args, remaining_args=remaining_args
+        )
         return task_args
 
     @classmethod
-    def parse_from_task_args_file(cls,
-                                  task_args_file,
-                                  data_args_cls=DataArguments,
-                                  model_args_cls=ModelArguments,
-                                  training_args_cls=TrainingArguments):
+    def parse_from_task_args_file(
+        cls,
+        task_args_file,
+        data_args_cls=DataArguments,
+        model_args_cls=ModelArguments,
+        training_args_cls=TrainingArguments
+    ):
         json_data = json.load(open(task_args_file))
         task_args_dict = {}
         for key in ('data_args', 'model_args', 'training_args'):
@@ -635,49 +600,40 @@ class TaskArguments():
             for k, v in json_data[key].items():
                 task_args_dict[k] = v
 
-        parser = HfArgumentParser(
-            (data_args_cls, model_args_cls, training_args_cls))
-        data_args, model_args, training_args = parser.parse_dict(
-            task_args_dict)
+        parser = HfArgumentParser((data_args_cls, model_args_cls, training_args_cls))
+        data_args, model_args, training_args = parser.parse_dict(task_args_dict)
 
         training_args.do_train = False
         training_args.do_eval = False
         training_args.do_predict = False
         training_args.do_submit = False
 
-        task_args = TaskArguments(data_args=data_args,
-                                  model_args=model_args,
-                                  training_args=training_args)
+        task_args = TaskArguments(data_args=data_args, model_args=model_args, training_args=training_args)
         return task_args
 
     @classmethod
-    def get_checkpoint_task_args(cls,
-                                 checkpoint_path,
-                                 training_args_cls=TrainingArguments):
+    def get_checkpoint_task_args(cls, checkpoint_path, training_args_cls=TrainingArguments):
         task_args_file = f"{checkpoint_path}/train_task_args.json"
-        task_args = TaskArguments.parse_from_task_args_file(
-            task_args_file, training_args_cls=training_args_cls)
+        task_args = TaskArguments.parse_from_task_args_file(task_args_file, training_args_cls=training_args_cls)
         return task_args
 
     @classmethod
-    def parse_args(cls,
-                   data_args_cls=DataArguments,
-                   model_args_cls=ModelArguments,
-                   training_args_cls=TrainingArguments):
+    def parse_args(
+        cls, data_args_cls=DataArguments, model_args_cls=ModelArguments, training_args_cls=TrainingArguments
+    ):
         logger.info(f"Start parse_args")
-        parser = HfArgumentParser(
-            (data_args_cls, model_args_cls, training_args_cls))
+        parser = HfArgumentParser((data_args_cls, model_args_cls, training_args_cls))
         #  (DataArguments, ModelArguments, TrainingArguments))
         #  HfTrainingArguments))  #TrainingArguments))
         remaining_args = None
         if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
             # If we pass only one argument to the script and it's the path to a json file,
             # let's parse it to get our arguments.
-            data_args, model_args, training_args = parser.parse_json_file(
-                json_file=os.path.abspath(sys.argv[1]))
+            data_args, model_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
         else:
             data_args, model_args, training_args, remaining_args = parser.parse_args_into_dataclasses(
-                return_remaining_strings=True)
+                return_remaining_strings=True
+            )
 
         assert training_args.output_dir is not None
         os.makedirs(training_args.output_dir, exist_ok=True)
@@ -694,30 +650,20 @@ class TaskArguments():
 
         set_seed(training_args.seed)
 
-        task_args = cls(data_args=data_args,
-                        model_args=model_args,
-                        training_args=training_args,
-                        remaining_args=remaining_args)
+        task_args = cls(
+            data_args=data_args, model_args=model_args, training_args=training_args, remaining_args=remaining_args
+        )
 
         task_log_file = os.path.join(training_args.task_dir, "task.log")
         logger.add(task_log_file)
-        #  logger.info(f"task_args: {task_args}")
-        rich.print(f"task_args: {task_args}")
+        rich.print(task_args)
 
         if training_args.do_train:
-            task_args_file = os.path.join(training_args.task_dir,
-                                          "train_task_args.json")
-            json.dump(asdict(task_args),
-                      open(task_args_file, 'w'),
-                      ensure_ascii=False,
-                      indent=2)
+            task_args_file = os.path.join(training_args.task_dir, "train_task_args.json")
+            json.dump(asdict(task_args), open(task_args_file, 'w'), ensure_ascii=False, indent=2)
         elif training_args.do_predict:
-            task_args_file = os.path.join(training_args.task_dir,
-                                          "predict_task_args.json")
-            json.dump(asdict(task_args),
-                      open(task_args_file, 'w'),
-                      ensure_ascii=False,
-                      indent=2)
+            task_args_file = os.path.join(training_args.task_dir, "predict_task_args.json")
+            json.dump(asdict(task_args), open(task_args_file, 'w'), ensure_ascii=False, indent=2)
 
         return task_args
 
@@ -738,9 +684,7 @@ def generate_method_kwargs_from_arguments(cls, method, args: dict):
 
 
 def create_instance_from_arguments(cls, args: dict):
-    kwargs = generate_method_kwargs_from_arguments(cls,
-                                                   method="__init__",
-                                                   args=args)
+    kwargs = generate_method_kwargs_from_arguments(cls, method="__init__", args=args)
     return cls(**kwargs)
 
 

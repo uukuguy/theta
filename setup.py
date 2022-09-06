@@ -19,6 +19,7 @@ REQUIRED = [
     "loguru",
     "torch >= 1.7.0",
     "transformers >=4.6.0",
+    "accelerate>=0.9.0",
     "tokenizers >= 0.10.2",
     "pytorch-lightning >= 1.2.3",
     "datasets >= 1.2.1",
@@ -91,8 +92,7 @@ class UploadCommand(Command):
             pass
 
         self.status('Building Source and Wheel (universal) distribution…')
-        os.system('{0} setup.py sdist bdist_wheel --universal'.format(
-            sys.executable))
+        os.system('{0} setup.py sdist bdist_wheel --universal'.format(sys.executable))
 
         self.status('Uploading the package to PyPI via Twine…')
         os.system('twine upload dist/*')
@@ -126,6 +126,7 @@ setup(
     extras_require=EXTRAS,
     include_package_data=True,
     license='MIT',
+    entry_points={'console_scripts': ['theta=theta.__main__:main']},
     classifiers=[
         # Trove classifiers
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers

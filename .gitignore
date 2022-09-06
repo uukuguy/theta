@@ -65,3 +65,5 @@ outputs/
 output/
 submissions/
 poplar/
+
+.DS_Store
