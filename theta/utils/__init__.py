@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+try:
+    import rich
+
+    def print(*arg, **kwargs):
+        rich.print(*arg, **kwargs)
+
+
+except:
+    pass
+
 from .utils import init_theta, seed_everything, init_random, init_cuda, seg_generator
 from .utils import softmax, sigmoid, load_json_file, show_statistical_distribution, dataframe_to_examples, acc_and_f1, simple_accuracy, to_numpy, create_logger
 from .utils import batch_generator, slide_generator, split_train_eval_examples, shuffle_list, get_list_size, list_to_list

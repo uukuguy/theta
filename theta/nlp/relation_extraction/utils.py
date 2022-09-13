@@ -11,6 +11,7 @@ from copy import deepcopy
 def print_msg(msg):
     try:
         import rich
+
         rich.print(msg)
     except:
         print(msg)
@@ -18,25 +19,29 @@ def print_msg(msg):
 
 def split_sentences(text: str, broad_clause: bool = True) -> List[str]:
     text = text.rstrip()
-    text = text.replace('\n', ' ')
+    text = text.replace("\n", " ")
     if broad_clause:
-        regexes = OrderedDict({
-            'single_end_puncs': '([,，：:；;。。！？?])([^”’])',
-            'en_ellipsis': '(\\.{6})([^”’])',
-            'zh_ellipsis': '(\\…{2})([^”’])',
-            'end_puncs': '([。！？\\?][”’])([^，。！？\\?])',
-        })
+        regexes = OrderedDict(
+            {
+                "single_end_puncs": "([,，：:；;。。！？?])([^”’])",
+                "en_ellipsis": "(\\.{6})([^”’])",
+                "zh_ellipsis": "(\\…{2})([^”’])",
+                "end_puncs": "([。！？\\?][”’])([^，。！？\\?])",
+            }
+        )
     else:
-        regexes = OrderedDict({
-            'single_end_puncs': '([,:；;。。！？?])([^”’])',
-            'en_ellipsis': '(\\.{6})([^”’])',
-            'zh_ellipsis': '(\\…{2})([^”’])',
-            'end_puncs': '([。！？\\?][”’])([^，。！？\\?])',
-        })
+        regexes = OrderedDict(
+            {
+                "single_end_puncs": "([,:；;。。！？?])([^”’])",
+                "en_ellipsis": "(\\.{6})([^”’])",
+                "zh_ellipsis": "(\\…{2})([^”’])",
+                "end_puncs": "([。！？\\?][”’])([^，。！？\\?])",
+            }
+        )
 
     for (_, regex) in regexes.items():
-        text = re.sub(regex, r'\1\n\2', text)
-    sentences = text.rstrip().split('\n')
+        text = re.sub(regex, r"\1\n\2", text)
+    sentences = text.rstrip().split("\n")
     new_sentence = []
     stop: List[int] = []
     for i in range(len(sentences)):
@@ -49,8 +54,8 @@ def split_sentences(text: str, broad_clause: bool = True) -> List[str]:
 
 
 def check_tags(text, pred_tags, true_tags):
-    pred_tags = sorted(pred_tags, key=lambda x: x['start'])
-    true_tags = sorted(true_tags, key=lambda x: x['start'])
+    pred_tags = sorted(pred_tags, key=lambda x: x["start"])
+    true_tags = sorted(true_tags, key=lambda x: x["start"])
 
     identical_list = []
     added_list = []
@@ -67,9 +72,9 @@ def check_tags(text, pred_tags, true_tags):
             added_list.append(tag)
 
     diff_list = {
-        'identical': identical_list,
-        'added': added_list,
-        'removed': removed_list
+        "identical": identical_list,
+        "added": added_list,
+        "removed": removed_list,
     }
 
     X = len(identical_list)
@@ -85,9 +90,7 @@ def check_tags(text, pred_tags, true_tags):
 
     total_result = (diff_list, (X, Y, Z), (f1, p, r))
 
-    check_results = {
-        'total': total_result
-    }
+    check_results = {"total": total_result}
 
     return check_results
 
@@ -98,23 +101,20 @@ def merge_sent_tags_list(sent_tags_list):
 
     offset = 0
     for sent_tags in sent_tags_list:
-        sent_text = sent_tags['text']
-        tags = sent_tags['tags']
+        sent_text = sent_tags["text"]
+        tags = sent_tags["tags"]
         full_text += sent_text
         for tag in tags:
-            tag['start'] += offset
+            tag["start"] += offset
             full_tags.append(tag)
 
         offset += len(sent_text)
 
-    ret = {
-        'text': full_text,
-        'tags': full_tags
-    }
+    ret = {"text": full_text, "tags": full_tags}
     return ret
 
 
-def split_text_tags(sentences, full_tags):
+def split_text_tags(sentences, full_tags, ant_tags=False):
     offset = 0
     sent_tags_list = []
 
@@ -124,46 +124,47 @@ def split_text_tags(sentences, full_tags):
 
         sent_tags = []
         for tag in full_tags:
-            t_s = tag['start']
-            t_e = t_s + len(tag['mention'])
+            t_s = tag["start"]
+            t_e = t_s + len(tag["mention"])
 
             if t_s >= sent_s and t_s <= sent_e and t_e >= sent_s and t_e <= sent_e:
                 # 标注完全包含在句子中
                 tag = deepcopy(tag)
-                tag['start'] -= offset
+                tag["start"] -= offset
                 sent_tags.append(tag)
             else:
-                """
-                处理标注很长，跨多个句子的情况
-                """
-                if sent_s >= t_s and sent_s < t_e:
-                    # 句子的头部出现在标注中
-                    if sent_e >= t_s and sent_e < t_e:
-                        # 句子的尾部出现在标注中，即句子完全包含在标注中
-                        tag = deepcopy(tag)
-                        tag['start'] = 0
-                        tag['mention'] = sent_text
-                        sent_tags.append(tag)
-                    else:
-                        # 句子头在标注中，尾部在标注外，需要截断句子的头部
-                        tag = deepcopy(tag)
-                        tag['start'] = 0
-                        tag['mention'] = sent_text[:t_e - sent_s]
-                        sent_tags.append(tag)
-                elif sent_e >= t_s and sent_e < t_e:
-                    # 句子的尾部出现在标注中
+                if ant_tags:
+                    """
+                    处理标注很长，跨多个句子的情况
+                    """
                     if sent_s >= t_s and sent_s < t_e:
-                        # 句子的头部出现在标注中，即句子完全包含在标注中
-                        tag = deepcopy(tag)
-                        tag['start'] = 0
-                        tag['mention'] = sent_text
-                        sent_tags.append(tag)
-                    else:
-                        # 句子尾部在标注中，头部在标注外，需要截断句子的尾部
-                        tag = deepcopy(tag)
-                        tag['start'] = t_s - sent_s
-                        tag['mention'] = sent_text[t_s - sent_s:]
-                        sent_tags.append(tag)
+                        # 句子的头部出现在标注中
+                        if sent_e >= t_s and sent_e < t_e:
+                            # 句子的尾部出现在标注中，即句子完全包含在标注中
+                            tag = deepcopy(tag)
+                            tag["start"] = 0
+                            tag["mention"] = sent_text
+                            sent_tags.append(tag)
+                        else:
+                            # 句子头在标注中，尾部在标注外，需要截断句子的头部
+                            tag = deepcopy(tag)
+                            tag["start"] = 0
+                            tag["mention"] = sent_text[: t_e - sent_s]
+                            sent_tags.append(tag)
+                    elif sent_e >= t_s and sent_e < t_e:
+                        # 句子的尾部出现在标注中
+                        if sent_s >= t_s and sent_s < t_e:
+                            # 句子的头部出现在标注中，即句子完全包含在标注中
+                            tag = deepcopy(tag)
+                            tag["start"] = 0
+                            tag["mention"] = sent_text
+                            sent_tags.append(tag)
+                        else:
+                            # 句子尾部在标注中，头部在标注外，需要截断句子的尾部
+                            tag = deepcopy(tag)
+                            tag["start"] = t_s - sent_s
+                            tag["mention"] = sent_text[t_s - sent_s :]
+                            sent_tags.append(tag)
 
         #  sent_tags_list.append({
         #      'text': sent_text,

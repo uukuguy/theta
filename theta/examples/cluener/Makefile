@@ -1,4 +1,14 @@
 DATASET_NAME=cluener
+
+train:
+	python task_cluener.py --do_train
+
+eval:
+	python task_cluener.py --do_eval
+
+predict:
+	python task_cluener.py --do_predict
+
 all:
 	python run_${DATASET_NAME}.py \
 		--do_experiment \
@@ -7,17 +17,17 @@ new:
 	python run_${DATASET_NAME}.py \
 		--do_new
 
-train:
-	python run_${DATASET_NAME}.py \
-		--do_train \
-
-eval:
-	python run_${DATASET_NAME}.py \
-		--do_eval \
-
-predict:
-	python run_${DATASET_NAME}.py \
-		--do_predict \
+# train:
+#     python run_${DATASET_NAME}.py \
+#         --do_train \
+#
+# eval:
+#     python run_${DATASET_NAME}.py \
+#         --do_eval \
+#
+# predict:
+#     python run_${DATASET_NAME}.py \
+#         --do_predict \
 
 eda:
 	python run_${DATASET_NAME}.py \

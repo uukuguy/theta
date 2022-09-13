@@ -7,6 +7,13 @@ from torch.utils.data import Dataset
 from .utils import split_text_tags, split_sentences
 
 
+def get_default_tokenizer(dict_path):
+    from ..bert4torch.tokenizers import Tokenizer
+    tokenizer = Tokenizer(dict_path, do_lower_case=True)
+
+    return tokenizer
+
+
 def encode_text(text, tags, categories_label2id, max_length, tokenizer):
     tokens = tokenizer.tokenize(text, maxlen=max_length)
     mapping = tokenizer.rematch(text, tokens)
@@ -59,12 +66,14 @@ class NerDataset(Dataset):
         self.categories_d2label = {i: label
                                    for i, label in enumerate(ner_labels)}
 
-        self.data = [(idx, text, tags) for idx, text, tags in data_generator()]
+        #  self.data = [(idx, text, tags) for idx, text, tags in data_generator()]
+        self.data = [d for d in data_generator()]
 
         self.token_ids_list = []
         self.labels_list = []
 
-        for idx, text, tags in self.data:
+        for d in self.data:
+            idx, text, tags = d[:3]
             text_list = [text]
             tags_list = [tags]
 

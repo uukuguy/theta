@@ -67,3 +67,4 @@ submissions/
 poplar/
 
 .DS_Store
+*.pt
