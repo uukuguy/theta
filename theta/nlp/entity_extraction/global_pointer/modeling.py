@@ -36,6 +36,18 @@ from .dataset import encode_text, encode_sentences
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
+class MyLoss(MultilabelCategoricalCrossentropy):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def forward(self, y_pred, y_true):
+        # [btz*heads, seq_len*seq_len]
+        y_true = y_true.view(y_true.shape[0] * y_true.shape[1], -1)
+        # [btz*heads, seq_len*seq_len]
+        y_pred = y_pred.view(y_pred.shape[0] * y_pred.shape[1], -1)
+
+        return super().forward(y_pred, y_true)
+
 class Model(BaseModel):
     def __init__(self, bert_model_path, heads, head_size) -> None:
         config_path = f"{bert_model_path}/bert_config.json"
@@ -58,8 +70,8 @@ class Model(BaseModel):
 
         return logit
 
-    @classmethod
-    def collate_fn(cls, batch):
+    @staticmethod
+    def collate_fn(batch):
         batch_token_ids, batch_labels = [], []
         for _, _, token_ids, labels in batch:
             batch_token_ids.append(token_ids)
@@ -74,84 +86,122 @@ class Model(BaseModel):
         return batch_token_ids, batch_labels
 
 
-class MyLoss(MultilabelCategoricalCrossentropy):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    @staticmethod
+    def build_model(args, num_training_steps=0):
+        bert_model_path = args.bert_model_path
+        learning_rate = args.learning_rate
+        #  num_training_steps = args.num_training_steps
+        entity_labels = args.task_labels.entity_labels
 
-    def forward(self, y_pred, y_true):
-        # [btz*heads, seq_len*seq_len]
-        y_true = y_true.view(y_true.shape[0] * y_true.shape[1], -1)
-        # [btz*heads, seq_len*seq_len]
-        y_pred = y_pred.view(y_pred.shape[0] * y_pred.shape[1], -1)
+        heads = len(entity_labels)
+        head_size = 64
+        model = Model(bert_model_path, heads=heads, head_size=head_size).to(device)
 
-        return super().forward(y_pred, y_true)
+        if learning_rate > 0:
+            optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        else:
+            optimizer = None
+
+        if num_training_steps > 0:
+            num_warmup_steps = 0  # int(num_training_steps * 0.05)
+            scheduler = get_linear_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=num_training_steps,
+            )
+        else:
+            scheduler = None
+
+        model.compile(loss=MyLoss(), optimizer=optimizer, scheduler=scheduler)
+
+        return model
 
 
-def evaluate(model, dataloader, task_labels, threshold=0):
-    entities_id2label = task_labels.entities_id2label
+    @staticmethod
+    def predict_text(args, model, text, tokenizer, threshold=0):
+        repeat = args.repeat
+        entities_id2label = args.task_labels.entities_id2label
 
-    X, Y, Z = 0, 1e-10, 1e-10
-    #  for (x_true, label), ds in zip(dataloader, dataloader.dataset):
-    pbar = tqdm(desc="eval", ncols=100)
-    #  for (encoded_text, encoded_label), ds in zip(dataloader, dataloader.dataset):
-    for ds in dataloader.dataset:
-        #  scores = model.predict(encoded_text)
-        tagged_data, (tokens, mapping), token_ids, encoded_label = ds
-        text, true_tags = tagged_data.text, tagged_data.tags
+        true_tags = []
+        ((tokens, mapping), token_ids, labels) = encode_text(
+            text, true_tags, args.task_labels, args.max_length, tokenizer
+        )
 
-        encoded_label = [encoded_label]
         batch_token_ids = [token_ids]
         batch_token_ids = torch.tensor(
             sequence_padding(batch_token_ids), dtype=torch.long, device=device
         )
-        scores = model.predict(batch_token_ids)
-        scores = [o.cpu().numpy() for o in scores]  # [heads, seq_len, seq_len]
 
-        for i, score in enumerate(scores):
-            R = set()
-            for l, start, end in zip(*np.where(score > threshold)):
-                #  R.add((start, end, entities_id2label[l]))
-                c = entities_id2label[l]
-                s = mapping[start][0]
-                e = mapping[end][-1] + 1
-                m = text[s:e]
-                R.add((c, s, m))
-                #  R.add(TaskTag(c=c, s=s, m=m))
+        scores_list = []
+        for _ in range(repeat):
+            scores = model.predict(batch_token_ids)
+            scores_list.append(scores)
 
-            T = set()
-            #  for l, start, end in zip(*np.where(encoded_label[i] > threshold)):
-            for l, start, end in zip(*np.where(encoded_label[i] > threshold)):
-                #  T.add((start, end, entities_id2label[l]))
-                c = entities_id2label[l]
-                s = mapping[start][0]
-                e = mapping[end][-1] + 1
-                m = text[s:e]
-                T.add((c, s, m))
-                #  T.add(TaskTag(c=c, s=s, m=m))
+        def average_scores(scores_list):
+            scores_list = [s.unsqueeze(0) for s in scores_list]
+            scores = torch.cat(scores_list).mean(dim=0)
+            return scores
 
-            if R != T:
-                print("========================================")
-                print(text)
-                print("----------------------------------------")
-                print(
-                    f"T: {sorted([TaskTag(t[0], t[1], t[2]) for t in T], key=lambda x: x.s)}"
-                )
-                print(
-                    f"R: {sorted([TaskTag(r[0], r[1], r[2]) for r in R], key=lambda x: x.s)}"
-                )
+        scores = average_scores(scores_list)
+        sentences = [text]
 
-            X += len(R & T)
-            Y += len(R)
-            Z += len(T)
+        def scores_to_mentions(scores):
+            tags_list = []
+            for i, (score, sent_text) in enumerate(zip(scores, sentences)):
+                if len(sent_text) == 0:
+                    continue
+                tokens = tokenizer.tokenize(sent_text, maxlen=args.max_length)
+                mapping = tokenizer.rematch(sent_text, tokens)
+                # print(f"sent_text: len: {len(sent_text)}")
+                # print(f"tokens: {len(tokens)}, {tokens}")
+                # print(f"mapping: {len(mapping)}, {mapping}")
 
-        f1, precision, recall = 2 * X / (Y + Z), X / Y, X / Z
-        pbar.update()
-        pbar.set_description(
-            "f1: %.5f, precision: %.5f, recall: %.5f" % (f1, precision, recall)
-        )
+                # 用集合自动消除完全相同的实体标注
+                R = set()
+                for l, start, end in zip(*np.where(score.cpu() > threshold)):
 
-    eval_result = {"all": (f1, precision, recall)}
-    return eval_result
+                    if (
+                        l in entities_id2label
+                        and start >= 1
+                        and start < len(mapping) - 1
+                        and end >= 1
+                        and end < len(mapping) - 1
+                        and start < end
+                    ):
+                        # print(f"l: {l}, start: {start}, end: {end}")
+                        # print(f"mapping[start][0]: {mapping[start][0]}, mapping[end][-1] + 1: {mapping[end][-1] + 1}")
+                        span_s = mapping[start][0]
+                        span_e = mapping[end][-1]
+                        k2 = sent_text[span_s : span_e + 1]
+                        #  k2 = sent_text[mapping[start][0]:mapping[end][-1] + 1]
+                        # print(start, end, entities_id2label[l], k2)
+
+                        cat_label = entities_id2label[l]
+
+                        R.add((span_s, span_e, cat_label, k2, sent_text))
+
+                sent_tags = [
+                    #  {"category": cat_label, "start": start, "mention": k2}
+                    TaskTag(c=cat_label, s=start, m=k2)
+                    for start, end, cat_label, k2, sent_text in R
+                ]
+                sent_tags = sorted(sent_tags, key=lambda x: x.s)
+
+                tags_list.append(sent_tags)
+
+            return tags_list
+
+        tags_list = scores_to_mentions(scores)
+        tags = tags_list[0]
+
+        #  from .utils import merge_sent_tags_list
+        #
+        #  full_tags = merge_sent_tags_list(tags_list)
+
+        #  return full_tags, tags_list
+
+        return tags
+
 
 
 class Evaluator(Callback):
@@ -165,6 +215,7 @@ class Evaluator(Callback):
         best_f1=0.0,
         min_best=0.9,
         threshold=0,
+        debug=False,
     ):
         self.model = model
         self.val_dataloader = val_dataloader
@@ -172,11 +223,13 @@ class Evaluator(Callback):
         self.best_f1 = best_f1
         self.min_best = min_best
         self.threshold = threshold
+        self.debug = debug
+
+    def do_evaluate(self):
+        return Evaluator.evaluate( self.model, self.val_dataloader, self.task_labels, debug=self.debug, threshold=self.threshold)
 
     def on_epoch_end(self, steps, epoch, logs=None):
-        eval_result = evaluate(
-            self.model, self.val_dataloader, self.task_labels, threshold=self.threshold
-        )
+        eval_result = self.do_evaluate()
         f1, precision, recall = eval_result["all"]
         if f1 > self.best_f1:
             self.best_f1 = f1
@@ -196,117 +249,71 @@ class Evaluator(Callback):
         logs.update({"f1": f1})
         logs.update({"best_f1": self.best_f1})
 
+    @staticmethod
+    def evaluate(model, dataloader, task_labels, threshold=0):
+        entities_id2label = task_labels.entities_id2label
 
-def build_model(args, num_training_steps=0):
-    bert_model_path = args.bert_model_path
-    learning_rate = args.learning_rate
-    #  num_training_steps = args.num_training_steps
-    entity_labels = args.task_labels.entity_labels
+        X, Y, Z = 0, 1e-10, 1e-10
+        #  for (x_true, label), ds in zip(dataloader, dataloader.dataset):
+        pbar = tqdm(desc="eval", ncols=100)
+        #  for (encoded_text, encoded_label), ds in zip(dataloader, dataloader.dataset):
+        for ds in dataloader.dataset:
+            #  scores = model.predict(encoded_text)
+            tagged_data, (tokens, mapping), token_ids, encoded_label = ds
+            text, true_tags = tagged_data.text, tagged_data.tags
 
-    heads = len(entity_labels)
-    head_size = 64
-    model = Model(bert_model_path, heads=heads, head_size=head_size).to(device)
+            encoded_label = [encoded_label]
+            batch_token_ids = [token_ids]
+            batch_token_ids = torch.tensor(
+                sequence_padding(batch_token_ids), dtype=torch.long, device=device
+            )
+            scores = model.predict(batch_token_ids)
+            scores = [o.cpu().numpy() for o in scores]  # [heads, seq_len, seq_len]
 
-    if learning_rate > 0:
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    else:
-        optimizer = None
+            for i, score in enumerate(scores):
+                R = set()
+                for l, start, end in zip(*np.where(score > threshold)):
+                    #  R.add((start, end, entities_id2label[l]))
+                    c = entities_id2label[l]
+                    s = mapping[start][0]
+                    e = mapping[end][-1] + 1
+                    m = text[s:e]
+                    R.add((c, s, m))
+                    #  R.add(TaskTag(c=c, s=s, m=m))
 
-    if num_training_steps > 0:
-        num_warmup_steps = 0  # int(num_training_steps * 0.05)
-        scheduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=num_warmup_steps,
-            num_training_steps=num_training_steps,
-        )
-    else:
-        scheduler = None
+                T = set()
+                #  for l, start, end in zip(*np.where(encoded_label[i] > threshold)):
+                for l, start, end in zip(*np.where(encoded_label[i] > threshold)):
+                    #  T.add((start, end, entities_id2label[l]))
+                    c = entities_id2label[l]
+                    s = mapping[start][0]
+                    e = mapping[end][-1] + 1
+                    m = text[s:e]
+                    T.add((c, s, m))
+                    #  T.add(TaskTag(c=c, s=s, m=m))
 
-    model.compile(loss=MyLoss(), optimizer=optimizer, scheduler=scheduler)
+                if R != T:
+                    print("========================================")
+                    print(text)
+                    print("----------------------------------------")
+                    print(
+                        f"T: {sorted([TaskTag(t[0], t[1], t[2]) for t in T], key=lambda x: x.s)}"
+                    )
+                    print(
+                        f"R: {sorted([TaskTag(r[0], r[1], r[2]) for r in R], key=lambda x: x.s)}"
+                    )
 
-    return model
+                X += len(R & T)
+                Y += len(R)
+                Z += len(T)
+
+            f1, precision, recall = 2 * X / (Y + Z), X / Y, X / Z
+            pbar.update()
+            pbar.set_description(
+                "f1: %.5f, precision: %.5f, recall: %.5f" % (f1, precision, recall)
+            )
+
+        eval_result = {"all": (f1, precision, recall)}
+        return eval_result
 
 
-def predict_text(args, model, text, tokenizer, threshold=0):
-    repeat = args.repeat
-    entities_id2label = args.task_labels.entities_id2label
-
-    true_tags = []
-    ((tokens, mapping), token_ids, labels) = encode_text(
-        text, true_tags, args.task_labels, args.max_length, tokenizer
-    )
-
-    batch_token_ids = [token_ids]
-    batch_token_ids = torch.tensor(
-        sequence_padding(batch_token_ids), dtype=torch.long, device=device
-    )
-
-    scores_list = []
-    for _ in range(repeat):
-        scores = model.predict(batch_token_ids)
-        scores_list.append(scores)
-
-    def average_scores(scores_list):
-        scores_list = [s.unsqueeze(0) for s in scores_list]
-        scores = torch.cat(scores_list).mean(dim=0)
-        return scores
-
-    scores = average_scores(scores_list)
-    sentences = [text]
-
-    def scores_to_mentions(scores):
-        tags_list = []
-        for i, (score, sent_text) in enumerate(zip(scores, sentences)):
-            if len(sent_text) == 0:
-                continue
-            tokens = tokenizer.tokenize(sent_text, maxlen=args.max_length)
-            mapping = tokenizer.rematch(sent_text, tokens)
-            # print(f"sent_text: len: {len(sent_text)}")
-            # print(f"tokens: {len(tokens)}, {tokens}")
-            # print(f"mapping: {len(mapping)}, {mapping}")
-
-            # 用集合自动消除完全相同的实体标注
-            R = set()
-            for l, start, end in zip(*np.where(score.cpu() > threshold)):
-
-                if (
-                    l in entities_id2label
-                    and start >= 1
-                    and start < len(mapping) - 1
-                    and end >= 1
-                    and end < len(mapping) - 1
-                    and start < end
-                ):
-                    # print(f"l: {l}, start: {start}, end: {end}")
-                    # print(f"mapping[start][0]: {mapping[start][0]}, mapping[end][-1] + 1: {mapping[end][-1] + 1}")
-                    span_s = mapping[start][0]
-                    span_e = mapping[end][-1]
-                    k2 = sent_text[span_s : span_e + 1]
-                    #  k2 = sent_text[mapping[start][0]:mapping[end][-1] + 1]
-                    # print(start, end, entities_id2label[l], k2)
-
-                    cat_label = entities_id2label[l]
-
-                    R.add((span_s, span_e, cat_label, k2, sent_text))
-
-            sent_tags = [
-                #  {"category": cat_label, "start": start, "mention": k2}
-                TaskTag(c=cat_label, s=start, m=k2)
-                for start, end, cat_label, k2, sent_text in R
-            ]
-            sent_tags = sorted(sent_tags, key=lambda x: x.s)
-
-            tags_list.append(sent_tags)
-
-        return tags_list
-
-    tags_list = scores_to_mentions(scores)
-    tags = tags_list[0]
-
-    #  from .utils import merge_sent_tags_list
-    #
-    #  full_tags = merge_sent_tags_list(tags_list)
-
-    #  return full_tags, tags_list
-
-    return tags
