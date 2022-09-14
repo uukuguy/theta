@@ -113,6 +113,10 @@ def run_training(args, train_dataset, val_dataset):
             pbar.set_postfix({"best_f1": f"{last_best_f1:.5f}"})
             pbar.update(1)
 
+            args.learning_rate /= 2
+
+
+
 
 def run_evaluating(args, val_dataset):
 
@@ -137,15 +141,16 @@ def run_predicting(args, test_data, task_model_file, tokenizer):
     X0, Y0, Z0 = 0, 0, 0
 
     model = Model.build_model(args)
+    print(f"Load weights from {task_model_file}")
     model.load_weights(task_model_file)
 
     for d in tqdm(test_data, desc="predict"):
         idx, full_text, true_tags = d.idx, d.text, d.tags
 
         full_tags = Model.predict_text(
-            args, model, full_text, tokenizer, threshold=args.extract_threshold
+            args, model, full_text, tokenizer, repeat=args.repeat, threshold=args.extract_threshold
         )
-        print("full_tags:", full_tags)
+        # print("full_tags:", full_tags)
 
         if False:
         # if true_tags:
@@ -172,5 +177,5 @@ def run_predicting(args, test_data, task_model_file, tokenizer):
         f1, p, r = 2 * X0 / (Y0 + Z0), X0 / Y0, X0 / Z0
         print(f"P: {p:.5f}, R: {r:.5f}, F1: {f1:.5f}")
 
-    print("final_results[:5]:", final_results[:5])
+    # print("final_results[:5]:", final_results[:5])
     return final_results

@@ -7,15 +7,6 @@ from torch.utils.data import Dataset
 
 from ...bert4torch.utils import sequence_padding
 from ..tagging import TaskLabels, TaskTag, SubjectTag, ObjectTag, TaggedData
-from .utils import split_text_tags, split_sentences
-
-
-def get_default_tokenizer(dict_path):
-    from ...bert4torch.tokenizers import Tokenizer
-
-    tokenizer = Tokenizer(dict_path, do_lower_case=True)
-
-    return tokenizer
 
 
 def encode_text(text, tags, task_labels, max_length, tokenizer):

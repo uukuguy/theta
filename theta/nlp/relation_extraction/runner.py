@@ -19,7 +19,7 @@ except:
     pass
 
 from ..bert4torch.utils import seed_everything, EarlyStopping 
-from .utils import check_tags
+# from .utils import check_tags
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
@@ -30,6 +30,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def run_training(args, Model, Evaluator, train_dataset, val_dataset):
     seed_everything(args.seed)
+
+    print("args.debug:", args.debug)
 
     num_training_epochs = args.num_training_epochs
     max_training_episodes = args.max_training_episodes
@@ -79,6 +81,7 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                 best_f1=last_best_f1,
                 min_best=args.min_best,
                 threshold=args.extract_threshold,
+                debug=args.debug,
             )
             callbacks = [evaluator]
 
@@ -111,8 +114,13 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
             pbar.set_postfix({"best_f1": f"{last_best_f1:.5f}"})
             pbar.update(1)
 
+            args.learning_rate /= 2
+
+
+
 
 def run_evaluating(args, Model, Evaluator, val_dataset):
+    print("args.debug:", args.debug)
 
     val_dataloader = DataLoader(
         val_dataset, collate_fn=Model.collate_fn, batch_size=args.batch_size
@@ -124,27 +132,30 @@ def run_evaluating(args, Model, Evaluator, val_dataset):
     model.load_weights(best_model_file)
 
     eval_result = Evaluator.evaluate(
-        model, val_dataloader, args.task_labels, threshold=args.extract_threshold
+        model, val_dataloader, args.task_labels, threshold=args.extract_threshold, debug=args.debug
     )
     print(f"eval_result: {eval_result}")
 
 
-def run_predicting(args, Model, Evaluator, test_data, best_model_file, tokenizer):
+def run_predicting(args, Model, Evaluator, test_data, task_model_file, tokenizer):
 
     final_results = []
     X0, Y0, Z0 = 0, 0, 0
 
     model = Model.build_model(args)
-    model.load_weights(best_model_file)
+    print(f"Load weights from {task_model_file}")
+    model.load_weights(task_model_file)
 
     for d in tqdm(test_data, desc="predict"):
         idx, full_text, true_tags = d.idx, d.text, d.tags
 
         full_tags = Model.predict_text(
-            args, model, full_text, tokenizer, threshold=args.extract_threshold
+            args, model, full_text, tokenizer, repeat=args.repeat, threshold=args.extract_threshold
         )
+        # print("full_tags:", full_tags)
 
-        if true_tags:
+        if False:
+        # if true_tags:
             #  print(f"full_text: {full_text}")
             #  print(f"full_tags: {full_tags}")
             #  print(f"true_tags: {true_tags}")
@@ -168,4 +179,5 @@ def run_predicting(args, Model, Evaluator, test_data, best_model_file, tokenizer
         f1, p, r = 2 * X0 / (Y0 + Z0), X0 / Y0, X0 / Z0
         print(f"P: {p:.5f}, R: {r:.5f}, F1: {f1:.5f}")
 
+    # print("final_results[:5]:", final_results[:5])
     return final_results

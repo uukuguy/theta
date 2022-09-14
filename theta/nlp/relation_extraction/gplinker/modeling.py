@@ -169,7 +169,7 @@ class Model(BaseModel):
 
 
     @staticmethod
-    def predict_text(args, model, text, tokenizer, threshold=0):
+    def predict_text(args, model, text, tokenizer, repeat=1, threshold=0):
 
         relations_map = args.task_labels.relations_map
 
@@ -189,15 +189,39 @@ class Model(BaseModel):
 
         token_ids = torch.tensor([token_ids], dtype=torch.long, device=device)
         segment_ids = torch.tensor([segment_ids], dtype=torch.long, device=device)
-        outputs = model.predict([token_ids, segment_ids])
+
+        # outputs = model.predict([token_ids, segment_ids])
+
+        entity_logits_list = []
+        head_logits_list = []
+        tail_logits_list = []
+        for _ in range(repeat):
+            # scores = model.predict(batch_token_ids)
+            entity_logit, head_logit, tail_logit = model.predict([token_ids, segment_ids])
+            entity_logits_list.append(entity_logit)
+            head_logits_list.append(head_logit)
+            tail_logits_list.append(tail_logit)
+
+        # print("logits_list:", logits_list)
+
+        def average_logits_list(logits_list):
+            logits_list = [s.unsqueeze(0) for s in logits_list]
+            logits_list = torch.cat(logits_list).mean(dim=0)
+            return logits_list
+
+        entity_logits_list = average_logits_list(entity_logits_list)
+        head_logits_list = average_logits_list(head_logits_list)
+        tail_logits_list = average_logits_list(tail_logits_list)
+
+        outputs = (entity_logits_list, head_logits_list, tail_logits_list)
         outputs = [o[0].cpu().numpy() for o in outputs]  # [heads, seq_len, seq_len]
 
         relations_id2label = args.task_labels.relations_id2label
-        spoes = extract_spoes(
+        spoes, _ = extract_spoes(
             text, mapping, outputs, relations_id2label, threshold=threshold
         )
 
-        #  spoes = extract_spoes(
+        #  spoes, _ = extract_spoes(
         #      model, text, tokens, mapping, token_ids, segment_ids, relations_id2label
         #  )
 
@@ -311,8 +335,8 @@ def extract_spoes(text, mapping, outputs, relations_id2label, threshold=0):
             subjects.add((h, t))
         else:
             objects.add((h, t))
-    #  subjects_list = [text[mapping[h][0] : mapping[t][-1] + 1] for h, t in subjects]
-    #  objects_list = [text[mapping[h][0] : mapping[t][-1] + 1] for h, t in objects]
+    subjects_list = [text[mapping[h][0] : mapping[t][-1] + 1] for h, t in subjects]
+    objects_list = [text[mapping[h][0] : mapping[t][-1] + 1] for h, t in objects]
     #  print("")
     #  print(f"found_subjects: {subjects_list}")
     #  print(f"found_objects: {objects_list}")
@@ -341,7 +365,6 @@ def extract_spoes(text, mapping, outputs, relations_id2label, threshold=0):
                     relations_id2label[p],
                     text[mapping[oh][0] : mapping[ot][-1] + 1],
                 )
-                #  print("extract_spoes() -->", "s:", s, "p:", p, "o:", o)
                 if (s, p, o) not in spoes_set:
                     spoes_set.add((s, p, o))
                     spoes.append(
@@ -351,7 +374,7 @@ def extract_spoes(text, mapping, outputs, relations_id2label, threshold=0):
                     #  print(f"found_spo: ({s}, {p}, {o})")
                     #  found_objects.add(j)
 
-    return list(spoes)
+    return list(spoes), (subjects_list, objects_list)
 
 
 class SPO(tuple):
@@ -460,7 +483,7 @@ class Evaluator(Callback):
             outputs = [o[0].cpu().numpy() for o in outputs]  # [heads, seq_len, seq_len]
 
             relations_id2label = task_labels.relations_id2label
-            spoes = extract_spoes(
+            spoes, (subjects_list, objects_list) = extract_spoes(
                 text, mapping, outputs, relations_id2label, threshold=threshold
             )
             #  spoes = extract_spoes(
@@ -481,6 +504,8 @@ class Evaluator(Callback):
                     print("========================================")
                     print("idx:", idx, "text:", text[:50])
                     print("----------------------------------------")
+                    print("found subjects:", subjects_list)
+                    print("found objects:", objects_list)
                     print(f"T: {T}")
                     print(f"R: {R}")
 
