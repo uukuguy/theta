@@ -15,17 +15,20 @@ print(f"script_path: {script_path}")
 from theta.utils import DictObject
 
 # FIXME
-from theta.nlp.sequence_classification import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
-from theta.nlp.sequence_classification import TaskDataset, Model, Evaluator
-from theta.nlp.sequence_classification.runner import run_training, run_evaluating, run_predicting
-# 分类 标签
-labels = []
-task_labels = TaskLabels(labels=labels)
+from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
+from theta.nlp.entity_extraction import TaskDataset, Model, Evaluator
+from theta.nlp.entity_extraction.runner import run_training, run_evaluating, run_predicting
+from theta.nlp.entity_extraction.utils import split_text_tags
+# 实体标签
+entity_labels = []
+task_labels = TaskLabels(
+    entity_labels=entity_labels,
+)
 
 
 # -------------------- Global Variables --------------------
 
-TASK_NAME = "sequence_classification"
+TASK_NAME = "task_nlp"
 
 #  bert_model_path = os.path.realpath(f"{script_path}/pretrained/bert-base-chinese")
 bert_model_path = "/opt/local/pretrained/bert-base-chinese"
@@ -81,19 +84,20 @@ def tag_text(idx, line):
     """
     由原始文本行生成返回标准的TaggedData标注对象
 
-    # 序列分类任务样本数据结构
+    # 任务标注样本数据结构
     @dataclass
     class TaggedData:
-        idx: str = None
-        text_a: str = None
-        text_b: str = None
-        label: TaskTag = None,
+        idx: str = ""
+        text: str = ""
+        tags: List[TaskTag] = field(default_factory=list)
         metadata: Any = None  # 应用侧自行定义的附加标注信息
 
-    # 序列分类任务标注结构
+    # 任务标注结构
     @dataclass
     class TaskTag:
-        label: Union[str, List[str]] = None
+        s: SubjectTag = None  # subject: 关系的主实体
+        p: str = None  # predicate: 关系类别
+        o: ObjectTag = None  # object: 关系的客实体
 
     """
 
@@ -101,13 +105,19 @@ def tag_text(idx, line):
 
 
     idx = json_data['idx']
-    text_a = json_data['text_a']
-    text_b = json_data['text_b']
-    label = json_data['label']
+    text = json_data['text']
+    raw_tags_list = json_data['tags']
 
+    tags = []
+    for raw_tag in raw_tags_list:
+        tag = TaskTag().from_json(raw_tag)
 
-    #  print("idx:", idx, "text_a:", text_a, "text_b:", text_b, "label:", label)
-    return TaggedData(idx, text_a, text_b, label, None)
+        tags.append(tag)
+
+    tags = sorted(tags, key=lambda x: x.subject.start)
+
+    #  print("idx:", idx, "text:", text, "tags:", tags)
+    return TaggedData(idx, text, tags, None)
 
 
 # -------------------- build_final_result() --------------------

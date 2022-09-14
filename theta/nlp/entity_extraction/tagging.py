@@ -45,6 +45,30 @@ class EntityTag:
 
         return self
 
+    @property
+    def category(self):
+        return self.c
+
+    @property
+    def start(self):
+        return self.s
+
+    @property
+    def mention(self):
+        return self.m
+
+    @category.setter
+    def category(self, v):
+        self.c = v
+
+    @start.setter
+    def start(self, v):
+        self.s = v
+
+    @mention.setter
+    def mention(self, v):
+        self.m = v
+
 
 @dataclass
 class TaskTag(EntityTag):
@@ -64,4 +88,18 @@ class TaggedData:
     idx: str = ""
     text: str = ""
     tags: List[TaskTag] = field(default_factory=list)
-    others: Any = None  # 应用侧自行定义的附加标注信息
+    metadata: Any = None  # 应用侧自行定义的附加标注信息
+
+    def to_json(self):
+        return {
+            'idx': self.idx,
+            'text': self.text,
+            'tags': [ tag.to_json() for tag in self.tags],
+            'metadata': self.metadata
+        }
+
+    def from_json(self, json_data):
+        self.idx = json_data['idx']
+        self.text = json_data['text']
+        self.tags = [ TaskTag().from_json(tag_data) for tag_data in json_data['tags']]
+        self.metadata = json_data.get('metadata', None)

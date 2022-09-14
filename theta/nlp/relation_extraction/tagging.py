@@ -4,6 +4,7 @@
 from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
 
+from ..entity_extraction.tagging import EntityTag
 
 @dataclass
 class TaskLabels:
@@ -31,30 +32,6 @@ class TaskLabels:
         self.relations_id2label = {
             i: label for i, label in enumerate(self.relation_labels)
         }
-
-
-@dataclass
-class EntityTag:
-    """
-    实体标注结构
-    """
-
-    c: str = None  # category: 实体类别
-    s: int = -1  # start: 文本片断的起始位置
-    m: str = None  # mention: 文本片断内容
-
-    def to_json(self):
-        return {"category": self.c, "start": self.s, "mention": self.m}
-
-    def from_json(self, json_data):
-        self.c, self.s, self.m = (
-            json_data["category"],
-            json_data["start"],
-            json_data["mention"],
-        )
-
-        return self
-
 
 @dataclass
 class SubjectTag(EntityTag):
@@ -100,6 +77,30 @@ class TaskTag:
 
         return self
 
+    @property
+    def subject(self):
+        return self.s
+
+    @property
+    def predicate(self):
+        return self.p
+
+    @property
+    def object(self):
+        return self.o
+    
+    @subject.setter
+    def subject(self, v):
+        self.s = v
+
+    @predicate.setter
+    def predicate(self, v):
+        self.p = v
+
+    @object.setter
+    def object(self, v):
+        self.o = v
+
 
 @dataclass
 class TaggedData:
@@ -110,4 +111,18 @@ class TaggedData:
     idx: str = ""
     text: str = ""
     tags: List[TaskTag] = field(default_factory=list)
-    others: Any = None  # 应用侧自行定义的附加标注信息
+    metadata: Any = None  # 应用侧自行定义的附加标注信息
+
+    def to_json(self):
+        return {
+            'idx': self.idx,
+            'text': self.text,
+            'tags': [ tag.to_json() for tag in self.tags],
+            'metadata': self.metadata
+        }
+
+    def from_json(self, json_data):
+        self.idx = json_data['idx']
+        self.text = json_data['text']
+        self.tags = [ TaskTag().from_json(tag_data) for tag_data in json_data['tags']]
+        self.metadata = json_data.get('metadata', None)

@@ -3,58 +3,36 @@
 
 import sys, os, json
 from tqdm import tqdm
-from loguru import logger
-from functools import partial
-from copy import deepcopy
-import numpy as np
 import random
-
-random.seed(42)
-
-try:
-    import rich
-
-    def print(*arg, **kwargs):
-        rich.print(*arg, **kwargs)
-
-
-except:
-    pass
-
-# FIXME
-TASK_NAME = "relation_extraction"
+from copy import deepcopy
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 print(f"script_path: {script_path}")
 
-theta_path = os.environ.get("THETA_HOME", os.path.realpath(f"{script_path}/.."))
-print(f"theta_path: {theta_path}")
+# -------------------- Theta --------------------
+# pip install -U theta
 
-if theta_path and theta_path not in sys.path:
-    sys.path.insert(0, theta_path)
+from theta.utils import DictObject
 
-from theta.nlp import  get_default_tokenizer
+# from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
+# from theta.nlp.entity_extraction import TaskDataset, Model, Evaluator
+# from theta.nlp.entity_extraction.runner import run_training, run_evaluating, run_predicting
+# from theta.nlp.entity_extraction.utils import split_text_tags
+# # 实体标签
+# entity_labels = []
+# task_labels = TaskLabels(
+#     entity_labels=entity_labels,
+# )
+
 from theta.nlp.relation_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
+from theta.nlp.relation_extraction import TaskDataset, Model, Evaluator
 from theta.nlp.relation_extraction.runner import run_training, run_evaluating, run_predicting
-
-from theta.nlp.relation_extraction.gplinker import TaskDataset, Model, Evaluator
-
-data_path = os.path.realpath(f"{script_path}/data")
-print(f"data_path: {data_path}")
-
-#  bert_model_path = os.path.realpath(f"{script_path}/../pretrained/bert-base-chinese")
-bert_model_path = "/opt/local/pretrained/bert-base-chinese"
-print(f"bert_model_path: {bert_model_path}")
-
-dict_path = f"{bert_model_path}/vocab.txt"
-print(f"dict_path: {dict_path}")
-
-tokenizer = get_default_tokenizer(dict_path)
-
-# FIXME
-
+from theta.nlp.relation_extraction.utils import split_text_tags
+# 关系头尾实体标签
 entity_labels = []
+# 关系标签
 relation_labels = []
+# 关系与头尾实体对应关系
 relations_map = {
     "predicate": ("subject", "object"),
 }
@@ -65,26 +43,24 @@ task_labels = TaskLabels(
 )
 
 
-class DictObject(object):
-    __setitem__ = object.__setattr__
-    __getitem__ = object.__getattribute__
+# -------------------- Global Variables --------------------
 
-    def __init__(self, *args, **kwargs):
-        self.update(*args, **kwargs)
+TASK_NAME = "relation_extraction"
 
-    def keys(self):
-        return self.__dict__.keys()
+#  bert_model_path = os.path.realpath(f"{script_path}/pretrained/bert-base-chinese")
+bert_model_path = "/opt/local/pretrained/bert-base-chinese"
+print("bert_model_path:", bert_model_path)
 
-    def items(self):
-        return self.__dict__.items()
+data_path = os.path.realpath(f"{script_path}/data")
+print("data_path:", data_path)
 
-    def update(self, *args, **kwargs):
-        for k, v in dict(**kwargs).items():
-            self.__setattr__(k, v)
-
-    def __str__(self):
-        return f"{str(self.__dict__)}"
-
+seed = 42
+learning_rate = 2e-5
+batch_size = 8
+max_length = 512
+do_split = False
+min_best = 0.9
+earlystopping_patience=10
 
 args = DictObject(
     **dict(
@@ -93,190 +69,129 @@ args = DictObject(
         bert_model_path=bert_model_path,
         extract_threshold=0,
         debug=False,
-        SEED=42,
-        max_length=500,
+        seed=seed,
+        max_length=max_length,
         # 是否将文本划分为多个短句
-        do_split=False,
+        do_split=do_split,
         # Training
-        batch_size=8,
-        learning_rate=2e-5,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
         num_training_epochs=500,
         max_training_episodes=100,
-        min_best=0.9,
+        min_best=min_best,
         # Early Stopping
         earlystopping_monitor="best_f1",
-        earlystopping_patience=10,
+        earlystopping_patience=earlystopping_patience,
         earlystopping_mode="max",
         # Predicting
-        repeat=3,
+        repeat=1,
         # Data files
         train_file=f"{data_path}/rawdata/train-652346.json",
         val_file=f"{data_path}/rawdata/train-652346.json",
         test_file=f"{data_path}/rawdata/evalA-428907.json",
+        task_model_file="best_model.pt",
     )
 )
 
-
-def split_text(text, sep="。"):
-    sentences = []
-
-    text = text.replace(sep, f"\1{sep}")
-    for sent in text.split(sep):
-        sent = sent.replace("\1", sep)
-        sentences.append(sent)
-
-    #  assert "".join(sentences) == text, f'[{"".join(sentences)}] vs [{text}]'
-
-    return sentences
+random.seed(seed)
 
 
-def split_sentences(sentences, sep):
-    final_sentences = []
-
-    for sent in sentences:
-        sents = split_text(sent, sep)
-        final_sentences.extend(sents)
-
-    return final_sentences
-
-
-def split_text_tags(text, tags):
-    sentences = split_text(text, sep="。")
-    sentences = split_sentences(sentences, sep="；")
-
-    relations = [tag["predicate"] for tag in tags]
-    subject_tags = [tag["subject"] for tag in tags]
-    object_tags = [tag["object"] for tag in tags]
-
-    offset = 0
-    sent_tags_list = []
-
-    for sent_text in sentences:
-        sent_s = offset
-        sent_e = sent_s + len(sent_text)
-
-        sent_tags = []
-
-        #  for tag in tags:
-        #      s, p, o = tag["subject"], tag["predicate"], tag["object"]
-        #
-        #      s_s = s["start"]
-        #      s_e = s_s + len(s["mention"])
-        #      o_s = o["start"]
-        #      o_e = o_s + len(o["mention"])
-        #
-        #      if s_s >= sent_s and s_s <= sent_e and s_e >= sent_s and s_e <= sent_e:
-        #          if o_s >= sent_s and o_s <= sent_e and o_e >= sent_s and o_e <= sent_e:
-        #              s = deepcopy(s)
-        #              o = deepcopy(o)
-        #              s["start"] -= offset
-        #              o["start"] -= offset
-        #              sent_tags.append({"subject": s, "predicate": p, "object": o})
-        #          else:
-        #              print(
-        #                  f"object {o} ({o_s}, {o_e}) tag {tag} not found in {sent_text}"
-        #              )
-        #
-        #  sent_tags = sorted(sent_tags, key=lambda x: x["subject"]["start"])
-
-        for tag in tags:
-            s, p, o = tag.s, tag.p, tag.o
-
-            s_s = tag.s.s
-            s_e = s_s + len(tag.s.m)
-            o_s = tag.o.s
-            o_e = o_s + len(tag.o.m)
-
-            if s_s >= sent_s and s_s <= sent_e and s_e >= sent_s and s_e <= sent_e:
-                if o_s >= sent_s and o_s <= sent_e and o_e >= sent_s and o_e <= sent_e:
-                    s = deepcopy(s)
-                    o = deepcopy(o)
-
-                    s.s -= offset
-                    o.s -= offset
-
-                    sent_tags.append({"subject": s, "predicate": p, "object": o})
-                else:
-                    print(
-                        f"object {o} ({o_s}, {o_e}) tag {tag} not found in {sent_text}"
-                    )
-
-        sent_tags = sorted(sent_tags, key=lambda x: x.s.s)
-
-        sent_tags_list.append(sent_tags)
-
-        offset = sent_e
-
-    return sentences, sent_tags_list
-
-
-# FIXME
+# -------------------- tag_text() --------------------
 def tag_text(idx, line):
     """
-    根据原始数据的json数据，构建模型标准数据格式 idx, text, tags, others
+    由原始文本行生成返回标准的TaggedData标注对象
+
+    # 关系抽取任务标注样本数据结构
+    @dataclass
+    class TaggedData:
+        idx: str = ""
+        text: str = ""
+        tags: List[TaskTag] = field(default_factory=list)
+        metadata: Any = None  # 应用侧自行定义的附加标注信息
+
+    # 关系抽取任务标注结构
+    @dataclass
+    class TaskTag:
+        s: SubjectTag = None  # subject: 关系的主实体
+        p: str = None  # predicate: 关系类别
+        o: ObjectTag = None  # object: 关系的客实体
+
+    # 实体标注结构
+    @dataclass
+    class EntityTag:
+        c: str = None  # category: 实体类别
+        s: int = -1  # start: 文本片断的起始位置
+        m: str = None  # mention: 文本片断内容
+
+    # 关系的主实体结构
+    class SubjectTag(EntityTag):
+        pass
+
+    # 关系的客实体结构
+    @dataclass
+    class ObjectTag(EntityTag):
+        pass
+
     """
+
     json_data = json.loads(line)
 
-    idx = json_data["ID"]
-    text = json_data["text"]
-    spo_list = json_data.get("spo_list", [])
+
+    idx = json_data['idx']
+    text = json_data['text']
+    spo_list = json_data['tags']
 
     tags = []
     for spo in spo_list:
-        h, t, rel = spo["h"], spo["t"], spo["relation"]
-        h_m, (h_s, h_e) = h["name"], h["pos"]
-        t_m, (t_s, t_e) = t["name"], t["pos"]
-        h_c, t_c = relations_map[rel]
-
-        tag = TaskTag(
-            s=SubjectTag(c=h_c, s=h_s, m=h_m),
-            p=rel,
-            o=ObjectTag(c=t_c, s=t_s, m=t_m),
-        )
+        tag = TaskTag().from_json(spo)
+        # # (h_c, h_s, h_m), rel, (t_c, t_s, t_m)
+        # tag = TaskTag(
+        #     s=SubjectTag(c=h_c, s=h_s, m=h_m),
+        #     p=rel,
+        #     o=ObjectTag(c=t_c, s=t_s, m=t_m),
+        # )
 
         tags.append(tag)
 
-    tags = sorted(tags, key=lambda x: x.s.s)
+    tags = sorted(tags, key=lambda x: x.subject.start)
 
     #  print("idx:", idx, "text:", text, "tags:", tags)
     return TaggedData(idx, text, tags, None)
 
 
-# FIXME
-def build_final_result(d, real_tags):
+# -------------------- build_final_result() --------------------
+def build_final_result(tagged_text, decoded_tags):
     """
-    根据预测结果构造成上层应用需要的输出格式
+    根据预测结果构造生成应用需要的输出格式（对应一行原始文本）
+
+    tagged_text: TaggedData # tag_text()函数生成的 TaggedData 标注对象
+    decoded_tags: List[TaskTag] # decode_text_tags()函数返回的解码后的标注对象列表，通常是TaskTag对象列表，对象结构见tag_text()函数。
+
     """
-    idx, text, true_tags = d.idx, d.text, d.tags
+
+    idx, text = tagged_text.idx, tagged_text.text
+    # true_tags, metadata = tagged_text.tags, tagged_text.metadata
 
     spo_list = []
-    for real_tag in real_tags:
-        #  print("real_tag:", real_tag)
+    for tag in decoded_tags:
 
-        #  rel = real_tag["predicate"]
-        #  h = real_tag["subject"]
-        #  h_c, h_s, h_m = h["category"], h["start"], h["mention"]
-        #  h_e = h_s + len(h_m)
-        #
-        #  t = real_tag["object"]
-        #  t_c, t_s, t_m = t["category"], t["start"], t["mention"]
-        #  t_e = t_s + len(t_m)
+        s = tag.subject
+        s_c, s_s, s_m = s.category, s.start, s.mention
+        s_e = s_s + len(s_m)
 
-        rel = real_tag.p
-        h = real_tag.s
-        h_c, h_s, h_m = h.c, h.s, h.m
-        h_e = h_s + len(h_m)
 
-        t = real_tag.o
-        t_c, t_s, t_m = t.c, t.s, t.m
-        t_e = t_s + len(t_m)
+        o = tag.object
+        o_c, o_s, o_m = o.category, o.start, o.mention
+        o_e = o_s + len(o_m)
 
-        #  h_c, t_c = relations_map[rel]
+        p = tag.predicate
+        #  s_c, o_c = relations_map[rel]
+        assert (s_c, o_c) == relations_map[p]
 
         spo = {
-            "h": {"name": h_m, "pos": [h_s, h_e]},
-            "t": {"name": t_m, "pos": [t_s, t_e]},
-            "relation": rel,
+            "subject": {"name": s_m, "pos": [s_s, s_e]},
+            "predicate": p,
+            "object": {"name": o_m, "pos": [o_s, o_e]},
         }
         spo_list.append(spo)
 
@@ -285,20 +200,27 @@ def build_final_result(d, real_tags):
     return result
 
 
-# FIXME
-def decode_text_tags(full_tags):
+# -------------------- decode_text_tags() --------------------
+
+def decode_text_tags(pred_tags):
     """
-    根据实体抽取的结果，构造成业务应用需要的组合标注形式
+    模型预测出来的 TaskTag 对象，根据实际需要，可以在这里做解码变换，要求返回相同结构的TaskTag对象。
+    无需解码时，直接返回pred_tags。
     """
 
-    real_tags = []
+    decoded_tags = pred_tags
 
-    real_tags = full_tags
-
-    return real_tags
+    return decoded_tags
 
 
-def predict_test_file(test_file, task_model_file, results_file="results.json"):
+# -------------------- predict_test_file() --------------------
+"""
+"""
+
+def predict_test_file(args,  tokenizer, results_file="results.json"):
+    test_file = args.test_file
+    task_model_file = args.task_model_file
+
     test_data = [x for x in test_data_generator(test_file)]
 
     # [(full_tags, sent_tags_list)]
@@ -311,44 +233,59 @@ def predict_test_file(test_file, task_model_file, results_file="results.json"):
     )
 
     def decode_predictions(predictions):
-        real_tags_list = []
+        decoded_tags_list = []
 
-        for full_tags in predictions:
-            real_tags = decode_text_tags(full_tags)
-            real_tags_list.append(real_tags)
+        for pred_tags in predictions:
+            decoded_tags = decode_text_tags(pred_tags)
+            decoded_tags_list.append(decoded_tags)
 
-        return real_tags_list
+        return decoded_tags_list
 
-    real_tags_list = decode_predictions(predictions)
-    assert len(test_data) == len(real_tags_list)
+    decoded_tags_list = decode_predictions(predictions)
+    assert len(test_data) == len(decoded_tags_list)
 
+    # predictions_file = "./predictions.json"
+    # with open(predictions_file, "w") as wt:
+    #     for tagged_text, tags in zip(test_data, decoded_tags_list):
+    #         idx, text, true_tags = tagged_text.idx, tagged_text.text
+    #         # true_tags, metadata = tagged_text.tags, tagged_text.metadata
+    #         pred = {
+    #             "idx": idx,
+    #             "text": text,
+    #             "tags": [tag.to_json() for tag in tags],
+    #         }
+    #         line = f"{json.dumps(pred, ensure_ascii=False)}\n"
+    #         wt.write(line)
+    # print(f"Saved {len(decoded_tags_list)} lines in {predictions_file}")
     predictions_file = "./predictions.json"
     with open(predictions_file, "w") as wt:
-        for d, real_tags in zip(test_data, real_tags_list):
-            # print("real_tags:", real_tags)
-            idx, text, true_tags = d.idx, d.text, d.tags
-            pred = {
-                "idx": idx,
-                "text": text,
-                "tags": [tag.to_json() for tag in real_tags],
-            }
-            # print("pred:", pred)
-            line = f"{json.dumps(pred, ensure_ascii=False)}\n"
-            wt.write(line)
-    print(f"Saved {len(real_tags_list)} lines in {predictions_file}")
+        for tagged_text, tags in zip(test_data, decoded_tags_list):
+            # idx, text, true_tags = tagged_text.idx, tagged_text.text
+            # true_tags, metadata = tagged_text.tags, tagged_text.metadata
+            # pred = {
+            #     "idx": idx,
+            #     "text": text,
+            #     "tags": [tag.to_json() for tag in tags],
+            # }
+            # line = f"{json.dumps(pred, ensure_ascii=False)}\n"
+            pred_tagged_text = deepcopy(tagged_text)
+            pred_tagged_text.tags = tags
+            line = pred_tagged_text.to_json()
+            wt.write(f"{line}\n")
+    print(f"Saved {len(decoded_tags_list)} lines in {predictions_file}")
 
-    final_results = []
-    for d, real_tags in zip(test_data, real_tags_list):
-        result = build_final_result(d, real_tags)
-        final_results.append(result)
+    final_tags_list = []
+    for tagged_text, decoded_tags in zip(test_data, decoded_tags_list):
+        final_tags = build_final_result(tagged_text, decoded_tags)
+        final_tags_list.append(final_tags)
 
     with open(results_file, "w") as wt:
-        for d in final_results:
+        for d in final_tags:
             line = json.dumps(d, ensure_ascii=False)
             wt.write(f"{line}\n")
-    print(f"Saved {len(final_results)} results in {results_file}")
+    print(f"Saved {len(final_tags_list)} results in {results_file}")
 
-    return final_results
+    return final_tags_list
 
 
 def data_generator(data_file, do_split=False):
@@ -356,22 +293,21 @@ def data_generator(data_file, do_split=False):
     for idx, line in enumerate(tqdm(lines, desc=os.path.basename(data_file))):
         line = line.strip()
 
-        d = tag_text(idx, line)
+        tagged_text = tag_text(idx, line)
         if idx < 5 or idx > len(lines) - 5:
-            print(d)
+            print(tagged_text)
 
         if args.do_split:
-            #  _, text, tags, others = d
-            text, tags, others = d.text, d.tags, d.others
+            text, tags, others = tagged_text.text, tagged_text.tags, tagged_text.others
 
-            sentences, sent_tags_list = split_text_tags(text, tags)
+            sentences, sent_tags_list = split_text_tags(tagged_text.text, tagged_text.tags)
             for sent_text, sent_tags in zip(sentences, sent_tags_list):
 
                 if idx < 5 or idx > len(lines) - 5:
                     print(idx, sent_text, sent_tags, others)
                 yield TaggedData(idx, sent_text, sent_tags, others)
         else:
-            yield d
+            yield tagged_text
 
 
 def prepare_raw_train_data(args, data_generator, train_ratio=0.8):
@@ -385,23 +321,30 @@ def prepare_raw_train_data(args, data_generator, train_ratio=0.8):
 raw_train_data, num_train_samples = prepare_raw_train_data(args, data_generator, train_ratio=0.8)
 
 def train_data_generator(train_file):
-    for d in raw_train_data[:num_train_samples]:
-        # for d in raw_train_data:
-        yield d
+    for data in raw_train_data[:num_train_samples]:
+        # for data in raw_train_data:
+        yield data
 
 
 def val_data_generator(val_file):
-    for d in raw_train_data[num_train_samples:]:
-        # for d in raw_train_data:
-        yield d
+    for data in raw_train_data[num_train_samples:]:
+        # for data in raw_train_data:
+        yield data
 
 
 def test_data_generator(test_file):
-    for d in data_generator(test_file):
-        yield d
+    for data in data_generator(test_file):
+        yield data
 
 
 def main(args):
+    from functools import partial
+    from theta.nlp import  get_default_tokenizer
+
+    dict_path = f"{args.bert_model_path}/vocab.txt"
+    print(f"dict_path: {dict_path}")
+    tokenizer = get_default_tokenizer(dict_path)
+
     if args.do_train:
         print(f"----- load train_dataset")
         partial_train_data_generator = partial(
@@ -424,11 +367,9 @@ def main(args):
 
     if args.do_predict:
         if args.task_model_file is None:
-            task_model_file = "best_model.pt"
-        else:
-            task_model_file = args.task_model_file
+            args.task_model_file = "best_model.pt"
 
-        predict_test_file(args.test_file, task_model_file)
+        predict_test_file(args, tokenizer)
 
 
 def get_args():
@@ -451,15 +392,15 @@ def get_args():
         "--do_predict", action="store_true", help="Whether to run predicting."
     )
 
-    parser.add_argument(
-        "--train_file", type=str, default=args.train_file, help="Train file"
-    )
-    parser.add_argument("--val_file", type=str, default=args.val_file, help="Val file")
-    parser.add_argument(
-        "--test_file", type=str, default=args.test_file, help="Test file"
-    )
+    # parser.add_argument(
+    #     "--train_file", type=str, default=args.train_file, help="Train file"
+    # )
+    # parser.add_argument("--val_file", type=str, default=args.val_file, help="Val file")
+    # parser.add_argument(
+    #     "--test_file", type=str, default=args.test_file, help="Test file"
+    # )
 
-    parser.add_argument("--seed", type=int, default=42, help="SEED")
+    # parser.add_argument("--seed", type=int, default=42, help="SEED")
     parser.add_argument(
         "--output_dir", type=str, default="./outputs", help="The output data dir."
     )
@@ -472,24 +413,27 @@ def get_args():
         default="./outputs/saved_models",
         help="The saved models dir.",
     )
-    parser.add_argument(
-        "--bert_model_path",
-        type=str,
-        default=bert_model_path,
-        help="The BERT model path.",
-    )
-    parser.add_argument(
-        "--task_model_file",
-        type=str,
-        default="best_model.pt",
-        help="The task model file.",
-    )
+    # parser.add_argument(
+    #     "--bert_model_path",
+    #     type=str,
+    #     default=bert_model_path,
+    #     help="The BERT model path.",
+    # )
+    # parser.add_argument(
+    #     "--task_model_file",
+    #     type=str,
+    #     default="best_model.pt",
+    #     help="The task model file.",
+    # )
     parser.add_argument(
         "--learning_rate",
         type=float,
         default=2e-5,
         help="Learning rate",
     )
+
+    for k, v in args.items():
+        parser.add_argument(f"--{k}", default=v, help=k.replace('_', ' '))
 
     cmd_args, unknown_args = parser.parse_known_args()
 

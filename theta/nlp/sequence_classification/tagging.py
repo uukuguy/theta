@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Union, Any
 from dataclasses import dataclass, field
 
 
@@ -31,11 +31,11 @@ class TaskTag:
 @dataclass
 class TaggedData:
     """
-    序列分类样本数据结构
+    序列分类任务样本数据结构
     """
 
     idx: str = None
     text_a: str = None
     text_b: str = None
     label: TaskTag = None,
-    others: Any = None  # 应用侧自行定义的附加标注信息
+    metadata: Any = None  # 应用侧自行定义的附加标注信息
