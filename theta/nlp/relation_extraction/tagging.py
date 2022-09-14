@@ -4,7 +4,7 @@
 from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
 
-from ..entity_extraction.tagging import EntityTag
+from ..tagging import EntityTag
 
 @dataclass
 class TaskLabels:

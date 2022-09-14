@@ -73,6 +73,9 @@ args = DictObject(
         val_file=f"{data_path}/rawdata/train-652346.json",
         test_file=f"{data_path}/rawdata/evalA-428907.json",
         task_model_file="best_model.pt",
+        # outputs
+        output_dir="./outputs",
+        log_dir = "./logs"
     )
 )
 
@@ -307,12 +310,8 @@ def get_args():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task_name", default=TASK_NAME, help="The task name.")
 
-    parser.add_argument(
-        "--debug", action="store_true", help="Whether to show debug messages."
-    )
-
+    # -------------------- Commands --------------------
     parser.add_argument(
         "--do_train", action="store_true", help="Whether to run training."
     )
@@ -323,53 +322,13 @@ def get_args():
         "--do_predict", action="store_true", help="Whether to run predicting."
     )
 
-    # parser.add_argument(
-    #     "--train_file", type=str, default=args.train_file, help="Train file"
-    # )
-    # parser.add_argument("--val_file", type=str, default=args.val_file, help="Val file")
-    # parser.add_argument(
-    #     "--test_file", type=str, default=args.test_file, help="Test file"
-    # )
-
-    # parser.add_argument("--seed", type=int, default=42, help="SEED")
-    parser.add_argument(
-        "--output_dir", type=str, default="./outputs", help="The output data dir."
-    )
-    parser.add_argument(
-        "--log_dir", type=str, default="./logs", help="The log data dir."
-    )
-    parser.add_argument(
-        "--saved_models_dir",
-        type=str,
-        default="./outputs/saved_models",
-        help="The saved models dir.",
-    )
-    # parser.add_argument(
-    #     "--bert_model_path",
-    #     type=str,
-    #     default=bert_model_path,
-    #     help="The BERT model path.",
-    # )
-    # parser.add_argument(
-    #     "--task_model_file",
-    #     type=str,
-    #     default="best_model.pt",
-    #     help="The task model file.",
-    # )
-    parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=2e-5,
-        help="Learning rate",
-    )
-
+    # -------------------- Auto arguments --------------------
     for k, v in args.items():
         parser.add_argument(f"--{k}", default=v, help=k.replace('_', ' '))
 
     cmd_args, unknown_args = parser.parse_known_args()
 
     os.makedirs(cmd_args.output_dir, exist_ok=True)
-    os.makedirs(cmd_args.saved_models_dir, exist_ok=True)
 
     if unknown_args:
         print("unknown_args:", unknown_args)

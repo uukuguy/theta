@@ -14,16 +14,6 @@ print(f"script_path: {script_path}")
 
 from theta.utils import DictObject
 
-# from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
-# from theta.nlp.entity_extraction import TaskDataset, Model, Evaluator
-# from theta.nlp.entity_extraction.runner import run_training, run_evaluating, run_predicting
-# from theta.nlp.entity_extraction.utils import split_text_tags
-# # 实体标签
-# entity_labels = []
-# task_labels = TaskLabels(
-#     entity_labels=entity_labels,
-# )
-
 from theta.nlp.relation_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
 from theta.nlp.relation_extraction import TaskDataset, Model, Evaluator
 from theta.nlp.relation_extraction.runner import run_training, run_evaluating, run_predicting
@@ -244,19 +234,6 @@ def predict_test_file(args,  tokenizer, results_file="results.json"):
     decoded_tags_list = decode_predictions(predictions)
     assert len(test_data) == len(decoded_tags_list)
 
-    # predictions_file = "./predictions.json"
-    # with open(predictions_file, "w") as wt:
-    #     for tagged_text, tags in zip(test_data, decoded_tags_list):
-    #         idx, text, true_tags = tagged_text.idx, tagged_text.text
-    #         # true_tags, metadata = tagged_text.tags, tagged_text.metadata
-    #         pred = {
-    #             "idx": idx,
-    #             "text": text,
-    #             "tags": [tag.to_json() for tag in tags],
-    #         }
-    #         line = f"{json.dumps(pred, ensure_ascii=False)}\n"
-    #         wt.write(line)
-    # print(f"Saved {len(decoded_tags_list)} lines in {predictions_file}")
     predictions_file = "./predictions.json"
     with open(predictions_file, "w") as wt:
         for tagged_text, tags in zip(test_data, decoded_tags_list):
@@ -288,6 +265,7 @@ def predict_test_file(args,  tokenizer, results_file="results.json"):
     return final_tags_list
 
 
+# -------------------- Train Data --------------------
 def data_generator(data_file, do_split=False):
     lines = open(data_file).readlines()
     for idx, line in enumerate(tqdm(lines, desc=os.path.basename(data_file))):
@@ -337,6 +315,7 @@ def test_data_generator(test_file):
         yield data
 
 
+# -------------------- Main --------------------
 def main(args):
     from functools import partial
     from theta.nlp import  get_default_tokenizer
@@ -372,12 +351,13 @@ def main(args):
         predict_test_file(args, tokenizer)
 
 
+# -------------------- Arguments --------------------
 def get_args():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task_name", default=TASK_NAME, help="The task name.")
 
+    # -------------------- Commands --------------------
     parser.add_argument(
         "--debug", action="store_true", help="Whether to show debug messages."
     )
@@ -392,46 +372,7 @@ def get_args():
         "--do_predict", action="store_true", help="Whether to run predicting."
     )
 
-    # parser.add_argument(
-    #     "--train_file", type=str, default=args.train_file, help="Train file"
-    # )
-    # parser.add_argument("--val_file", type=str, default=args.val_file, help="Val file")
-    # parser.add_argument(
-    #     "--test_file", type=str, default=args.test_file, help="Test file"
-    # )
-
-    # parser.add_argument("--seed", type=int, default=42, help="SEED")
-    parser.add_argument(
-        "--output_dir", type=str, default="./outputs", help="The output data dir."
-    )
-    parser.add_argument(
-        "--log_dir", type=str, default="./logs", help="The log data dir."
-    )
-    parser.add_argument(
-        "--saved_models_dir",
-        type=str,
-        default="./outputs/saved_models",
-        help="The saved models dir.",
-    )
-    # parser.add_argument(
-    #     "--bert_model_path",
-    #     type=str,
-    #     default=bert_model_path,
-    #     help="The BERT model path.",
-    # )
-    # parser.add_argument(
-    #     "--task_model_file",
-    #     type=str,
-    #     default="best_model.pt",
-    #     help="The task model file.",
-    # )
-    parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=2e-5,
-        help="Learning rate",
-    )
-
+    # -------------------- Auto arguments --------------------
     for k, v in args.items():
         parser.add_argument(f"--{k}", default=v, help=k.replace('_', ' '))
 

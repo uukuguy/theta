@@ -13,3 +13,5 @@ def get_default_tokenizer(dict_path):
     tokenizer = Tokenizer(dict_path, do_lower_case=True)
 
     return tokenizer
+
+from .tagging import EntityTag
