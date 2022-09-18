@@ -11,7 +11,7 @@ tb_writer = SummaryWriter(log_dir='./tensorboard_logs')
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
-from ..bert4torch.models import build_transformer_model, BaseModel
+from ..bert4torch.models import build_transformer_model, BaseModel, BaseModelDDP
 from ..bert4torch.losses import MultilabelCategoricalCrossentropy
 from ..bert4torch.optimizers import get_linear_schedule_with_warmup
 from ..bert4torch.utils import sequence_padding, Callback, get_pool_emb
@@ -81,6 +81,16 @@ class Model(BaseModel):
         num_classes = len(args.task_labels.labels)
 
         model = Model(bert_model_path, num_classes=num_classes).to(device)
+        # 指定DDP模型使用多GPU，master_rank为指定用于打印训练过程的local_rank
+        if args.local_rank >= 0:
+            model = BaseModelDDP(
+                model,
+                master_rank=0,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank,
+                find_unused_parameters=False,
+            )
+
 
         if learning_rate > 0:
             optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -174,10 +184,13 @@ class Evaluator(Callback):
 
         acc = eval_result["all"]
         if acc > self.best_acc:
+            print(f"Best acc: {acc:.5f}/{self.best_acc:.5f}")
             self.best_acc = acc
             self.model.save_weights("best_model.pt")
             if acc > self.min_best:
-                self.model.save_weights(f"best_model_{self.best_acc:.5f}.pt")
+                best_checkpoint_file = f"best_checkpoint_epoch_{epoch}_f1_{self.best_acc:.5f}.pt"
+                self.model.save_weights(best_checkpoint_file)
+                print(f"Saved best model file in {best_checkpoint_file}")
         print(
             f"[val] acc: {acc:.5f}, best_acc: {self.best_acc:.5f}"
         )

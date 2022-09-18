@@ -13,11 +13,11 @@ print(f"script_path: {script_path}")
 # pip install -U theta
 
 from theta.utils import DictObject
+from theta.nlp.runner import run_training, run_evaluating, run_predicting
 
 # FIXME
 from theta.nlp.sequence_classification import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
 from theta.nlp.sequence_classification import TaskDataset, Model, Evaluator
-from theta.nlp.sequence_classification.runner import run_training, run_evaluating, run_predicting
 # 分类 标签
 labels = []
 task_labels = TaskLabels(labels=labels)

@@ -13,10 +13,10 @@ print(f"script_path: {script_path}")
 # pip install -U theta
 
 from theta.utils import DictObject
+from theta.nlp.runner import run_training, run_evaluating, run_predicting
 
 from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
 from theta.nlp.entity_extraction import TaskDataset, Model, Evaluator
-from theta.nlp.entity_extraction.runner import run_training, run_evaluating, run_predicting
 from theta.nlp.entity_extraction.utils import split_text_tags
 # 实体标签
 entity_labels = []

@@ -32,11 +32,23 @@ from ...bert4torch.losses import (
     MultilabelCategoricalCrossentropy,
     SparseMultilabelCategoricalCrossentropy,
 )
-from ...bert4torch.models import build_transformer_model, BaseModel
+from ...bert4torch.models import build_transformer_model, BaseModel, BaseModelDDP
 
 from ..tagging import TaskLabels, TaskTag, SubjectTag, ObjectTag, TaggedData
 from .dataset import encode_text, encode_sentences
 
+def get_cosine_with_hard_restarts_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, num_cycles=1, last_epoch= -1):
+    import math
+    from torch.optim.lr_scheduler import LambdaLR
+    def lr_lambda(current_step):
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+        if progress >= 1.0:
+            return 0.0
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * ((float(num_cycles) * progress) % 1.0))))
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -147,6 +159,16 @@ class Model(BaseModel):
         heads = len(relation_labels)
         head_size = 64
         model = Model(bert_model_path, heads=heads, head_size=head_size).to(device)
+        # 指定DDP模型使用多GPU，master_rank为指定用于打印训练过程的local_rank
+        if args.local_rank >= 0:
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+            model = BaseModelDDP(
+                model,
+                master_rank=0,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank,
+                find_unused_parameters=False,
+            )
 
         if learning_rate > 0:
             optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -154,15 +176,22 @@ class Model(BaseModel):
             optimizer = None
 
         if num_training_steps > 0:
-            num_warmup_steps = 0  # int(num_training_steps * 0.05)
-            scheduler = get_linear_schedule_with_warmup(
+            num_warmup_steps = args.num_warmup_steps  # int(num_training_steps * 0.05)
+            # scheduler = get_linear_schedule_with_warmup(
+            #     optimizer,
+            #     num_warmup_steps=num_warmup_steps,
+            #     num_training_steps=num_training_steps,
+            # )
+            scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
                 optimizer,
                 num_warmup_steps=num_warmup_steps,
                 num_training_steps=num_training_steps,
+                num_cycles=args.num_cycles,
             )
         else:
             scheduler = None
 
+        # model.compile(loss=MyLoss(), optimizer=optimizer, scheduler=scheduler, adversarial_train={'name': 'fgm'})
         model.compile(loss=MyLoss(), optimizer=optimizer, scheduler=scheduler)
 
         return model
@@ -444,10 +473,13 @@ class Evaluator(Callback):
         eval_result = self.do_evaluate()
         f1, precision, recall = eval_result["all"]
         if f1 > self.best_f1:
+            print(f"Best f1: {f1:.5f}/{self.best_f1:.5f}")
             self.best_f1 = f1
             self.model.save_weights("best_model.pt")
             if f1 > self.min_best:
-                self.model.save_weights(f"best_model_{self.best_f1:.5f}.pt")
+                best_checkpoint_file = f"best_checkpoint_epoch_{epoch}_f1_{self.best_f1:.5f}.pt"
+                self.model.save_weights(best_checkpoint_file)
+                print(f"Saved best model file in {best_checkpoint_file}")
         print(
             f"[val] f1: {f1:.5f}, p: {precision:.5f} r: {recall:.5f} best_f1: {self.best_f1:.5f}"
         )

@@ -14,22 +14,32 @@ try:
     def print(*arg, **kwargs):
         rich.print(*arg, **kwargs)
 
-
 except:
     pass
 
-from ..bert4torch.utils import seed_everything, EarlyStopping 
+from ...utils import get_device, build_dataloader, torch_distributed_zero_first
+from ..bert4torch.utils import seed_everything, EarlyStopping, Callback
 # from .utils import check_tags
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # -------- run_training() --------
+
+class DistributedTrainingEpoch(Callback):
+    def __init__(self, local_rank, dist_sampler=None):
+        self.local_rank = local_rank
+        self.dist_sampler=dist_sampler
+    
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        if self.local_rank >= 0:
+            self.dist_sampler.set_epoch(epoch)
 
 
 def run_training(args, Model, Evaluator, train_dataset, val_dataset):
     seed_everything(args.seed)
+    device = get_device(local_rank=args.local_rank)
 
     print("args.debug:", args.debug)
 
@@ -42,24 +52,35 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
     earlystopping_mode = args.earlystopping_mode
     best_model_file = "best_model.pt"  # args.best_model_file
 
-    # -------- Data --------
-    train_dataloader = DataLoader(
-        train_dataset, shuffle=True, collate_fn=Model.collate_fn, batch_size=batch_size
-    )
-    val_dataloader = DataLoader(
-        val_dataset, collate_fn=Model.collate_fn, batch_size=batch_size
-    )
-
     last_best_f1 = 0.0
 
-    if os.path.exists(best_model_file):
-        os.remove(best_model_file)
+    if args.local_rank in [-1, 0]:
+        if os.path.exists(best_model_file):
+            os.remove(best_model_file)
 
+    if args.local_rank >= 0:
+        max_training_episodes = 1
     with trange(max_training_episodes, desc=f"Episode", ncols=160) as pbar:
         for ep in pbar:
-            num_training_steps = (
-                len(train_dataloader) / batch_size
-            ) * num_training_epochs
+            if args.local_rank >= 0:
+                torch.distributed.init_process_group('nccl')
+                torch.distributed.barrier()
+
+            # -------- Data --------
+            train_dataloader = build_dataloader(train_dataset,
+                                                batch_size=batch_size,
+                                                collate_fn=Model.collate_fn,
+                                                shuffle=True,
+                                                local_rank=args.local_rank)
+            val_dataloader = build_dataloader(val_dataset,
+                                            batch_size=batch_size,
+                                            collate_fn=Model.collate_fn,
+                                            shuffle=False,
+                                            local_rank=args.local_rank)
+
+
+            num_training_steps = (len(train_dataloader) /
+                                  batch_size) * num_training_epochs
             model = Model.build_model(args, num_training_steps)
             if os.path.exists(best_model_file):
                 print(
@@ -74,16 +95,19 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                     )
                     model.load_weights(last_model_file)
 
-            evaluator = Evaluator(
-                model,
-                val_dataloader,
-                task_labels=args.task_labels,
-                best_f1=last_best_f1,
-                min_best=args.min_best,
-                threshold=args.extract_threshold,
-                debug=args.debug,
-            )
-            callbacks = [evaluator]
+            callbacks = []
+
+            if args.local_rank in [-1, 0]:
+                evaluator = Evaluator(
+                    model,
+                    val_dataloader,
+                    task_labels=args.task_labels,
+                    best_f1=last_best_f1,
+                    min_best=args.min_best,
+                    threshold=args.extract_threshold,
+                    debug=args.debug,
+                )
+                callbacks.append(evaluator)
 
             if earlystopping_patience >= 0:
                 early_stopping = EarlyStopping(
@@ -94,6 +118,9 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                 )
                 callbacks.append(early_stopping)
 
+            dist_training_epoch = DistributedTrainingEpoch(local_rank=args.local_rank, dist_sampler=train_dataloader.sampler)
+            callbacks.append(dist_training_epoch)
+
             model.fit(
                 train_dataloader,
                 epochs=num_training_epochs,
@@ -103,13 +130,19 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
 
             torch.cuda.empty_cache()
             model = None
-            if evaluator.best_f1 > last_best_f1:
-                last_best_f1 = evaluator.best_f1
-            else:
-                print(
-                    f"Episode best f1: {evaluator.best_f1:.5f} is not larger than last_best_f1: {last_best_f1:.5f}. Done."
-                )
-                break
+
+            if args.local_rank >= 0:
+                torch.distributed.barrier()
+                torch.distributed.destroy_process_group()
+
+            if args.local_rank in [-1, 0]:
+                if evaluator.best_f1 > last_best_f1:
+                    last_best_f1 = evaluator.best_f1
+                else:
+                    print(
+                        f"Episode best f1: {evaluator.best_f1:.5f} is not larger than last_best_f1: {last_best_f1:.5f}. Done."
+                    )
+                    break
 
             pbar.set_postfix({"best_f1": f"{last_best_f1:.5f}"})
             pbar.update(1)
@@ -117,27 +150,31 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
             args.learning_rate /= 2
 
 
-
-
 def run_evaluating(args, Model, Evaluator, val_dataset):
-    print("args.debug:", args.debug)
+    device = get_device(local_rank=args.local_rank)
 
-    val_dataloader = DataLoader(
-        val_dataset, collate_fn=Model.collate_fn, batch_size=args.batch_size
-    )
+    val_dataloader = build_dataloader(val_dataset,
+                                      batch_size=args.batch_size,
+                                      collate_fn=Model.collate_fn,
+                                      shuffle=False,
+                                      local_rank=args.local_rank)
 
     model = Model.build_model(args)
 
-    best_model_file = "best_model.pt"  # args.best_model_file
+    best_model_file = args.best_model_file
     model.load_weights(best_model_file)
 
-    eval_result = Evaluator.evaluate(
-        model, val_dataloader, args.task_labels, threshold=args.extract_threshold, debug=args.debug
-    )
+    eval_result = Evaluator.evaluate(model,
+                                     val_dataloader,
+                                     args.task_labels,
+                                     threshold=args.extract_threshold,
+                                     debug=args.debug)
     print(f"eval_result: {eval_result}")
 
 
-def run_predicting(args, Model, Evaluator, test_data, task_model_file, tokenizer):
+def run_predicting(args, Model, Evaluator, test_data, task_model_file,
+                   tokenizer):
+    device = get_device(local_rank=args.local_rank)
 
     final_results = []
     X0, Y0, Z0 = 0, 0, 0
@@ -149,13 +186,16 @@ def run_predicting(args, Model, Evaluator, test_data, task_model_file, tokenizer
     for d in tqdm(test_data, desc="predict"):
         idx, full_text, true_tags = d.idx, d.text, d.tags
 
-        full_tags = Model.predict_text(
-            args, model, full_text, tokenizer, repeat=args.repeat, threshold=args.extract_threshold
-        )
+        full_tags = Model.predict_text(args,
+                                       model,
+                                       full_text,
+                                       tokenizer,
+                                       repeat=args.repeat,
+                                       threshold=args.extract_threshold)
         # print("full_tags:", full_tags)
 
         if False:
-        # if true_tags:
+            # if true_tags:
             #  print(f"full_text: {full_text}")
             #  print(f"full_tags: {full_tags}")
             #  print(f"true_tags: {true_tags}")

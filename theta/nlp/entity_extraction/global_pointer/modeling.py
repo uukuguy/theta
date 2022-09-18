@@ -22,7 +22,7 @@ except:
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
-from ...bert4torch.models import build_transformer_model, BaseModel
+from ...bert4torch.models import build_transformer_model, BaseModel, BaseModelDDP
 from ...bert4torch.losses import MultilabelCategoricalCrossentropy
 from ...bert4torch.optimizers import get_linear_schedule_with_warmup
 from ...bert4torch.utils import sequence_padding, Callback
@@ -96,6 +96,15 @@ class Model(BaseModel):
         heads = len(entity_labels)
         head_size = 64
         model = Model(bert_model_path, heads=heads, head_size=head_size).to(device)
+        # 指定DDP模型使用多GPU，master_rank为指定用于打印训练过程的local_rank
+        if args.local_rank >= 0:
+            model = BaseModelDDP(
+                model,
+                master_rank=0,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank,
+                find_unused_parameters=False,
+            )
 
         if learning_rate > 0:
             optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -232,10 +241,14 @@ class Evaluator(Callback):
         eval_result = self.do_evaluate()
         f1, precision, recall = eval_result["all"]
         if f1 > self.best_f1:
+            print(f"Best f1: {f1:.5f}/{self.best_f1:.5f}")
             self.best_f1 = f1
             self.model.save_weights("best_model.pt")
             if f1 > self.min_best:
-                self.model.save_weights(f"best_model_{self.best_f1:.5f}.pt")
+                best_checkpoint_file = f"best_checkpoint_epoch_{epoch}_f1_{self.best_f1:.5f}.pt"
+                self.model.save_weights(best_checkpoint_file)
+                print(f"Saved best model file in {best_checkpoint_file}")
+
         print(
             f"[val] f1: {f1:.5f}, p: {precision:.5f} r: {recall:.5f} best_f1: {self.best_f1:.5f}"
         )

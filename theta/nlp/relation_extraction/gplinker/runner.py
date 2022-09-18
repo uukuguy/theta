@@ -19,8 +19,8 @@ except:
     pass
 
 from ...bert4torch.utils import seed_everything, EarlyStopping 
+from ..utils import check_tags
 from .modeling import Model, Evaluator
-from .utils import check_tags
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 

@@ -9,7 +9,8 @@ import torch
 from torch.utils.data import DataLoader
 
 
-from ..bert4torch.utils import seed_everything, EarlyStopping, sequence_padding
+from ...utils import get_device, build_dataloader
+from ..bert4torch.utils import seed_everything, EarlyStopping, Callback
 from .tagging import TaskLabels, TaskTag, TaggedData
 from .dataset import encode_text, encode_sentences
 from .modeling import build_model, Model, Evaluator, evaluate
@@ -21,9 +22,18 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # -------- run_training() --------
 
+class DistributedTrainingEpoch(Callback):
+    def __init__(self, local_rank, dist_sampler=None):
+        self.local_rank = local_rank
+        self.dist_sampler=dist_sampler
+    
+    def on_epoch_begin(self, global_step, epoch, logs=None):
+        if self.local_rank >= 0:
+            self.dist_sampler.set_epoch(epoch)
 
 def run_training(args, train_dataset, val_dataset):
     seed_everything(args.seed)
+    device = get_device(local_rank=args.local_rank)
 
     num_training_epochs = args.num_training_epochs
     max_training_episodes = args.max_training_episodes
@@ -32,27 +42,40 @@ def run_training(args, train_dataset, val_dataset):
     earlystopping_monitor = args.earlystopping_monitor
     earlystopping_patience = args.earlystopping_patience
     earlystopping_mode = args.earlystopping_mode
-    best_model_file = "best_model.pt"  # args.best_model_file
-
-    # -------- Data --------
-    train_dataloader = DataLoader(
-        train_dataset, shuffle=True, collate_fn=Model.collate_fn, batch_size=batch_size
-    )
-    val_dataloader = DataLoader(
-        val_dataset, collate_fn=Model.collate_fn, batch_size=batch_size
-    )
+    best_model_file = args.best_model_file
 
     last_best_acc = 0.0
 
     if os.path.exists(best_model_file):
         os.remove(best_model_file)
 
+    if args.local_rank >= 0:
+        max_training_episodes = 1
     with trange(max_training_episodes, desc=f"Episode", ncols=160) as pbar:
         for ep in pbar:
+            if args.local_rank >= 0:
+                torch.distributed.init_process_group('nccl')
+                torch.distributed.barrier()
+
+            # -------- Data --------
+            train_dataloader = build_dataloader(train_dataset,
+                                                batch_size=batch_size,
+                                                collate_fn=Model.collate_fn,
+                                                shuffle=True,
+                                                local_rank=args.local_rank)
+            val_dataloader = build_dataloader(val_dataset,
+                                            batch_size=batch_size,
+                                            collate_fn=Model.collate_fn,
+                                            shuffle=False,
+                                            local_rank=args.local_rank)
+
+
             num_training_steps = (
                 len(train_dataloader) / batch_size
             ) * num_training_epochs
             model = build_model(args, num_training_steps)
+
+
             if os.path.exists(best_model_file):
                 print(
                     f"Load model weights from best_model_file {os.path.realpath(best_model_file)}"
@@ -66,15 +89,18 @@ def run_training(args, train_dataset, val_dataset):
                     )
                     model.load_weights(last_model_file)
 
-            evaluator = Evaluator(
-                model,
-                val_dataloader,
-                task_labels=args.task_labels,
-                best_acc=last_best_acc,
-                min_best=args.min_best,
-                threshold=args.extract_threshold,
-            )
-            callbacks = [evaluator]
+            callbacks = []
+
+            if args.local_rank in [-1, 0]:
+                evaluator = Evaluator(
+                    model,
+                    val_dataloader,
+                    task_labels=args.task_labels,
+                    best_acc=last_best_acc,
+                    min_best=args.min_best,
+                    threshold=args.extract_threshold,
+                )
+                callbacks.append(evaluator)
 
             if earlystopping_patience >= 0:
                 early_stopping = EarlyStopping(
@@ -85,6 +111,9 @@ def run_training(args, train_dataset, val_dataset):
                 )
                 callbacks.append(early_stopping)
 
+            dist_training_epoch = DistributedTrainingEpoch(local_rank=args.local_rank, dist_sampler=train_dataloader.sampler)
+            callbacks.append(dist_training_epoch)
+
             model.fit(
                 train_dataloader,
                 epochs=num_training_epochs,
@@ -93,7 +122,11 @@ def run_training(args, train_dataset, val_dataset):
             )
 
             torch.cuda.empty_cache()
+            if args.local_rank >= 0:
+                torch.distributed.barrier()
+                torch.distributed.destroy_process_group()
             model = None
+
             if evaluator.best_acc > last_best_acc:
                 last_best_acc = evaluator.best_acc
             else:
@@ -106,11 +139,16 @@ def run_training(args, train_dataset, val_dataset):
             pbar.update()
 
 
-def run_evaluating(args, val_dataset):
 
-    val_dataloader = DataLoader(
-        val_dataset, collate_fn=Model.collate_fn, batch_size=args.batch_size
-    )
+
+def run_evaluating(args, val_dataset):
+    device = get_device(local_rank=args.local_rank)
+
+    val_dataloader = build_dataloader(val_dataset,
+                                      batch_size=args.batch_size,
+                                      collate_fn=Model.collate_fn,
+                                      shuffle=False,
+                                      local_rank=args.local_rank)
 
     model = build_model(args)
 
@@ -124,6 +162,7 @@ def run_evaluating(args, val_dataset):
 
 
 def run_predicting(args, test_data, best_model_file, tokenizer):
+    device = get_device(local_rank=args.local_rank)
 
     final_results = []
     X0, Y0, Z0 = 0, 0, 0
