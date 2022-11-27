@@ -27,11 +27,53 @@ script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
 # -------- run_training() --------
 
+class BestLossCheckpoint(EarlyStopping):
+    def __init__(self, model, patience=5):
+        super(BestLossCheckpoint, self).__init__(monitor='loss')
+        self.model = model
+        self.patience = patience
+        self.best_loss = float("inf")
+        self._seen_so_far = 0
+        self._values = None
+        self.wait = 0
+        self.stopped_epoch = 0
+
+    def on_batch_end(self, global_step, batch, logs=None):
+        batch_loss = logs['loss']
+        steps = global_step - self._seen_so_far
+        if self._values is None:
+            self._values = [batch_loss * steps, steps]
+        else:
+            self._values[0] += batch_loss * steps
+            self._values[1] += steps
+        self.seen_so_far = global_step
+
+    def on_epoch_end(self, steps, epoch, logs=None):
+        if self._values is not None:
+            loss = self._values[0] / self._values[1]
+            if loss < self.best_loss:
+                print(f"Best loss: {loss:.5f}/{self.best_loss:.5f}")
+                self.best_loss = loss
+                logs.update({"best_loss": self.best_loss})
+                self.model.save_weights("best_model.pt")
+                self.wait = 0
+            else:
+                self.wait += 1
+                if self.wait >= self.patience:
+                    self.stopped_epoch = epoch
+
+        self._seen_so_far = steps
+        self._values = None
+
+    def on_train_end(self, logs=None):
+        if self.stopped_epoch > 0: 
+            print(f'Epoch {self.stopped_epoch+1}: early stopping\n')
+
 class DistributedTrainingEpoch(Callback):
     def __init__(self, local_rank, dist_sampler=None):
         self.local_rank = local_rank
         self.dist_sampler=dist_sampler
-    
+
     def on_epoch_begin(self, global_step, epoch, logs=None):
         if self.local_rank >= 0:
             self.dist_sampler.set_epoch(epoch)
@@ -66,17 +108,11 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                 torch.distributed.init_process_group('nccl')
                 torch.distributed.barrier()
 
-            # -------- Data --------
             train_dataloader = build_dataloader(train_dataset,
                                                 batch_size=batch_size,
                                                 collate_fn=Model.collate_fn,
                                                 shuffle=True,
                                                 local_rank=args.local_rank)
-            val_dataloader = build_dataloader(val_dataset,
-                                            batch_size=batch_size,
-                                            collate_fn=Model.collate_fn,
-                                            shuffle=False,
-                                            local_rank=args.local_rank)
 
 
             num_training_steps = (len(train_dataloader) /
@@ -97,26 +133,36 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
 
             callbacks = []
 
-            if args.local_rank in [-1, 0]:
-                evaluator = Evaluator(
-                    model,
-                    val_dataloader,
-                    task_labels=args.task_labels,
-                    best_f1=last_best_f1,
-                    min_best=args.min_best,
-                    threshold=args.extract_threshold,
-                    debug=args.debug,
-                )
-                callbacks.append(evaluator)
+            if args.eval_on_training:
+                val_dataloader = build_dataloader(val_dataset,
+                                                batch_size=batch_size,
+                                                collate_fn=Model.collate_fn,
+                                                shuffle=False,
+                                                local_rank=args.local_rank)
+                if args.local_rank in [-1, 0]:
+                    evaluator = Evaluator(
+                        model,
+                        val_dataloader,
+                        task_labels=args.task_labels,
+                        best_f1=last_best_f1,
+                        min_best=args.min_best,
+                        threshold=args.extract_threshold,
+                        debug=args.debug,
+                    )
+                    callbacks.append(evaluator)
 
             if earlystopping_patience >= 0:
-                early_stopping = EarlyStopping(
-                    monitor=earlystopping_monitor,
-                    patience=earlystopping_patience,
-                    verbose=0,
-                    mode=earlystopping_mode,
-                )
-                callbacks.append(early_stopping)
+                if args.eval_on_training:
+                    early_stopping = EarlyStopping(
+                        monitor=earlystopping_monitor,
+                        patience=earlystopping_patience,
+                        verbose=0,
+                        mode=earlystopping_mode,
+                    )
+                    callbacks.append(early_stopping)
+                else:
+                    best_loss_checkpoint = BestLossCheckpoint(model, patience=args.earlystopping_patience)
+                    callbacks.append(best_loss_checkpoint)
 
             dist_training_epoch = DistributedTrainingEpoch(local_rank=args.local_rank, dist_sampler=train_dataloader.sampler)
             callbacks.append(dist_training_epoch)
@@ -136,13 +182,14 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                 torch.distributed.destroy_process_group()
 
             if args.local_rank in [-1, 0]:
-                if evaluator.best_f1 > last_best_f1:
-                    last_best_f1 = evaluator.best_f1
-                else:
-                    print(
-                        f"Episode best f1: {evaluator.best_f1:.5f} is not larger than last_best_f1: {last_best_f1:.5f}. Done."
-                    )
-                    break
+                if args.eval_on_training:
+                    if evaluator.best_f1 > last_best_f1:
+                        last_best_f1 = evaluator.best_f1
+                    else:
+                        print(
+                            f"Episode best f1: {evaluator.best_f1:.5f} is not larger than last_best_f1: {last_best_f1:.5f}. Done."
+                        )
+                        break
 
             pbar.set_postfix({"best_f1": f"{last_best_f1:.5f}"})
             pbar.update(1)

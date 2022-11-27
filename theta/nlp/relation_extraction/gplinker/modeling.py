@@ -29,7 +29,7 @@ from ...bert4torch.layers import EfficientGlobalPointer as GlobalPointer
 from ...bert4torch.utils import sequence_padding, Callback
 from ...bert4torch.optimizers import get_linear_schedule_with_warmup
 from ...bert4torch.losses import (
-    MultilabelCategoricalCrossentropy,
+    # MultilabelCategoricalCrossentropy,
     SparseMultilabelCategoricalCrossentropy,
 )
 from ...bert4torch.models import build_transformer_model, BaseModel, BaseModelDDP
@@ -94,7 +94,8 @@ class Model(BaseModel):
         head_output = self.head_output(hidden_states, mask)
         # [btz, heads, seq_len, seq_len]
         tail_output = self.tail_output(hidden_states, mask)
-        return entity_output, head_output, tail_output
+
+        return entity_output, head_output, tail_output 
 
     @staticmethod
     def collate_fn(batch):
@@ -105,7 +106,7 @@ class Model(BaseModel):
             _,
             _,
             (token_ids, segment_ids),
-            (entity_labels, head_labels, tail_labels),
+            (entity_labels, head_labels, tail_labels)
         ) in batch:
             batch_token_ids.append(token_ids)
             batch_segment_ids.append(segment_ids)
@@ -192,7 +193,7 @@ class Model(BaseModel):
             scheduler = None
 
         # model.compile(loss=MyLoss(), optimizer=optimizer, scheduler=scheduler, adversarial_train={'name': 'fgm'})
-        model.compile(loss=MyLoss(), optimizer=optimizer, scheduler=scheduler)
+        model.compile(loss=MyLoss(neg_weight=0.6), optimizer=optimizer, scheduler=scheduler)
 
         return model
 
@@ -213,7 +214,7 @@ class Model(BaseModel):
         (
             (tokens, mapping),
             (token_ids, segment_ids),
-            (entity_labels, head_labels, tail_labels),
+            (entity_labels, head_labels, tail_labels)
         ) = encode_text(text, tags, args.task_labels, args.max_length, tokenizer)
 
         token_ids = torch.tensor([token_ids], dtype=torch.long, device=device)
@@ -224,6 +225,7 @@ class Model(BaseModel):
         entity_logits_list = []
         head_logits_list = []
         tail_logits_list = []
+
         for _ in range(repeat):
             # scores = model.predict(batch_token_ids)
             entity_logit, head_logit, tail_logit = model.predict([token_ids, segment_ids])
@@ -275,9 +277,34 @@ class Model(BaseModel):
         return tags
 
 
-class MyLoss(MultilabelCategoricalCrossentropy):
-    def __init__(self, **kwargs):
+class MultilabelCategoricalCrossentropy(torch.nn.Module):
+    """多标签分类的交叉熵
+    说明：y_true和y_pred的shape一致，y_true的元素非0即1， 1表示对应的类为目标类，0表示对应的类为非目标类。
+    警告：请保证y_pred的值域是全体实数，换言之一般情况下y_pred不用加激活函数，尤其是不能加sigmoid或者softmax！预测
+         阶段则输出y_pred大于0的类。如有疑问，请仔细阅读并理解本文。
+    参考：https://kexue.fm/archives/7359
+    """
+    def __init__(self, neg_weight, **kwargs):
+        self.neg_weight = neg_weight
         super().__init__(**kwargs)
+    def forward(self, y_pred, y_true):
+        """ y_true ([Tensor]): [..., num_classes]
+            y_pred ([Tensor]): [..., num_classes]
+        """
+        y_pred = (1-2*y_true) * y_pred
+        y_pred_pos = y_pred - (1-y_true) * 1e12
+        y_pred_neg = y_pred - y_true * 1e12
+
+        y_pred_pos = torch.cat([y_pred_pos, torch.zeros_like(y_pred_pos[..., :1])], dim=-1)
+        y_pred_neg = torch.cat([y_pred_neg, torch.zeros_like(y_pred_neg[..., :1])], dim=-1)
+        pos_loss = torch.logsumexp(y_pred_pos, dim=-1)
+        neg_loss = torch.logsumexp(y_pred_neg, dim=-1)
+        return (pos_loss + neg_loss).mean()
+        # return ((pos_loss * (1-self.neg_weight) + neg_loss * self.neg_weight) * 2).mean()
+
+class MyLoss(MultilabelCategoricalCrossentropy):
+    def __init__(self, neg_weight, **kwargs):
+        super().__init__(neg_weight=neg_weight, **kwargs)
 
     def forward(self, y_preds, y_trues):
         """y_preds: [Tensor], shape为[btz, heads, seq_len ,seq_len]"""
@@ -310,12 +337,31 @@ class MyLoss(MultilabelCategoricalCrossentropy):
             #  print("loss.shape:", loss.shape, "loss", loss)
             #  loss = torch.mean(torch.sum(loss, dim=1))
             loss_list.append(loss)
+
+        # assert len(loss_list) == 3
+        # entity_loss, head_loss, tail_loss = loss_list
+        # # loss = sum(loss_list) / 3
+        # # loss = (entity_loss * 0.5 + head_loss * 0.25 + tail_loss * 0.25)
+        # loss = (entity_loss * 0.6 + head_loss * 0.2 + tail_loss * 0.2)
+
+        assert len(loss_list) == 3
+        entity_loss, head_loss, tail_loss = loss_list
+        loss = sum(loss_list) / 3 
+        # loss = (entity_loss * 0.5 + head_loss * 0.25 + tail_loss * 0.25)
+        # loss = (entity_loss * 0.6 + head_loss * 0.2 + tail_loss * 0.2)
+
         return {
-            "loss": sum(loss_list) / 3,
-            "entity_loss": loss_list[0],
-            "head_loss": loss_list[1],
-            "tail_loss": loss_list[2],
+            "loss": loss,
+            "entity_loss": entity_loss,
+            "head_loss": head_loss,
+            "tail_loss": tail_loss
         }
+        # return {
+        #     "loss": sum(loss_list) / 3,
+        #     "entity_loss": loss_list[0],
+        #     "head_loss": loss_list[1],
+        #     "tail_loss": loss_list[2],
+        # }
 
 
 class MyLoss_Sparse(SparseMultilabelCategoricalCrossentropy):
@@ -359,6 +405,7 @@ def extract_spoes(text, mapping, outputs, relations_id2label, threshold=0):
     subjects, objects = set(), set()
     outputs[0][:, [0, -1]] -= float("inf")
     outputs[0][:, :, [0, -1]] -= float("inf")
+    # for l, h, t in zip(*np.where(outputs[0] > threshold / 2 if threshold < 0 else threshold * 2)):
     for l, h, t in zip(*np.where(outputs[0] > threshold)):
         if l == 0:
             subjects.add((h, t))
@@ -383,11 +430,14 @@ def extract_spoes(text, mapping, outputs, relations_id2label, threshold=0):
             #      continue
             p1s = np.where(outputs[1][:, sh, oh] > threshold)[0]
             p2s = np.where(outputs[2][:, st, ot] > threshold)[0]
+
             #  if len(p1s) > 0 or len(p2s) > 0:
             #      print(
             #          f"s_m: {s_m}, o_m: {o_m}, head_labels: {outputs[1][:, sh, oh]}, tail_labels: {outputs[2][:, st, ot]}"
             #      )
+
             ps = set(p1s) & set(p2s)
+
             for p in ps:
                 s, p, o = (
                     text[mapping[sh][0] : mapping[st][-1] + 1],
@@ -424,8 +474,6 @@ class SPO(tuple):
 
     def __eq__(self, spo):
         return self.spox == spo.spox
-
-
 
 class Evaluator(Callback):
     """评估与保存"""

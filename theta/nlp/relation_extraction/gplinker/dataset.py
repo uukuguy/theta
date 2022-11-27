@@ -115,6 +115,7 @@ def encode_text(text, tags, task_labels, max_length, tokenizer):
     entity_labels = [set() for _ in range(2)]
     head_labels = [set() for _ in range(len(relations_label2id))]
     tail_labels = [set() for _ in range(len(relations_label2id))]
+
     for sh, st, p, oh, ot in spoes:
         entity_labels[0].add((sh, st))
         entity_labels[1].add((oh, ot))
