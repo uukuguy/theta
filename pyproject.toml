@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "theta"
+version = "0.52.0"
+description = "NLP framework"
+authors = ["Jiangwen Su <531045572@qq.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+torch4keras = "^0.0.4"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
