@@ -17,7 +17,7 @@ from torchinfo import summary
 maxlen = 256
 batch_size = 16
 config_path = 'F:/Projects/pretrain_ckpt/robert/[hit_torch_base]--chinese-roberta-wwm-ext-base/config.json'
-checkpoint_path = 'F:/Projects/pretrain_ckpt/robert/[hit_torch_base]--chinese-roberta-wwm-ext-base/pytorch_model.bin'
+checkpoint_path = 'F:/Projects/pretrain_ckpt/robert/[hit_torch_base]--chinese-roberta-wwm-ext-base/bert4torch_pytorch_model.bin'
 dict_path = 'F:/Projects/pretrain_ckpt/robert/[hit_torch_base]--chinese-roberta-wwm-ext-base/vocab.txt'
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 choice = 'finetune_all'  # finetune_all finetune_few
@@ -139,7 +139,7 @@ if choice == 'finetune_few':
     summary(model, input_data=next(iter(train_dataloader))[0])
 elif choice == 'finetune_all':
     # 全部权重一起训练
-    model = build_transformer_model(config_path=config_path, checkpoint_path=checkpoint_path, with_mlm=True).to(device)
+    model = build_transformer_model(config_path=config_path, checkpoint_path=checkpoint_path, with_mlm=True, dynamic_inherit=True).to(device)
     summary(model, input_data=[next(iter(train_dataloader))[0]])
 
 # 定义使用的loss和optimizer，这里支持自定义

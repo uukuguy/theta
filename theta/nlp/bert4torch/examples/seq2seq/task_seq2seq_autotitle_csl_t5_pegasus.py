@@ -6,7 +6,7 @@
 import json, os
 from bert4torch.models import build_transformer_model
 from bert4torch.tokenizers import Tokenizer, load_vocab
-from bert4torch.snippets import sequence_padding, text_segmentate
+from bert4torch.snippets import sequence_padding, seed_everything
 from bert4torch.snippets import AutoRegressiveDecoder, Callback, ListDataset
 from tqdm import tqdm
 import torch
@@ -21,9 +21,9 @@ jieba.initialize()
 # 基本参数
 max_c_len = 256
 max_t_len = 32
-batch_size = 8
-epochs = 40
-
+batch_size = 16
+epochs = 50
+steps_per_epoch = None
 
 # bert配置
 pretrain_model = 'F:/Projects/pretrain_ckpt/t5/[sushen_t5_pegasus_torch_base]--chinese_t5_pegasus_base/'
@@ -31,6 +31,7 @@ config_path = pretrain_model + 'config.json'
 checkpoint_path = pretrain_model + 'pytorch_model.bin'
 dict_path = pretrain_model + 'vocab.txt'
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+seed_everything(42)
 
 class MyDataset(ListDataset):
     @staticmethod
@@ -45,7 +46,6 @@ class MyDataset(ListDataset):
                 title, content = l['title'], l['abst']
                 D.append((title, content))
         return D
-
 
 tokenizer = Tokenizer(
     dict_path,
@@ -62,7 +62,7 @@ def collate_fn(batch):
         batch_content_ids.append(token_ids)
 
         token_ids, _ = tokenizer.encode(title, maxlen=max_t_len)
-        batch_titile_ids.append([0] + token_ids)
+        batch_titile_ids.append(token_ids)
 
     batch_content_ids = torch.tensor(sequence_padding(batch_content_ids), dtype=torch.long, device=device)
     batch_titile_ids = torch.tensor(sequence_padding(batch_titile_ids), dtype=torch.long, device=device)
@@ -71,15 +71,14 @@ def collate_fn(batch):
 train_dataloader = DataLoader(MyDataset('F:/Projects/data/corpus/seq2seq/summary/csl_title_public/csl_title_train.json'), 
                    batch_size=batch_size, shuffle=True, collate_fn=collate_fn) 
 valid_dataset = MyDataset('F:/Projects/data/corpus/seq2seq/summary/csl_title_public/csl_title_dev.json')
+test_dataset = MyDataset('F:/Projects/data/corpus/seq2seq/summary/csl_title_public/csl_title_test.json')
 
 model = build_transformer_model(
     config_path,
     checkpoint_path,
     model='mt5.1.1',
     segment_vocab_size=0,
-    attention_scale=False,
-    is_dropout=True,
-    tie_emb_prj_weight=False,  # 独立权重
+    dynamic_inherit=True
 ).to(device)
 
 class CrossEntropyLoss(nn.CrossEntropyLoss):
@@ -89,7 +88,7 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
         _, _, y_pred = outputs
         y_pred = y_pred.reshape(-1, y_pred.shape[-1])
         return super().forward(y_pred, y_true)
-model.compile(loss=CrossEntropyLoss(ignore_index=0), optimizer=optim.Adam(model.parameters(), 2e-4))
+model.compile(loss=CrossEntropyLoss(ignore_index=0), optimizer=optim.Adam(model.parameters(), 1e-4))
 
 class AutoTitle(AutoRegressiveDecoder):
     """seq2seq解码器
@@ -106,7 +105,7 @@ class AutoTitle(AutoRegressiveDecoder):
         output_ids = self.beam_search(encoder_output, topk=topk)  # 基于beam search
         return tokenizer.decode([int(i) for i in output_ids.cpu().numpy()])
 
-autotitle = AutoTitle(start_id=0, end_id=tokenizer._token_end_id, maxlen=max_t_len, device=device)
+autotitle = AutoTitle(start_id=tokenizer._token_start_id, end_id=tokenizer._token_end_id, maxlen=max_t_len, device=device)
 
 class Evaluator(Callback):
     """评估与保存
@@ -118,12 +117,14 @@ class Evaluator(Callback):
 
     def on_epoch_end(self, steps, epoch, logs=None):
         just_show()
-        # metrics = self.evaluate(valid_dataset)  # 评测模型
-        # if metrics['bleu'] > self.best_bleu:
-        #     self.best_bleu = metrics['bleu']
-        #     # model.save_weights('./best_model.pt')  # 保存模型
-        # metrics['best_bleu'] = self.best_bleu
-        # print('valid_data:', metrics)
+        metrics = self.evaluate(valid_dataset.data)  # 评测模型
+        metrics_test = self.evaluate(test_dataset.data)  # 评测模型
+        if metrics['bleu'] > self.best_bleu:
+            self.best_bleu = metrics['bleu']
+            # model.save_weights('./best_model.pt')  # 保存模型
+        metrics['best_bleu'] = self.best_bleu
+        print('valid_data:', metrics)
+        print('test_data:', metrics_test)
     
     def evaluate(self, data, topk=1):
         total = 0
@@ -137,21 +138,10 @@ class Evaluator(Callback):
                 rouge_1 += scores[0]['rouge-1']['f']
                 rouge_2 += scores[0]['rouge-2']['f']
                 rouge_l += scores[0]['rouge-l']['f']
-                bleu += sentence_bleu(
-                    references=[title.split(' ')],
-                    hypothesis=pred_title.split(' '),
-                    smoothing_function=self.smooth
-                )
-        rouge_1 /= total
-        rouge_2 /= total
-        rouge_l /= total
-        bleu /= total
-        return {
-            'rouge-1': rouge_1,
-            'rouge-2': rouge_2,
-            'rouge-l': rouge_l,
-            'bleu': bleu,
-        }
+                bleu += sentence_bleu(references=[title.split(' ')], hypothesis=pred_title.split(' '),
+                                      smoothing_function=self.smooth)
+        rouge_1, rouge_2, rouge_l, bleu = rouge_1/total, rouge_2/total, rouge_l/total, bleu/total
+        return {'rouge-1': rouge_1, 'rouge-2': rouge_2, 'rouge-l': rouge_l, 'bleu': bleu}
 
 
 def just_show():
@@ -162,10 +152,10 @@ def just_show():
 
 if __name__ == '__main__':
     evaluator = Evaluator()
-
+    print(u'生成标题:', autotitle.generate(u'今天天气不错啊'))
     model.fit(
         train_dataloader,
-        steps_per_epoch=100,
+        steps_per_epoch=steps_per_epoch,
         epochs=epochs,
         callbacks=[evaluator]
     )

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from bert4torch.models import build_transformer_model, BaseModel
 from torch.utils.data import DataLoader
-from bert4torch.snippets import sequence_padding, ListDataset, Callback, EarlyStopping
+from bert4torch.snippets import sequence_padding, ListDataset, Callback, EarlyStopping, AdversarialTraining
 from bert4torch.tokenizers import Tokenizer
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
@@ -173,9 +173,11 @@ def do_train(df_train):
         valid_dataloader = DataLoader(ListDataset(data=valid_data), batch_size=batch_size, collate_fn=collate_fn) 
 
         model = Model().to(device)
-        model.compile(loss=nn.CrossEntropyLoss(), optimizer=optim.Adam(model.parameters(), lr=lr), adversarial_train={'name': 'fgm'})
+        model.compile(loss=nn.CrossEntropyLoss(), optimizer=optim.Adam(model.parameters(), lr=lr), 
+                      grad_accumulation_steps=grad_accum_steps)
 
         callbacks = [
+            AdversarialTraining('fgm'),
             Evaluator(model, valid_dataloader, fold),
             EarlyStopping(monitor='val_f1', patience=5, verbose=1, mode='max'), # 需要在Evaluator后面
         ]
@@ -183,7 +185,6 @@ def do_train(df_train):
             train_dataloader,
             steps_per_epoch=None,
             epochs=epochs,
-            grad_accumulation_steps=grad_accum_steps,
             callbacks=callbacks
         )
 

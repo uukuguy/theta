@@ -1,3 +1,4 @@
+# tensorflow权重链接：https://github.com/ZhuiyiTechnology/GAU-alpha
 # 这里直接映射到GAU_alpha的结构上了，因此不需要mapping
 import torch
 import tensorflow as tf
@@ -26,3 +27,20 @@ for i in range(24):
     torch_state_dict[f'encoderLayer.{i}.gau.offsetscale.gamma'] = ts
 
 torch.save(torch_state_dict, 'F:/Projects/pretrain_ckpt/gau/[sushen-torch]--chinese_GAU-alpha-char_L-24_H-768/pytorch_model.bin')
+
+
+# config文件
+'''
+{
+  "hidden_act": "swish",
+  "hidden_size": 768,
+  "hidden_dropout_prob": 0.1,
+  "attention_probs_dropout_prob": 0.1,
+  "num_attention_heads": 1,
+  "attention_key_size": 128,
+  "intermediate_size": 1536,
+  "num_hidden_layers": 24,
+  "type_vocab_size": 2,
+  "vocab_size": 12000
+}
+'''

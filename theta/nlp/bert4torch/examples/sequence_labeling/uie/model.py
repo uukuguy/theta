@@ -1,13 +1,8 @@
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 import torch.nn as nn
-import torch.optim as optim
-from bert4torch.snippets import sequence_padding, Callback, ListDataset, seed_everything
-from bert4torch.losses import FocalLoss
 from bert4torch.tokenizers import Tokenizer
-from bert4torch.models import build_transformer_model, BaseModel, BERT
-from tqdm import tqdm
+from bert4torch.models import build_transformer_model, BERT
 
 
 config_path = 'F:/Projects/pretrain_ckpt/uie/uie_base_pytorch/config.json'
@@ -55,4 +50,12 @@ class UIE(BERT):
         start_prob, end_prob = self.forward(token_ids, token_type_ids)
         return start_prob, end_prob
 
-uie_model = build_transformer_model(config_path=config_path, checkpoint_path=checkpoint_path, model=UIE, with_pool=True)
+custom_model = False
+if custom_model:
+    # 使用外部自定义的模型
+    uie_model = build_transformer_model(config_path=config_path, checkpoint_path=checkpoint_path, model=UIE, with_pool=True)
+    print('Load custom uie model done')
+else:
+    # 使用bert4torch自带的uie
+    uie_model = build_transformer_model(config_path=config_path, checkpoint_path=checkpoint_path, model='uie', with_pool=True, dynamic_inherit=True)
+    print('Load inner uie model done')

@@ -1,4 +1,5 @@
 # coding=utf-8
+
 """Tokenization classes."""
 
 from __future__ import absolute_import, division, print_function, unicode_literals
@@ -7,14 +8,14 @@ import collections
 import logging
 import unicodedata
 from io import open
-from .utils import truncate_sequences, is_string, lowercase_and_normalize
+from bert4torch.snippets import truncate_sequences, is_string, lowercase_and_normalize
 import re
 import six
 from collections import OrderedDict
 
+
 logger = logging.getLogger(__name__)
 is_py2 = six.PY2
-
 
 def load_vocab(dict_path, encoding="utf-8", simplified=False, startswith=None):
     """加载词典文件到dict"""
@@ -58,18 +59,8 @@ def whitespace_tokenize(text):
 class TokenizerBase(object):
     """分词器基类
     """
-
-    def __init__(
-        self,
-        token_start='[CLS]',
-        token_end='[SEP]',
-        token_unk='[UNK]',
-        token_pad='[PAD]',
-        token_mask='[MASK]',
-        add_special_tokens=None,
-        pre_tokenize=None,
-        token_translate=None
-    ):
+    def __init__(self, token_start='[CLS]', token_end='[SEP]', token_unk='[UNK]', token_pad='[PAD]', token_mask='[MASK]', 
+                 add_special_tokens=None, pre_tokenize=None, token_translate=None):
         """参数说明：
         token_unk: 未知词标记
         token_end: 句子切分标记，当只有一句话作为输入时，此标记知识作为结束符；当有两句话作为输入时，此标记作为分隔符、最后一句话的结束符
@@ -84,7 +75,7 @@ class TokenizerBase(object):
         self._token_mask = token_mask
         self._token_start = token_start
         self._token_end = token_end
-        self.never_split = [self._token_unk, self._token_end, self._token_pad, self._token_start, self._token_mask]
+        self.never_split = [i for i in [self._token_unk, self._token_end, self._token_pad, self._token_start, self._token_mask] if isinstance(i, str)]
         if add_special_tokens is not None:
             if isinstance(add_special_tokens, (tuple, list)):
                 self.never_split.extend(add_special_tokens)
@@ -93,8 +84,7 @@ class TokenizerBase(object):
         self.tokens_trie = self._create_trie(self.never_split)  # trie树主要是为了special_tokens的分词
         self._pre_tokenize = pre_tokenize
         self._token_translate = token_translate or {}
-        self._token_translate_inv = {v: k
-                                     for k, v in self._token_translate.items()}
+        self._token_translate_inv = {v: k for k, v in self._token_translate.items()}
 
     def _create_trie(self, unique_no_split_tokens):
         trie = Trie()
@@ -127,9 +117,7 @@ class TokenizerBase(object):
         """
         return [self.token_to_id(token) for token in tokens]
 
-    def _encode(
-        self, first_text, second_text=None, maxlen=None, pattern='S*E*E', truncate_from='right', return_offsets=False
-    ):
+    def _encode(self, first_text, second_text=None, maxlen=None, pattern='S*E*E', truncate_from='right', return_offsets=False):
         """输出文本对应token id和segment id
         """
         first_tokens = self.tokenize(first_text) if is_string(first_text) else first_text
@@ -164,25 +152,17 @@ class TokenizerBase(object):
             second_segment_ids = [1] * len(second_token_ids)
             first_token_ids.extend(second_token_ids)
             first_segment_ids.extend(second_segment_ids)
-
+        
         encode_output = [first_token_ids, first_segment_ids]
         if return_offsets != False:
             offset = self.rematch(first_text, first_tokens) + self.rematch(second_text, second_tokens)
             if return_offsets == 'transformers':  # transformers包中tokenizer的形式
-                encode_output.append([[0, 0] if not k else [k[0], k[-1] + 1] for k in offset])
+                encode_output.append([[0, 0] if not k else [k[0], k[-1]+1] for k in offset])
             else:
                 encode_output.append(offset)
         return encode_output
 
-    def encode(
-        self,
-        first_texts,
-        second_texts=None,
-        maxlen=None,
-        pattern='S*E*E',
-        truncate_from='right',
-        return_offsets=False
-    ):
+    def encode(self, first_texts, second_texts=None, maxlen=None, pattern='S*E*E', truncate_from='right', return_offsets=False):
         '''可以处理多条或者单条
         '''
         return_list = False if isinstance(first_texts, str) else True
@@ -193,7 +173,7 @@ class TokenizerBase(object):
         if second_texts is None:
             second_texts = [None] * len(first_texts)
         assert len(first_texts) == len(second_texts), 'first_texts and second_texts should be same length'
-
+        
         # 循环处理每条样本
         for first_text, second_text in zip(first_texts, second_texts):
             outputs = self._encode(first_text, second_text, maxlen, pattern, truncate_from, return_offsets)
@@ -229,17 +209,11 @@ class TokenizerBase(object):
         """基本分词函数
         """
         raise NotImplementedError
-
-    def rematch(self):
-        """生成text和tokens之间的对应关系
-        """
-        pass
-
+    
 
 class Tokenizer(TokenizerBase):
     """Bert原生分词器
     """
-
     def __init__(self, token_dict, do_lower_case=True, do_basic_tokenize=True, do_tokenize_unk=False, **kwargs):
         """
         参数:
@@ -259,15 +233,12 @@ class Tokenizer(TokenizerBase):
         self._do_lower_case = do_lower_case
         self._vocab_size = len(token_dict)
         self._token_dict = token_dict
-        self._token_dict_inv = {v: k
-                                for k, v in token_dict.items()}
+        self._token_dict_inv = {v: k for k, v in token_dict.items()}
 
         self.do_basic_tokenize = do_basic_tokenize
         if do_basic_tokenize:
             self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case, never_split=self.never_split)
-        self.wordpiece_tokenizer = WordpieceTokenizer(
-            vocab=self._token_dict, unk_token=self._token_unk, do_tokenize_unk=do_tokenize_unk
-        )
+        self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self._token_dict, unk_token=self._token_unk, do_tokenize_unk=do_tokenize_unk)
 
         for token in ['pad', 'unk', 'mask', 'start', 'end']:
             try:
@@ -414,7 +385,10 @@ class Tokenizer(TokenizerBase):
         """
         if len(token) > 1:
             for ch in Tokenizer.stem(token):
-                if (Tokenizer._is_cjk_character(ch) or Tokenizer._is_punctuation(ch)):
+                if (
+                    Tokenizer._is_cjk_character(ch) or
+                    Tokenizer._is_punctuation(ch)
+                ):
                     return True
 
     def rematch(self, text, tokens):
@@ -430,7 +404,10 @@ class Tokenizer(TokenizerBase):
         for i, ch in enumerate(text):
             if self._do_lower_case:
                 ch = lowercase_and_normalize(ch, self.never_split)
-            ch = ''.join([c for c in ch if not (ord(c) == 0 or ord(c) == 0xfffd or self._is_control(c))])
+            ch = ''.join([
+                c for c in ch
+                if not (ord(c) == 0 or ord(c) == 0xfffd or self._is_control(c))
+            ])
             normalized_text += ch
             char_mapping.extend([i] * len(ch))
 
@@ -446,7 +423,6 @@ class Tokenizer(TokenizerBase):
                 offset = end
 
         return token_mapping
-
 
 class BasicTokenizer(object):
     """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""
@@ -531,12 +507,13 @@ class BasicTokenizer(object):
         # space-separated words, so they are not treated specially and handled
         # like the all of the other languages.
         if ((cp >= 0x4E00 and cp <= 0x9FFF) or  #
-            (cp >= 0x3400 and cp <= 0x4DBF) or  #
-            (cp >= 0x20000 and cp <= 0x2A6DF) or  #
-            (cp >= 0x2A700 and cp <= 0x2B73F) or  #
-            (cp >= 0x2B740 and cp <= 0x2B81F) or  #
-            (cp >= 0x2B820 and cp <= 0x2CEAF) or (cp >= 0xF900 and cp <= 0xFAFF) or  #
-            (cp >= 0x2F800 and cp <= 0x2FA1F)):  #
+                (cp >= 0x3400 and cp <= 0x4DBF) or  #
+                (cp >= 0x20000 and cp <= 0x2A6DF) or  #
+                (cp >= 0x2A700 and cp <= 0x2B73F) or  #
+                (cp >= 0x2B740 and cp <= 0x2B81F) or  #
+                (cp >= 0x2B820 and cp <= 0x2CEAF) or
+                (cp >= 0xF900 and cp <= 0xFAFF) or  #
+                (cp >= 0x2F800 and cp <= 0x2FA1F)):  #
             return True
 
         return False
@@ -648,13 +625,13 @@ def _is_punctuation(char):
     # Characters such as "^", "$", and "`" are not in the Unicode
     # Punctuation class but we treat them as punctuation anyways, for
     # consistency.
-    if ((cp >= 33 and cp <= 47) or (cp >= 58 and cp <= 64) or (cp >= 91 and cp <= 96) or (cp >= 123 and cp <= 126)):
+    if ((cp >= 33 and cp <= 47) or (cp >= 58 and cp <= 64) or
+            (cp >= 91 and cp <= 96) or (cp >= 123 and cp <= 126)):
         return True
     cat = unicodedata.category(char)
     if cat.startswith("P"):
         return True
     return False
-
 
 def convert_to_unicode(text):
     """Converts `text` to Unicode (if it's not already), assuming utf-8 input."""
@@ -669,8 +646,7 @@ def convert_to_unicode(text):
 class SpTokenizer(TokenizerBase):
     """基于SentencePiece模型的封装，使用上跟Tokenizer基本一致。
     """
-
-    def __init__(self, sp_model_path, **kwargs):
+    def __init__(self, sp_model_path, remove_space=True, keep_accents=False, do_lower_case=False, **kwargs):
         super(SpTokenizer, self).__init__(**kwargs)
         import sentencepiece as spm
         self.sp_model = spm.SentencePieceProcessor()
@@ -678,6 +654,9 @@ class SpTokenizer(TokenizerBase):
         self._token_pad = self.sp_model.id_to_piece(self.sp_model.pad_id())
         self._token_unk = self.sp_model.id_to_piece(self.sp_model.unk_id())
         self._vocab_size = self.sp_model.get_piece_size()
+        self.remove_space = remove_space
+        self.keep_accents = keep_accents
+        self.do_lower_case = do_lower_case
 
         for token in ['pad', 'unk', 'mask', 'start', 'end']:
             try:
@@ -687,6 +666,22 @@ class SpTokenizer(TokenizerBase):
             except:
                 pass
 
+    def preprocess_text(self, inputs):
+        '''从transformers包的tokenization_xlnet移植过来，主要区别是对标点符号的处理
+        '''
+        if self.remove_space:
+            outputs = " ".join(inputs.strip().split())
+        else:
+            outputs = inputs
+        outputs = outputs.replace("``", '"').replace("''", '"')
+
+        if not self.keep_accents:
+            outputs = unicodedata.normalize("NFKD", outputs)
+            outputs = "".join([c for c in outputs if not unicodedata.combining(c)])
+        if self.do_lower_case:
+            outputs = outputs.lower()
+
+        return outputs
     def token_to_id(self, token):
         """token转换为对应的id
         """
@@ -713,6 +708,7 @@ class SpTokenizer(TokenizerBase):
         if self._pre_tokenize is not None:
             text = ' '.join(self._pre_tokenize(text))
 
+        text = self.preprocess_text(text)  # 是否去空格，转符号，转小写
         tokens = self.sp_model.encode_as_pieces(text)
         return tokens
 

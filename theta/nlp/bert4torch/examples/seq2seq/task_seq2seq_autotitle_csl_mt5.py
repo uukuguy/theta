@@ -8,7 +8,7 @@
 import json, os
 from bert4torch.models import build_transformer_model
 from bert4torch.tokenizers import SpTokenizer, load_vocab
-from bert4torch.snippets import sequence_padding, text_segmentate
+from bert4torch.snippets import sequence_padding, seed_everything
 from bert4torch.snippets import AutoRegressiveDecoder, Callback, ListDataset
 from tqdm import tqdm
 import torch
@@ -17,13 +17,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from rouge import Rouge  # pip install rouge
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-torch.manual_seed(42)
 
 # 基本参数
 max_c_len = 256
 max_t_len = 32
-batch_size = 8
-epochs = 40
+batch_size = 16
+epochs = 50
+steps_per_epoch = None
 token_pad_ids = -100
 
 # bert配置
@@ -32,8 +32,8 @@ checkpoint_path = 'F:/Projects/pretrain_ckpt/t5/[google_mt5_torch_base]/pytorch_
 # 下面两个config是从bert4keras中拿的，项目连接https://github.com/bojone/t5_in_bert4keras
 spm_path = 'F:/Projects/pretrain_ckpt/t5/[google_mt5_bert4keras]/sentencepiece_cn.model'
 keep_tokens_path = 'F:/Projects/pretrain_ckpt/t5/[google_mt5_bert4keras]/sentencepiece_cn_keep_tokens.json'
-
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+seed_everything(42)
 
 class MyDataset(ListDataset):
     @staticmethod
@@ -71,17 +71,16 @@ def collate_fn(batch):
 train_dataloader = DataLoader(MyDataset('F:/Projects/data/corpus/seq2seq/summary/csl_title_public/csl_title_train.json'), 
                    batch_size=batch_size, shuffle=True, collate_fn=collate_fn) 
 valid_dataset = MyDataset('F:/Projects/data/corpus/seq2seq/summary/csl_title_public/csl_title_dev.json')
+test_dataset = MyDataset('F:/Projects/data/corpus/seq2seq/summary/csl_title_public/csl_title_test.json')
 
 model = build_transformer_model(
     config_path,
     checkpoint_path,
     model='mt5.1.1',
     segment_vocab_size=0,
-    attention_scale=False,
-    is_dropout=True,
     keep_tokens=keep_tokens,  # 只保留keep_tokens中的字，精简原字表
-    tie_emb_prj_weight=False,  # 独立权重
     token_pad_ids=token_pad_ids,  # 也可以指定custom_attention_mask并传入attention_mask来实现
+    dynamic_inherit=True
 ).to(device)
 
 class CrossEntropyLoss(nn.CrossEntropyLoss):
@@ -91,7 +90,7 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
         _, _, y_pred = outputs
         y_pred = y_pred.reshape(-1, y_pred.shape[-1])
         return super().forward(y_pred, y_true)
-model.compile(loss=CrossEntropyLoss(ignore_index=token_pad_ids), optimizer=optim.Adam(model.parameters(), 2e-4))
+model.compile(loss=CrossEntropyLoss(ignore_index=token_pad_ids), optimizer=optim.Adam(model.parameters(), 1e-4))
 
 class AutoTitle(AutoRegressiveDecoder):
     """seq2seq解码器
@@ -120,12 +119,14 @@ class Evaluator(Callback):
 
     def on_epoch_end(self, steps, epoch, logs=None):
         just_show()
-        # metrics = self.evaluate(valid_dataset)  # 评测模型
-        # if metrics['bleu'] > self.best_bleu:
-        #     self.best_bleu = metrics['bleu']
-        #     # model.save_weights('./best_model.pt')  # 保存模型
-        # metrics['best_bleu'] = self.best_bleu
-        # print('valid_data:', metrics)
+        metrics = self.evaluate(valid_dataset.data)  # 评测模型
+        metrics_test = self.evaluate(test_dataset.data)  # 评测模型
+        if metrics['bleu'] > self.best_bleu:
+            self.best_bleu = metrics['bleu']
+            # model.save_weights('./best_model.pt')  # 保存模型
+        metrics['best_bleu'] = self.best_bleu
+        print('valid_data:', metrics)
+        print('test_data:', metrics_test)
     
     def evaluate(self, data, topk=1):
         total = 0
@@ -139,21 +140,10 @@ class Evaluator(Callback):
                 rouge_1 += scores[0]['rouge-1']['f']
                 rouge_2 += scores[0]['rouge-2']['f']
                 rouge_l += scores[0]['rouge-l']['f']
-                bleu += sentence_bleu(
-                    references=[title.split(' ')],
-                    hypothesis=pred_title.split(' '),
-                    smoothing_function=self.smooth
-                )
-        rouge_1 /= total
-        rouge_2 /= total
-        rouge_l /= total
-        bleu /= total
-        return {
-            'rouge-1': rouge_1,
-            'rouge-2': rouge_2,
-            'rouge-l': rouge_l,
-            'bleu': bleu,
-        }
+                bleu += sentence_bleu(references=[title.split(' ')], hypothesis=pred_title.split(' '),
+                                      smoothing_function=self.smooth)
+        rouge_1, rouge_2, rouge_l, bleu = rouge_1/total, rouge_2/total, rouge_l/total, bleu/total
+        return {'rouge-1': rouge_1, 'rouge-2': rouge_2, 'rouge-l': rouge_l, 'bleu': bleu}
 
 
 def just_show():
@@ -163,12 +153,11 @@ def just_show():
         print(u'生成标题:', autotitle.generate(s))
 
 if __name__ == '__main__':
-
     evaluator = Evaluator()
-
+    print(u'生成标题:', autotitle.generate(u'中国的首都是extra0京'))  # 和huggingface的结果一致
     model.fit(
         train_dataloader,
-        steps_per_epoch=None,
+        steps_per_epoch=steps_per_epoch,
         epochs=epochs,
         callbacks=[evaluator]
     )

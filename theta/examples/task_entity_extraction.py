@@ -5,6 +5,7 @@ import sys, os, json
 from tqdm import tqdm
 import random
 from copy import deepcopy
+from rich import print
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 print(f"script_path: {script_path}")
@@ -15,7 +16,7 @@ print(f"script_path: {script_path}")
 from theta.utils import DictObject
 from theta.nlp.runner import run_training, run_evaluating, run_predicting
 
-from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag, SubjectTag, ObjectTag
+from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag
 from theta.nlp.entity_extraction import TaskDataset, Model, Evaluator
 from theta.nlp.entity_extraction.utils import split_text_tags
 # 实体标签
@@ -272,6 +273,31 @@ def test_data_generator(test_file):
     for data in data_generator(test_file):
         yield data
 
+def do_train(args, tokenizer):
+    print(f"----- load train_dataset")
+    partial_train_data_generator = partial(
+        train_data_generator, train_file=args.train_file
+    )
+    train_dataset = TaskDataset(args, partial_train_data_generator, tokenizer)
+
+    print(f"----- load val_dataset")
+    partial_val_data_generator = partial(val_data_generator, val_file=args.val_file)
+    val_dataset = TaskDataset(args, partial_val_data_generator, tokenizer)
+
+    print(f"----- run_training()")
+    run_training(args, Model, Evaluator, train_dataset, val_dataset)
+
+def do_eval(args, tokenizer):
+    partial_val_data_generator = partial(val_data_generator, val_file=args.val_file)
+    val_dataset = TaskDataset(args, Model, Evaluator, partial_val_data_generator, tokenizer)
+
+    run_evaluating(args, val_dataset)
+
+def do_predict(args, tokenizer):
+    if args.task_model_file is None:
+        args.task_model_file = "best_model.pt"
+
+    predict_test_file(args, tokenizer)
 
 # -------------------- Main --------------------
 def main(args):
@@ -283,30 +309,13 @@ def main(args):
     tokenizer = get_default_tokenizer(dict_path)
 
     if args.do_train:
-        print(f"----- load train_dataset")
-        partial_train_data_generator = partial(
-            train_data_generator, train_file=args.train_file
-        )
-        train_dataset = TaskDataset(args, partial_train_data_generator, tokenizer)
-
-        print(f"----- load val_dataset")
-        partial_val_data_generator = partial(val_data_generator, val_file=args.val_file)
-        val_dataset = TaskDataset(args, partial_val_data_generator, tokenizer)
-
-        print(f"----- run_training()")
-        run_training(args, Model, Evaluator, train_dataset, val_dataset)
+        do_train(args, tokenizer)
 
     if args.do_eval:
-        partial_val_data_generator = partial(val_data_generator, val_file=args.val_file)
-        val_dataset = TaskDataset(args, Model, Evaluator, partial_val_data_generator, tokenizer)
-
-        run_evaluating(args, val_dataset)
+        do_eval(args, tokenizer)
 
     if args.do_predict:
-        if args.task_model_file is None:
-            args.task_model_file = "best_model.pt"
-
-        predict_test_file(args, tokenizer)
+        do_predict(args, tokenizer)
 
 
 # -------------------- Arguments --------------------

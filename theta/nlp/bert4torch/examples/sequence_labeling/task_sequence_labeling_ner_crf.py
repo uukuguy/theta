@@ -107,7 +107,14 @@ class Loss(nn.Module):
     def forward(self, outputs, labels):
         return model.crf(*outputs, labels)
 
-model.compile(loss=Loss(), optimizer=optim.Adam(model.parameters(), lr=2e-5))
+def acc(y_pred, y_true):
+    y_pred = y_pred[0]
+    y_pred = torch.argmax(y_pred, dim=-1)
+    acc = torch.sum(y_pred.eq(y_true)).item() / y_true.numel()
+    return {'acc': acc}
+
+# 支持多种自定义metrics = ['accuracy', acc, {acc: acc}]均可
+model.compile(loss=Loss(), optimizer=optim.Adam(model.parameters(), lr=2e-5), metrics=acc)
 
 
 def evaluate(data):
@@ -173,7 +180,6 @@ class Evaluator(Callback):
 if __name__ == '__main__':
 
     evaluator = Evaluator()
-
     model.fit(train_dataloader, epochs=20, steps_per_epoch=None, callbacks=[evaluator])
 
 else: 

@@ -18,7 +18,7 @@ from cchess import *
 
 # 基本信息
 maxlen = 512
-steps_per_epoch = 1000
+steps_per_epoch = None
 epochs = 10000
 batch_size = 16
 
@@ -86,7 +86,7 @@ train_dataloader = DataLoader(MyDataset('F:/Projects/data/corpus/seq2seq/qipu/qi
 
 # 由于字典中0不代表padding位，为避免attention_mask计算错误，这里token_pad_ids=-100
 model = build_transformer_model(config_path, checkpoint_path, application='lm', with_mlm=True,
-                                keep_tokens=keep_tokens, token_pad_ids=-100).to(device)
+                                keep_tokens=keep_tokens, token_pad_ids=-100, dynamic_inherit=True).to(device)
 
 class CrossEntropyLoss(nn.CrossEntropyLoss):
     def __init__(self, **kwargs):
@@ -208,7 +208,7 @@ if __name__ == '__main__':
 
     if choice == 'train':
         evaluator = Evaluator()
-        model.fit(train_dataloader, steps_per_epoch=1000, epochs=20, callbacks=[evaluator])
+        model.fit(train_dataloader, steps_per_epoch=steps_per_epoch, epochs=20, callbacks=[evaluator])
     else:
         model.load_weights('./best_model_chess.pt')
         chessplayer.new_game(0)  # 启动新棋局，0为人类先手，1为机器先手

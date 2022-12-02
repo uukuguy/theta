@@ -107,6 +107,7 @@ model = build_transformer_model(
     with_mlm=True,
     application='unilm',
     keep_tokens=keep_tokens,  # 只保留keep_tokens中的字，精简原字表
+    dynamic_inherit=True
 ).to(device)
 summary(model, input_data=[next(iter(train_dataloader))[0]])
 
@@ -182,7 +183,7 @@ if __name__ == '__main__':
 
     model.fit(
         train_dataloader,
-        steps_per_epoch=100,
+        steps_per_epoch=None,
         epochs=epochs,
         callbacks=[evaluator]
     )

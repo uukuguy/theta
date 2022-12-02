@@ -94,6 +94,7 @@ model = build_transformer_model(
     with_mlm=True,
     application='lm',
     keep_tokens=keep_tokens,  # 只保留keep_tokens中的字，精简原字表
+    dynamic_inherit=True
 ).to(device)
 summary(model, input_data=[next(iter(train_dataloader))[0]])
 
@@ -156,7 +157,7 @@ if __name__ == '__main__':
 
     evaluator = Evaluator()
 
-    model.fit(train_dataloader, epochs=epochs, steps_per_epoch=100, callbacks=[evaluator])
+    model.fit(train_dataloader, epochs=epochs, steps_per_epoch=None, callbacks=[evaluator])
 
 else:
 
