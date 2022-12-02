@@ -8,7 +8,7 @@ import collections
 import logging
 import unicodedata
 from io import open
-from bert4torch.snippets import truncate_sequences, is_string, lowercase_and_normalize
+from .snippets import truncate_sequences, is_string, lowercase_and_normalize
 import re
 import six
 from collections import OrderedDict

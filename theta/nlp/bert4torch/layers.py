@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import math
-from bert4torch.snippets import get_sinusoid_encoding_table, take_along_dim, torch_div
-from bert4torch.activations import get_activation
+from .snippets import get_sinusoid_encoding_table, take_along_dim, torch_div
+from .activations import get_activation
 from typing import List, Optional, Union
 import random
 import warnings

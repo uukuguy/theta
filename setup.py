@@ -17,6 +17,7 @@ REQUIRED = [
     "dataclasses;python_version<'3.7'",
     "tqdm >= 4.27",
     "torch >= 1.7.0",
+    "torch4keras",
 ]
 
 # Package meta-data.
@@ -25,7 +26,7 @@ DESCRIPTION = 'Deep learning toolbox for end-to-end text information extraction 
 URL = 'https://github.com/idleuncle/theta'
 EMAIL = '531045572@qq.com'
 AUTHOR = 'Jiangwen Su'
-REQUIRES_PYTHON = '>=3.7.0'
+REQUIRES_PYTHON = '>=3.8.0'
 VERSION = None
 
 # What packages are required for this module to be executed?
@@ -126,8 +127,6 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
