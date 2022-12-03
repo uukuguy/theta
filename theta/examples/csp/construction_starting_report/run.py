@@ -2,20 +2,23 @@
 # -*- coding: utf-8 -*-
 """
 train:
-	python run.py \
-		--do_train \
-		--train_file data/train.json \
-		--val_file data/val.json
+    python run.py \
+        --do_train \
+        --train_file data/train.json \
+        --val_file data/val.json
 
 eval:
-	python run.py \
-		--do_eval \
-		--val_file data/val.json
+    python run.py \
+        --do_eval \
+        --val_file data/val.json
 
 predict:
-	python run.py \
-		--do_predict \
-		--test_file data/val.json
+    python run.py \
+        --do_predict \
+        --test_file data/val.json
+
+eda:
+    PYTHONPATH=$PWD python -m theta.nlp.eda run
 
 """
 
@@ -252,16 +255,21 @@ def data_generator(data_file, do_split=False):
         if idx < 5 or idx > len(lines) - 5:
             print(tagged_text)
 
-        if args.do_split:
-            text, tags, others = tagged_text.text, tagged_text.tags, tagged_text.others
+        if do_split:
+            text, tags = tagged_text.text, tagged_text.tags
 
-            sentences, sent_tags_list = split_text_tags(
-                tagged_text.text, tagged_text.tags)
-            for sent_text, sent_tags in zip(sentences, sent_tags_list):
+            tags = [{
+                'category': tag.category,
+                'start': tag.start,
+                'mention': tag.mention
+            } for tag in tags]
+
+            sent_tags_list = split_text_tags(tagged_text.text, tags)
+            for sent_tags in sent_tags_list:
 
                 if idx < 5 or idx > len(lines) - 5:
-                    print(idx, sent_text, sent_tags, others)
-                yield TaggedData(idx, sent_text, sent_tags, others)
+                    print(idx, text, sent_tags)
+                yield TaggedData(idx, text, sent_tags)
         else:
             yield tagged_text
 
@@ -276,36 +284,38 @@ def data_generator(data_file, do_split=False):
 # raw_train_data, num_train_samples = prepare_raw_train_data(args, data_generator, train_ratio=0.8)
 
 
-def train_data_generator(train_file):
-    raw_train_data = [d for d in data_generator(args.train_file)]
+def train_data_generator(train_file="./data/train.json", do_split=False):
+    raw_train_data = [d for d in data_generator(train_file, do_split=do_split)]
     raw_train_data = random.sample(raw_train_data, len(raw_train_data))
     # for data in raw_train_data[:num_train_samples]:
     for data in raw_train_data:
         yield data
 
 
-def val_data_generator(val_file):
-    raw_val_data = [d for d in data_generator(args.val_file)]
+def val_data_generator(val_file="./data/val.json", do_split=False):
+    raw_val_data = [d for d in data_generator(val_file, do_split=do_split)]
     for data in raw_val_data:
         # for data in raw_train_data[num_train_samples:]:
         # for data in raw_train_data:
         yield data
 
 
-def test_data_generator(test_file):
-    for data in data_generator(test_file):
+def test_data_generator(test_file="./data/val.json", do_split=False):
+    for data in data_generator(test_file, do_split=do_split):
         yield data
 
 
 def do_train(args, tokenizer):
     print(f"----- load train_dataset")
     partial_train_data_generator = partial(train_data_generator,
-                                           train_file=args.train_file)
+                                           train_file=args.train_file,
+                                           do_split=args.do_split)
     train_dataset = TaskDataset(args, partial_train_data_generator, tokenizer)
 
     print(f"----- load val_dataset")
     partial_val_data_generator = partial(val_data_generator,
-                                         val_file=args.val_file)
+                                         val_file=args.val_file,
+                                         do_split=args.do_split)
     val_dataset = TaskDataset(args, partial_val_data_generator, tokenizer)
 
     print(f"----- run_training()")
@@ -314,7 +324,8 @@ def do_train(args, tokenizer):
 
 def do_eval(args, tokenizer):
     partial_val_data_generator = partial(val_data_generator,
-                                         val_file=args.val_file)
+                                         val_file=args.val_file,
+                                         do_split=args.do_split)
     val_dataset = TaskDataset(args, partial_val_data_generator, tokenizer)
 
     run_evaluating(args, Model, Evaluator, val_dataset)

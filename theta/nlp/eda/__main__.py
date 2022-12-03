@@ -31,7 +31,7 @@ def main():
 
     is_ner = False
     is_glue = False
-    if 'ner_labels' in module_cls.__dict__:
+    if 'ner_labels' in module_cls.__dict__ or 'entity_labels' in module_cls.__dict__:
         is_ner = True
     if 'glue_labels' in module_cls.__dict__:
         is_glue = True
@@ -76,17 +76,18 @@ def main():
             rich.print(f"{labels_map}")
         elif is_ner:
             train_samples = [x for x in train_data_generator()]
-            all_tags = [tags for _, _, _, tags in train_samples]
+            all_tags = [taggedData.tags for taggedData in train_samples]
             num_train_samples = len(all_tags)
 
             labels = []
             for tags in all_tags:
                 for tag in tags:
-                    c = tag['category']
+                    #  c = tag['category']
+                    c = tag.category
                     if c not in labels:
                         labels.append(c)
 
-            text_lens = [len(text) for _, text, _, _ in train_samples]
+            text_lens = [len(taggedData.text) for taggedData in train_samples]
             len_mean = np.mean(text_lens)
             len_std = np.std(text_lens)
             len_min = np.min(text_lens)
@@ -129,7 +130,7 @@ def main():
             )
         elif is_ner:
             test_samples = [x for x in test_data_generator()]
-            text_lens = [len(text) for _, text, _, _ in test_samples]
+            text_lens = [len(taggedData.text) for taggedData in test_samples]
             num_test_samples = len(text_lens)
 
             len_mean = np.mean(text_lens)

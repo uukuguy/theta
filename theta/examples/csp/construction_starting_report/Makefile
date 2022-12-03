@@ -13,3 +13,5 @@ predict:
 	python run.py \
 		--do_predict \
 		--test_file data/val.json
+eda:
+	PYTHONPATH=$PWD python -m theta.nlp.eda run
