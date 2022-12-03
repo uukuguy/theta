@@ -16,7 +16,6 @@ try:
     def print(*arg, **kwargs):
         rich.print(*arg, **kwargs)
 
-
 except:
     pass
 
@@ -37,6 +36,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class MyLoss(MultilabelCategoricalCrossentropy):
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -48,7 +48,9 @@ class MyLoss(MultilabelCategoricalCrossentropy):
 
         return super().forward(y_pred, y_true)
 
+
 class Model(BaseModel):
+
     def __init__(self, bert_model_path, heads, head_size) -> None:
         config_path = f"{bert_model_path}/bert_config.json"
         checkpoint_path = f"{bert_model_path}/pytorch_model.bin"
@@ -60,9 +62,9 @@ class Model(BaseModel):
             checkpoint_path=checkpoint_path,
             segment_vocab_size=0,
         )
-        self.global_pointer = GlobalPointer(
-            hidden_size=768, heads=heads, head_size=head_size
-        )
+        self.global_pointer = GlobalPointer(hidden_size=768,
+                                            heads=heads,
+                                            head_size=head_size)
 
     def forward(self, token_ids):
         sequence_output = self.bert([token_ids])  # [btz, seq_len, hdsz]
@@ -77,14 +79,13 @@ class Model(BaseModel):
             batch_token_ids.append(token_ids)
             batch_labels.append(labels)
 
-        batch_token_ids = torch.tensor(
-            sequence_padding(batch_token_ids), dtype=torch.long, device=device
-        )
-        batch_labels = torch.tensor(
-            sequence_padding(batch_labels, seq_dims=3), dtype=torch.long, device=device
-        )
+        batch_token_ids = torch.tensor(sequence_padding(batch_token_ids),
+                                       dtype=torch.long,
+                                       device=device)
+        batch_labels = torch.tensor(sequence_padding(batch_labels, seq_dims=3),
+                                    dtype=torch.long,
+                                    device=device)
         return batch_token_ids, batch_labels
-
 
     @staticmethod
     def build_model(args, num_training_steps=0):
@@ -95,7 +96,8 @@ class Model(BaseModel):
 
         heads = len(entity_labels)
         head_size = 64
-        model = Model(bert_model_path, heads=heads, head_size=head_size).to(device)
+        model = Model(bert_model_path, heads=heads,
+                      head_size=head_size).to(device)
         # 指定DDP模型使用多GPU，master_rank为指定用于打印训练过程的local_rank
         if args.local_rank >= 0:
             model = BaseModelDDP(
@@ -125,21 +127,19 @@ class Model(BaseModel):
 
         return model
 
-
     @staticmethod
-    def predict_text(args, model, text, tokenizer, threshold=0):
-        repeat = args.repeat
+    def predict_text(args, model, text, tokenizer, repeat=1, threshold=0):
         entities_id2label = args.task_labels.entities_id2label
 
         true_tags = []
-        ((tokens, mapping), token_ids, labels) = encode_text(
-            text, true_tags, args.task_labels, args.max_length, tokenizer
-        )
+        ((tokens, mapping), token_ids,
+         labels) = encode_text(text, true_tags, args.task_labels,
+                               args.max_length, tokenizer)
 
         batch_token_ids = [token_ids]
-        batch_token_ids = torch.tensor(
-            sequence_padding(batch_token_ids), dtype=torch.long, device=device
-        )
+        batch_token_ids = torch.tensor(sequence_padding(batch_token_ids),
+                                       dtype=torch.long,
+                                       device=device)
 
         scores_list = []
         for _ in range(repeat):
@@ -169,19 +169,14 @@ class Model(BaseModel):
                 R = set()
                 for l, start, end in zip(*np.where(score.cpu() > threshold)):
 
-                    if (
-                        l in entities_id2label
-                        and start >= 1
-                        and start < len(mapping) - 1
-                        and end >= 1
-                        and end < len(mapping) - 1
-                        and start < end
-                    ):
+                    if (l in entities_id2label and start >= 1
+                            and start < len(mapping) - 1 and end >= 1
+                            and end < len(mapping) - 1 and start < end):
                         # print(f"l: {l}, start: {start}, end: {end}")
                         # print(f"mapping[start][0]: {mapping[start][0]}, mapping[end][-1] + 1: {mapping[end][-1] + 1}")
                         span_s = mapping[start][0]
                         span_e = mapping[end][-1]
-                        k2 = sent_text[span_s : span_e + 1]
+                        k2 = sent_text[span_s:span_e + 1]
                         #  k2 = sent_text[mapping[start][0]:mapping[end][-1] + 1]
                         # print(start, end, entities_id2label[l], k2)
 
@@ -212,7 +207,6 @@ class Model(BaseModel):
         return tags
 
 
-
 class Evaluator(Callback):
     """评估与保存"""
 
@@ -235,7 +229,11 @@ class Evaluator(Callback):
         self.debug = debug
 
     def do_evaluate(self):
-        return Evaluator.evaluate( self.model, self.val_dataloader, self.task_labels, debug=self.debug, threshold=self.threshold)
+        return Evaluator.evaluate(self.model,
+                                  self.val_dataloader,
+                                  self.task_labels,
+                                  debug=self.debug,
+                                  threshold=self.threshold)
 
     def on_epoch_end(self, steps, epoch, logs=None):
         eval_result = self.do_evaluate()
@@ -263,7 +261,7 @@ class Evaluator(Callback):
         logs.update({"best_f1": self.best_f1})
 
     @staticmethod
-    def evaluate(model, dataloader, task_labels, threshold=0):
+    def evaluate(model, dataloader, task_labels, debug=False, threshold=0):
         entities_id2label = task_labels.entities_id2label
 
         X, Y, Z = 0, 1e-10, 1e-10
@@ -277,11 +275,12 @@ class Evaluator(Callback):
 
             encoded_label = [encoded_label]
             batch_token_ids = [token_ids]
-            batch_token_ids = torch.tensor(
-                sequence_padding(batch_token_ids), dtype=torch.long, device=device
-            )
+            batch_token_ids = torch.tensor(sequence_padding(batch_token_ids),
+                                           dtype=torch.long,
+                                           device=device)
             scores = model.predict(batch_token_ids)
-            scores = [o.cpu().numpy() for o in scores]  # [heads, seq_len, seq_len]
+            scores = [o.cpu().numpy()
+                      for o in scores]  # [heads, seq_len, seq_len]
 
             for i, score in enumerate(scores):
                 R = set()
@@ -296,7 +295,8 @@ class Evaluator(Callback):
 
                 T = set()
                 #  for l, start, end in zip(*np.where(encoded_label[i] > threshold)):
-                for l, start, end in zip(*np.where(encoded_label[i] > threshold)):
+                for l, start, end in zip(*np.where(
+                        encoded_label[i] > threshold)):
                     #  T.add((start, end, entities_id2label[l]))
                     c = entities_id2label[l]
                     s = mapping[start][0]
@@ -322,11 +322,8 @@ class Evaluator(Callback):
 
             f1, precision, recall = 2 * X / (Y + Z), X / Y, X / Z
             pbar.update()
-            pbar.set_description(
-                "f1: %.5f, precision: %.5f, recall: %.5f" % (f1, precision, recall)
-            )
+            pbar.set_description("f1: %.5f, precision: %.5f, recall: %.5f" %
+                                 (f1, precision, recall))
 
         eval_result = {"all": (f1, precision, recall)}
         return eval_result
-
-

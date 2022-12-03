@@ -27,7 +27,9 @@ script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
 # -------- run_training() --------
 
+
 class BestLossCheckpoint(EarlyStopping):
+
     def __init__(self, model, patience=5):
         super(BestLossCheckpoint, self).__init__(monitor='loss')
         self.model = model
@@ -66,13 +68,15 @@ class BestLossCheckpoint(EarlyStopping):
         self._values = None
 
     def on_train_end(self, logs=None):
-        if self.stopped_epoch > 0: 
+        if self.stopped_epoch > 0:
             print(f'Epoch {self.stopped_epoch+1}: early stopping\n')
 
+
 class DistributedTrainingEpoch(Callback):
+
     def __init__(self, local_rank, dist_sampler=None):
         self.local_rank = local_rank
-        self.dist_sampler=dist_sampler
+        self.dist_sampler = dist_sampler
 
     def on_epoch_begin(self, global_step, epoch, logs=None):
         if self.local_rank >= 0:
@@ -114,7 +118,6 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                                                 shuffle=True,
                                                 local_rank=args.local_rank)
 
-
             num_training_steps = (len(train_dataloader) /
                                   batch_size) * num_training_epochs
             model = Model.build_model(args, num_training_steps)
@@ -135,10 +138,10 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
 
             if args.eval_on_training:
                 val_dataloader = build_dataloader(val_dataset,
-                                                batch_size=batch_size,
-                                                collate_fn=Model.collate_fn,
-                                                shuffle=False,
-                                                local_rank=args.local_rank)
+                                                  batch_size=batch_size,
+                                                  collate_fn=Model.collate_fn,
+                                                  shuffle=False,
+                                                  local_rank=args.local_rank)
                 if args.local_rank in [-1, 0]:
                     evaluator = Evaluator(
                         model,
@@ -161,10 +164,13 @@ def run_training(args, Model, Evaluator, train_dataset, val_dataset):
                     )
                     callbacks.append(early_stopping)
                 else:
-                    best_loss_checkpoint = BestLossCheckpoint(model, patience=args.earlystopping_patience)
+                    best_loss_checkpoint = BestLossCheckpoint(
+                        model, patience=args.earlystopping_patience)
                     callbacks.append(best_loss_checkpoint)
 
-            dist_training_epoch = DistributedTrainingEpoch(local_rank=args.local_rank, dist_sampler=train_dataloader.sampler)
+            dist_training_epoch = DistributedTrainingEpoch(
+                local_rank=args.local_rank,
+                dist_sampler=train_dataloader.sampler)
             callbacks.append(dist_training_epoch)
 
             model.fit(

@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os 
+import os
 from tqdm import tqdm
 import torch
 import torch.nn as nn
 
 from tensorboardX import SummaryWriter
-tb_writer = SummaryWriter(log_dir='./tensorboard_logs')  
+
+tb_writer = SummaryWriter(log_dir='./tensorboard_logs')
 
 script_path = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
 
@@ -16,12 +17,13 @@ from ..bert4torch.losses import MultilabelCategoricalCrossentropy
 from ..bert4torch.optimizers import get_linear_schedule_with_warmup
 from ..bert4torch.utils import sequence_padding, Callback, get_pool_emb
 
-from .dataset import encode_text 
+from .dataset import encode_text
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class MyLoss(nn.CrossEntropyLoss):
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -32,8 +34,13 @@ class MyLoss(nn.CrossEntropyLoss):
         # y_pred = y_pred.view(y_pred.shape[0] * y_pred.shape[1], -1)
         return super().forward(y_pred, y_true)
 
+
 class Model(BaseModel):
-    def __init__(self, bert_model_path, num_classes, pool_method='cls') -> None:
+
+    def __init__(self,
+                 bert_model_path,
+                 num_classes,
+                 pool_method='cls') -> None:
         config_path = f"{bert_model_path}/bert_config.json"
         checkpoint_path = f"{bert_model_path}/pytorch_model.bin"
         dict_path = f"{bert_model_path}/vocab.txt"
@@ -52,14 +59,13 @@ class Model(BaseModel):
         self.dropout = nn.Dropout(0.1)
         self.dense = nn.Linear(self.bert.configs['hidden_size'], num_classes)
 
-
     def forward(self, token_ids, segment_ids):
         hidden_states, pooling = self.bert([token_ids, segment_ids])
-        pooled_output = get_pool_emb(hidden_states, pooling, token_ids.gt(0).long(), self.pool_method)
+        pooled_output = get_pool_emb(hidden_states, pooling,
+                                     token_ids.gt(0).long(), self.pool_method)
         output = self.dropout(pooled_output)
         output = self.dense(output)
         return output
-
 
     @classmethod
     def collate_fn(batch):
@@ -69,9 +75,15 @@ class Model(BaseModel):
             batch_segment_ids.append(segment_ids)
             batch_labels.append([label])
 
-        batch_token_ids = torch.tensor(sequence_padding(batch_token_ids), dtype=torch.long, device=device)
-        batch_segment_ids = torch.tensor(sequence_padding(batch_segment_ids), dtype=torch.long, device=device)
-        batch_labels = torch.tensor(batch_labels, dtype=torch.long, device=device)
+        batch_token_ids = torch.tensor(sequence_padding(batch_token_ids),
+                                       dtype=torch.long,
+                                       device=device)
+        batch_segment_ids = torch.tensor(sequence_padding(batch_segment_ids),
+                                         dtype=torch.long,
+                                         device=device)
+        batch_labels = torch.tensor(batch_labels,
+                                    dtype=torch.long,
+                                    device=device)
         return [batch_token_ids, batch_segment_ids], batch_labels.flatten()
 
     @staticmethod
@@ -91,7 +103,6 @@ class Model(BaseModel):
                 find_unused_parameters=False,
             )
 
-
         if learning_rate > 0:
             optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         else:
@@ -107,27 +118,29 @@ class Model(BaseModel):
         else:
             scheduler = None
 
-        model.compile(loss=nn.CrossEntropyLoss, optimizer=optimizer, scheduler=scheduler, metrics=['accuracy'])
+        model.compile(loss=nn.CrossEntropyLoss,
+                      optimizer=optimizer,
+                      scheduler=scheduler,
+                      metrics=['accuracy'])
 
         return model
 
     @staticmethod
-    def predict_text(args, model, text, tokenizer, threshold=0):
-        repeat = args.repeat
+    def predict_text(args, model, text, tokenizer, repeat=1, threshold=0):
         id2label = args.task_labels.id2label
 
         true_tags = []
-        ((token_ids, segment_ids), label) = encode_text(
-            text, true_tags, args.task_labels, args.max_length, tokenizer
-        )
+        ((token_ids, segment_ids),
+         label) = encode_text(text, true_tags, args.task_labels,
+                              args.max_length, tokenizer)
 
         batch_token_ids, batch_segment_ids = [token_ids], [segment_ids]
-        batch_token_ids = torch.tensor(
-            sequence_padding(batch_token_ids), dtype=torch.long, device=device
-        )
-        batch_segment_ids = torch.tensor(
-            sequence_padding(batch_segment_ids), dtype=torch.long, device=device
-        )
+        batch_token_ids = torch.tensor(sequence_padding(batch_token_ids),
+                                       dtype=torch.long,
+                                       device=device)
+        batch_segment_ids = torch.tensor(sequence_padding(batch_segment_ids),
+                                         dtype=torch.long,
+                                         device=device)
 
         logits_list = []
         for _ in range(repeat):
@@ -145,9 +158,6 @@ class Model(BaseModel):
         label = id2label[y_pred]
 
         return label
-
-
-
 
 
 class Evaluator(Callback):
@@ -170,7 +180,10 @@ class Evaluator(Callback):
         self.threshold = threshold
 
     def do_evaluate(self):
-        return Evaluator.evaluate(self.model, self.valid_dataloader, self.task_labels, threshold=self.threshold)
+        return Evaluator.evaluate(self.model,
+                                  self.valid_dataloader,
+                                  self.task_labels,
+                                  threshold=self.threshold)
 
     def on_batch_end(self, global_step, batch, logs=None):
         if global_step % 10 == 0:
@@ -191,9 +204,7 @@ class Evaluator(Callback):
                 best_checkpoint_file = f"best_checkpoint_epoch_{epoch}_f1_{self.best_acc:.5f}.pt"
                 self.model.save_weights(best_checkpoint_file)
                 print(f"Saved best model file in {best_checkpoint_file}")
-        print(
-            f"[val] acc: {acc:.5f}, best_acc: {self.best_acc:.5f}"
-        )
+        print(f"[val] acc: {acc:.5f}, best_acc: {self.best_acc:.5f}")
         for k, v in eval_result.items():
             if k == "total":
                 continue
@@ -219,4 +230,3 @@ class Evaluator(Callback):
 
         eval_result = {"all": val_acc}
         return eval_result
-

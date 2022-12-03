@@ -1,5 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+train:
+	python run.py \
+		--do_train \
+		--train_file data/train.json \
+		--val_file data/val.json
+
+eval:
+	python run.py \
+		--do_eval \
+		--val_file data/val.json
+
+predict:
+	python run.py \
+		--do_predict \
+		--test_file data/val.json
+
+"""
 
 import sys, os, json
 from tqdm import tqdm
@@ -20,9 +38,7 @@ from theta.nlp.entity_extraction import TaskLabels, TaggedData, TaskTag
 from theta.nlp.entity_extraction import TaskDataset, Model, Evaluator
 from theta.nlp.entity_extraction.utils import split_text_tags
 # 实体标签
-entity_labels = [
-    '工程编号', '项目名称（ID）', '监理单位', '施工单位', '开工时间', '计划开工时间', '计划竣工日期'
-]
+entity_labels = ['工程编号', '项目名称（ID）', '监理单位', '施工单位', '计划开工时间', '计划竣工日期']
 task_labels = TaskLabels(entity_labels=entity_labels, )
 
 # -------------------- Global Variables --------------------
@@ -42,6 +58,8 @@ max_length = 512
 do_split = False
 min_best = 0.9
 earlystopping_patience = 10
+output_dir = "./outputs"
+log_dir = "./outputs/logs"
 
 args = DictObject(**dict(
     task_name=TASK_NAME,
@@ -70,11 +88,11 @@ args = DictObject(**dict(
     train_file=None,
     val_file=None,
     test_file=None,
-    best_model_file="best_model.pt",
+    best_model_file=f"{output_dir}/best_model.pt",
     eval_on_training=True,
     # outputs
-    output_dir="./outputs",
-    log_dir="./logs",
+    output_dir=output_dir,
+    log_dir=log_dir,
 ))
 
 random.seed(seed)
@@ -139,11 +157,12 @@ def build_final_result(tagged_text, decoded_tags):
     entities_list = []
     for tag in decoded_tags:
         e_c, e_s, e_m = tag.category, tag.start, tag.mention
-        entity = (e_c, e_s, e_m)
+        #  entity = (e_c, e_s, e_m)
+        entity = {'category': e_c, 'start': e_s, 'mention': e_m}
 
         entities_list.append(entity)
 
-    result = {"ID": idx, "text": text, "entities": entities_list}
+    result = {"id": idx, "text": text, "tags": entities_list}
 
     return result
 
@@ -167,7 +186,9 @@ def decode_text_tags(pred_tags):
 """
 
 
-def predict_test_file(args, tokenizer, results_file="results.json"):
+def predict_test_file(args,
+                      tokenizer,
+                      results_file=f"{output_dir}/results.json"):
     test_file = args.test_file
     best_model_file = args.best_model_file
 
@@ -189,7 +210,7 @@ def predict_test_file(args, tokenizer, results_file="results.json"):
     decoded_tags_list = decode_predictions(predictions)
     assert len(test_data) == len(decoded_tags_list)
 
-    predictions_file = "./predictions.json"
+    predictions_file = f"{args.output_dir}/predictions.json"
     with open(predictions_file, "w") as wt:
         for tagged_text, tags in zip(test_data, decoded_tags_list):
             # idx, text, true_tags = tagged_text.idx, tagged_text.text
@@ -202,7 +223,7 @@ def predict_test_file(args, tokenizer, results_file="results.json"):
             # line = f"{json.dumps(pred, ensure_ascii=False)}\n"
             pred_tagged_text = deepcopy(tagged_text)
             pred_tagged_text.tags = tags
-            line = pred_tagged_text.to_json()
+            line = json.dumps(pred_tagged_text.to_json(), ensure_ascii=False)
             wt.write(f"{line}\n")
     print(f"Saved {len(decoded_tags_list)} lines in {predictions_file}")
 
@@ -212,7 +233,7 @@ def predict_test_file(args, tokenizer, results_file="results.json"):
         final_tags_list.append(final_tags)
 
     with open(results_file, "w") as wt:
-        for d in final_tags:
+        for d in final_tags_list:
             line = json.dumps(d, ensure_ascii=False)
             wt.write(f"{line}\n")
     print(f"Saved {len(final_tags_list)} results in {results_file}")
@@ -294,10 +315,9 @@ def do_train(args, tokenizer):
 def do_eval(args, tokenizer):
     partial_val_data_generator = partial(val_data_generator,
                                          val_file=args.val_file)
-    val_dataset = TaskDataset(args, Model, Evaluator,
-                              partial_val_data_generator, tokenizer)
+    val_dataset = TaskDataset(args, partial_val_data_generator, tokenizer)
 
-    run_evaluating(args, val_dataset)
+    run_evaluating(args, Model, Evaluator, val_dataset)
 
 
 def do_predict(args, tokenizer):
