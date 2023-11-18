@@ -1,6 +1,6 @@
 # Theta 
 
-** 全线转战至大语言模型战场（https://github.com/uukuguy/speechless），伴随我整个深度学习历程（2016-2022）的利器 Theta 封存于此，立字为证。**
+**全线转战至[大语言模型战场](https://github.com/uukuguy/speechless)，伴随我整个深度学习历程（2016-2022）的利器 Theta 封存于此，立字为证。**
 
 Deep learning toolbox for end-to-end text information extraction tasks.
 
