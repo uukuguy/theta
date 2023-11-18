@@ -1,5 +1,7 @@
 # Theta 
 
+** 全线转战至大语言模型战场（https://github.com/uukuguy/speechless），伴随我整个深度学习历程（2016-2022）的利器 Theta 封存于此，立字为证。**
+
 Deep learning toolbox for end-to-end text information extraction tasks.
 
 Theta定位是解决实际工程项目中文本信息抽取任务的实用工具箱，端到端实现从原始文本输入到结构化输出全过程。用户工作聚焦于输入数据格式转换，调整关键参数调度theta完成模型训练推理任务及输出格式化数据利用。
